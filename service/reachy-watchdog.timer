@@ -1,0 +1,10 @@
+[Unit]
+Description=Periodically check the Reachy Mini supervised process's heartbeat
+
+[Timer]
+OnBootSec=15
+OnUnitActiveSec=15
+AccuracySec=1
+
+[Install]
+WantedBy=timers.target

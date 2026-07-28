@@ -1,0 +1,14 @@
+[Unit]
+Description=Reachy Mini supervised process (sim-connected reliability test)
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=/home/tmarepal/reachy_supervisor/venv/bin/python /home/tmarepal/reachy_supervisor/supervised_process.py
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=5
+
+[Install]
+WantedBy=default.target

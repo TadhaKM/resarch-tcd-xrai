@@ -1,0 +1,6 @@
+[Unit]
+Description=Reachy Mini heartbeat watchdog check (oneshot, triggered by reachy-watchdog.timer)
+
+[Service]
+Type=oneshot
+ExecStart=/home/tmarepal/reachy_supervisor/venv/bin/python /home/tmarepal/reachy_supervisor/watchdog_check.py
