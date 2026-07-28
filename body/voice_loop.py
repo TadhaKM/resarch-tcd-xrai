@@ -18,13 +18,25 @@ def run_once(audio: AudioIO, camera: Camera, face: FaceIdentifier, motion: Motio
     audio.wait_for_wake_word()
 
     frame = camera.get_frame()
-    person_id = face.identify(frame)
+    person_id, active_face, _score = face.identify(frame, force=True)
+    if active_face is not None and frame is not None:
+        motion.track_face(active_face.bbox, frame.shape)
     message = audio.listen()
 
+    if person_id is None and active_face is not None:
+        motion.express("curious")
+        audio.speak("I don't think we've met yet. What's your name?", "curious", motion=motion)
+        name = audio.listen()
+        person_id = face.enroll(name, active_face)
+
+    if person_id is None:
+        person_id = 0
+
+    motion.express("thinking")
     reply_text, emotion_tag = get_reply(person_id, message)
 
-    audio.speak(reply_text, emotion_tag)
     motion.express(emotion_tag)
+    audio.speak(reply_text, emotion_tag, motion=motion)
 
 
 def run_forever(target: HardwareTarget) -> None:
@@ -39,3 +51,5 @@ def run_forever(target: HardwareTarget) -> None:
             run_once(audio, camera, face, motion)
     except KeyboardInterrupt:
         pass
+    finally:
+        camera.close()
