@@ -114,6 +114,9 @@ class ModelConfig:
     ollama_host: str
     ollama_model: str
 
+    # Long-term (cross-session) memory: SQLite in WAL mode. See brain/db.py.
+    db_path: Path
+
 
 OLLAMA_MODEL_PRIMARY = "qwen2.5:1.5b-instruct-q4_K_M"
 OLLAMA_MODEL_FALLBACK = "llama3.2:1b-instruct-q4_K_M"
@@ -143,4 +146,5 @@ MODELS = ModelConfig(
     tts_config_path=MODELS_DIR / "tts" / "en_US-amy-medium.onnx.json",
     ollama_host="http://localhost:11434",
     ollama_model=OLLAMA_MODEL_PRIMARY,
+    db_path=Path(__file__).parent / "data" / "memory.db",
 )
