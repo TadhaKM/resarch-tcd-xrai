@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+
+# Downloaded model weights (~700MB) -- reproducible from the exact URLs/commands
+# documented in config.py and body/audio_io.py, not source to track in git.
+models/
