@@ -7,3 +7,9 @@ models/
 
 # SQLite long-term memory DB (runtime state, not source) + WAL/SHM side files.
 data/
+
+# Substitute face photos for test_multi_session_simulation.py (photo-substitution
+# for face ID, since the mujoco sim has no real human faces). These are real
+# people's photos (a placeholder-avatar service, not scraped) -- reproducible
+# via the URLs in test_multi_session_simulation.py's docstring, not committed.
+test_photos/
