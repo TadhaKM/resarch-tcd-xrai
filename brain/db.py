@@ -15,6 +15,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Iterator, Optional
 
+import numpy as np
+
 from config import MODELS
 
 logger = logging.getLogger(__name__)
@@ -71,6 +73,15 @@ def init_db() -> None:
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_notes_person_id ON memory_notes(person_id)")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS people_embeddings (
+                person_id INTEGER PRIMARY KEY REFERENCES people(id) ON DELETE CASCADE,
+                embedding BLOB NOT NULL,
+                created_at TIMESTAMP
+            )
+            """
+        )
 
 
 def ensure_person(person_id: int, name: Optional[str] = None) -> None:
@@ -83,6 +94,98 @@ def ensure_person(person_id: int, name: Optional[str] = None) -> None:
             )
     except sqlite3.Error:
         logger.exception("Failed to ensure person row for person_id=%s", person_id)
+
+
+def create_person(name: Optional[str] = None) -> int:
+    """Create and return a new person id."""
+    try:
+        with _write_lock, _connection() as conn:
+            cur = conn.execute(
+                "INSERT INTO people (name, created_at) VALUES (?, ?)",
+                (name, _now()),
+            )
+            return int(cur.lastrowid)
+    except sqlite3.Error:
+        logger.exception("Failed to create person row")
+        raise
+
+
+def list_people() -> list[dict[str, object]]:
+    """Return enrolled people and lightweight counts for management UIs/CLI."""
+    try:
+        with _connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    p.id,
+                    p.name,
+                    p.created_at,
+                    CASE WHEN e.person_id IS NULL THEN 0 ELSE 1 END AS has_embedding,
+                    COUNT(n.id) AS note_count
+                FROM people p
+                LEFT JOIN people_embeddings e ON e.person_id = p.id
+                LEFT JOIN memory_notes n ON n.person_id = p.id
+                GROUP BY p.id, p.name, p.created_at, e.person_id
+                ORDER BY p.id ASC
+                """
+            ).fetchall()
+        return [
+            {
+                "person_id": row[0],
+                "name": row[1],
+                "created_at": row[2],
+                "has_embedding": bool(row[3]),
+                "note_count": row[4],
+            }
+            for row in rows
+        ]
+    except sqlite3.Error:
+        logger.exception("Failed to list people")
+        return []
+
+
+def delete_person(person_id: int) -> None:
+    """Delete a person and their embeddings + notes."""
+    try:
+        with _write_lock, _connection() as conn:
+            conn.execute("DELETE FROM people_embeddings WHERE person_id = ?", (person_id,))
+            conn.execute("DELETE FROM memory_notes WHERE person_id = ?", (person_id,))
+            conn.execute("DELETE FROM people WHERE id = ?", (person_id,))
+    except sqlite3.Error:
+        logger.exception("Failed to delete person_id=%s", person_id)
+
+
+def save_embedding(person_id: int, embedding: np.ndarray) -> None:
+    """Create or replace a person's face embedding."""
+    try:
+        ensure_person(person_id)
+        normalized = np.asarray(embedding, dtype=np.float32)
+        with _write_lock, _connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO people_embeddings (person_id, embedding, created_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(person_id) DO UPDATE SET
+                    embedding = excluded.embedding,
+                    created_at = excluded.created_at
+                """,
+                (person_id, normalized.tobytes(), _now()),
+            )
+    except sqlite3.Error:
+        logger.exception("Failed to save embedding for person_id=%s", person_id)
+
+
+def get_embeddings() -> list[tuple[int, np.ndarray]]:
+    """Return all enrolled face embeddings as float32 vectors."""
+    try:
+        with _connection() as conn:
+            rows = conn.execute(
+                "SELECT person_id, embedding FROM people_embeddings ORDER BY person_id ASC"
+            ).fetchall()
+        return [(row[0], np.frombuffer(row[1], dtype=np.float32).copy()) for row in rows]
+    except sqlite3.Error:
+        logger.exception("Failed to read face embeddings")
+        return []
 
 
 def add_note(person_id: int, note: str) -> None:

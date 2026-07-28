@@ -7,6 +7,8 @@ project with no browser in the loop). "robot" mode should instead route
 through the daemon's media pipeline (robot.media.*); that's not wired up yet.
 """
 
+from typing import Any, Optional
+
 import numpy as np
 import sherpa_onnx
 import sounddevice as sd
@@ -147,12 +149,20 @@ class AudioIO:
                     self._recognizer.reset(stream)
                     return text
 
-    def speak(self, text: str, emotion_tag: str) -> None:
+    def speak(self, text: str, emotion_tag: str, motion: Optional[Any] = None) -> None:
         """Synthesize text with piper and play it on this machine's real speaker."""
-        for chunk in self._voice.synthesize(text):
-            sd.play(
-                chunk.audio_float_array,
-                samplerate=chunk.sample_rate,
-                device=self.target.audio_output_device,
-            )
-            sd.wait()
+        if motion is not None:
+            motion.begin_speech()
+        try:
+            for chunk in self._voice.synthesize(text):
+                if motion is not None:
+                    motion.feed_speech_audio(chunk.audio_float_array)
+                sd.play(
+                    chunk.audio_float_array,
+                    samplerate=chunk.sample_rate,
+                    device=self.target.audio_output_device,
+                )
+                sd.wait()
+        finally:
+            if motion is not None:
+                motion.end_speech()

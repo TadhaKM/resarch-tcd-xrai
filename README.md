@@ -17,6 +17,7 @@ A brain/body-separated Reachy Mini voice assistant prototype.
 
 ```powershell
 pip install sherpa-onnx piper-tts sounddevice sentencepiece pypinyin ollama
+pip install mediapipe opencv-python onnxruntime
 ```
 
 Install Ollama (https://ollama.com/download) and pull the models:
@@ -46,6 +47,15 @@ curl -L -o models/tts/en_US-amy-medium.onnx \
   https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx
 curl -L -o models/tts/en_US-amy-medium.onnx.json \
   https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx.json
+
+# Face detection: MediaPipe BlazeFace short-range (~225KB)
+mkdir -p models/face
+curl -L -o models/face/blaze_face_short_range.tflite \
+  https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/latest/blaze_face_short_range.tflite
+
+# Face embedding: InsightFace buffalo_s/buffalo_sc MobileFaceNet recognizer (~13.6MB)
+curl -L -o models/face/w600k_mbf.onnx \
+  https://huggingface.co/deepghs/insightface/resolve/main/buffalo_s/w600k_mbf.onnx
 ```
 
 Then generate the custom wake word and ASR hotword token files (bias the
@@ -76,6 +86,41 @@ Both scripts synthesize test speech with piper rather than using a live mic --
 a reproducible way to validate the models/config are wired correctly. They
 don't replace testing with a real human voice.
 
+## People management
+
+Face detection uses `config.HardwareTarget.camera_source`; `None` selects the
+system default camera, an integer selects a local camera index, and a string can
+point at a device path or stream URL. Detection is throttled by
+`MODELS.face_detection_fps` and skips frames above that rate. The largest
+detected face is treated as the active conversation partner.
+
+Unknown faces are not enrolled just because they appear in a frame. Enrollment
+happens only after the person starts a conversation; Reachy asks for their name,
+then stores one embedding in SQLite. Matching uses cosine similarity with
+`MODELS.face_match_threshold` initially set to `0.65`.
+
+```powershell
+python manage_people.py list
+python manage_people.py delete 3
+```
+
+## Motion and personality
+
+`body/motion.py` runs a single motion-control loop that composes a fixed
+emotion pose, idle animation, face-tracking offset, and speech wobble into one
+`ReachyMini.set_target(...)` command stream. Speech overrides idle motion, and
+face tracking suppresses idle look-around while a face target is fresh.
+
+The supported emotion poses match the brain tags: `neutral`, `happy`,
+`curious`, `thinking`, `surprised`, and `sad`. Poses are tunable in
+`EmotionMapper`.
+
+To demonstrate the personality layer in Reachy Mini Control's 3D viewer:
+
+```powershell
+python demo_motion.py
+```
+
 ## Known limitations
 
 - "Reachy" is out-of-vocabulary for the (LibriSpeech-trained) STT model.
@@ -87,4 +132,6 @@ don't replace testing with a real human voice.
   "simulation"` so far (this machine's real mic/speaker via `sounddevice`).
   `mode == "robot"` raises `NotImplementedError` -- routing audio through the
   daemon's `robot.media` pipeline instead is not yet implemented.
-- `body/camera.py`, `body/face.py`, `body/motion.py` are still stubs.
+- `body/motion.py` is still a stub.
+- Face recognition is wired for simulation camera frames, but threshold/accuracy
+  still need validation with the actual robot camera and real enrolled people.

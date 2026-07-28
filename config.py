@@ -25,7 +25,7 @@ sim-vs-robot is not a choice of *which local device* to open, it's a choice of
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal, Optional, Union
 
 Mode = Literal["simulation", "robot"]
 
@@ -41,7 +41,9 @@ class HardwareTarget:
     # this machine's real mic/speaker. None = system default device.
     audio_input_device: Optional[str] = None
     audio_output_device: Optional[str] = None
-    camera_source: Optional[str] = None
+    # Used by body/camera.py. None means the system default camera; an int
+    # selects a local camera index; a string may be a device path or stream URL.
+    camera_source: Optional[Union[int, str]] = None
     # Used only when mode == "robot": ReachyMini media_backend, mirroring
     # reachy_mini_conversation_app's --wireless-version/--on-device flags.
     # "default" (Lite, USB), "gstreamer" (wireless, on-device),
@@ -117,6 +119,13 @@ class ModelConfig:
     # Long-term (cross-session) memory: SQLite in WAL mode. See brain/db.py.
     db_path: Path
 
+    # Face identity: MediaPipe handles detection; this ONNX MobileFaceNet-class
+    # recognizer maps the active face crop to a 512-d embedding on CPU.
+    face_detector_model_path: Path
+    face_embedding_model_path: Path
+    face_match_threshold: float
+    face_detection_fps: float
+
 
 OLLAMA_MODEL_PRIMARY = "qwen2.5:1.5b-instruct-q4_K_M"
 OLLAMA_MODEL_FALLBACK = "llama3.2:1b-instruct-q4_K_M"
@@ -147,4 +156,8 @@ MODELS = ModelConfig(
     ollama_host="http://localhost:11434",
     ollama_model=OLLAMA_MODEL_PRIMARY,
     db_path=Path(__file__).parent / "data" / "memory.db",
+    face_detector_model_path=MODELS_DIR / "face" / "blaze_face_short_range.tflite",
+    face_embedding_model_path=MODELS_DIR / "face" / "w600k_mbf.onnx",
+    face_match_threshold=0.65,
+    face_detection_fps=4.0,
 )

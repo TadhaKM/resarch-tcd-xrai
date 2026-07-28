@@ -2,7 +2,7 @@
 
 import re
 
-VALID_EMOTION_TAGS = frozenset({"happy", "sad", "curious", "surprised", "neutral"})
+VALID_EMOTION_TAGS = frozenset({"happy", "sad", "curious", "thinking", "surprised", "neutral"})
 
 # Tolerates one trailing punctuation mark after the bracket (e.g. "[emotion: happy].")
 # -- small models often add closing punctuation as if the tag were a normal word.
