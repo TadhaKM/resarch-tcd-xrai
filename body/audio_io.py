@@ -3,20 +3,57 @@
 In "simulation" mode, audio flows through this machine's real mic/speaker via
 sounddevice -- see config.py's HardwareTarget docstring for why (this mirrors
 reachy_mini_conversation_app's sim-vs-robot audio routing, translated for a
-project with no browser in the loop). "robot" mode should instead route
-through the daemon's media pipeline (robot.media.*); that's not wired up yet.
+project with no browser in the loop). In "robot" mode, audio instead flows
+through the daemon's own media pipeline (robot.media.start_recording()/
+get_audio_sample()/push_audio_sample()) -- the same thing LocalStream does in
+reachy_mini_conversation_app -- because this app runs ON the robot itself, so
+there's no separate machine's mic/speaker to reach for.
+
+This shares one ReachyMini media connection with Camera rather than opening a
+second one -- see camera.py's docstring for why (the daemon's media backend
+only supports one session per client).
+
+_mic_frames() is the one place that branches on target.mode for input; both
+wait_for_wake_word() and listen() consume it without caring where frames come
+from, so the STT/KWS decode loops aren't duplicated per mode.
 """
 
-from typing import Any, Optional
+import logging
+import time
+from typing import Any, Iterator, Optional
 
 import numpy as np
 import sherpa_onnx
 import sounddevice as sd
 from piper import PiperVoice
+from scipy.signal import resample
 
 from config import MODELS, HardwareTarget
 
+logger = logging.getLogger(__name__)
+
 FRAME_SAMPLES = int(MODELS.asr_sample_rate * 0.1)  # 100ms chunks
+
+# How much synthesized audio to keep queued ahead of realtime on the robot.
+# Sized against the ~1s control-link stalls seen over a phone hotspot (see
+# body/motion.py's _send_pose), since the same congestion gaps the audio.
+_PLAYBACK_LEAD_S = 1.0
+
+# Audio discarded right after a wake-word match, to clear the tail of the wake
+# phrase out of the buffer before the request is transcribed.
+_WAKE_DRAIN_S = 0.35
+
+# How often to report mic level while listening.
+_LEVEL_LOG_INTERVAL_S = 3.0
+
+# Automatic gain control (see AudioIO._apply_gain). Target sits below full
+# scale so normal variation between words doesn't clip; the envelope decays
+# slowly (~1.5s to halve at this chunk rate) so gain doesn't ramp up during
+# pauses and drag room noise up with it.
+_AGC_TARGET_PEAK = 0.65
+_AGC_MAX_GAIN = 120.0
+_AGC_DECAY = 0.985
+_AGC_NOISE_FLOOR = 0.0015
 
 # Streaming zipformer models need silence before AND after the real audio in a
 # one-shot (offline) decode: leading padding warms up the encoder's left
@@ -40,6 +77,13 @@ def _build_recognizer() -> sherpa_onnx.OnlineRecognizer:
         sample_rate=MODELS.asr_sample_rate,
         feature_dim=80,
         enable_endpoint_detection=True,
+        # Patience before any speech is decoded. The default (2.4s) ends the
+        # turn while someone is still drawing breath after the wake word --
+        # observed live, producing an empty transcript the LLM then "answered".
+        # Only this first window is generous; rule2 (silence *after* speech
+        # starts) is left at its default so replies still come promptly once
+        # you've actually said something.
+        rule1_min_trailing_silence=5.0,
         decoding_method="modified_beam_search",
         hotwords_file=str(MODELS.asr_hotwords_file),
         hotwords_score=MODELS.asr_hotwords_score,
@@ -60,20 +104,51 @@ def _build_spotter() -> sherpa_onnx.KeywordSpotter:
     )
 
 
+def _resample(samples: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
+    if from_rate == to_rate:
+        return samples
+    return resample(samples, int(len(samples) * to_rate / from_rate)).astype(np.float32)
+
+
 class AudioIO:
     """Wraps mic input (wake word + streaming STT) and speaker output (TTS)."""
 
-    def __init__(self, target: HardwareTarget) -> None:
+    def __init__(self, target: HardwareTarget, robot: Optional[Any] = None) -> None:
         self.target = target
-        if target.mode != "simulation":
-            raise NotImplementedError(
-                "AudioIO only talks to this machine's mic/speaker in simulation "
-                "mode so far -- robot mode should route through robot.media "
-                "instead, per config.py's HardwareTarget docstring."
-            )
         self._recognizer = _build_recognizer()
         self._spotter = _build_spotter()
         self._voice = PiperVoice.load(str(MODELS.tts_model_path), str(MODELS.tts_config_path))
+
+        self._robot: Optional[Any] = robot
+        self._owns_robot = robot is None
+        self._level_peak = 0.0
+        self._level_clipped = 0
+        self._level_samples = 0
+        self._level_logged_at = 0.0
+        self._agc_envelope = 0.0
+        self._agc_gain = float(target.mic_gain)
+        if target.mode == "robot":
+            if self._robot is None:
+                from reachy_mini import ReachyMini
+
+                self._robot = ReachyMini(
+                    host=target.daemon_host,
+                    port=target.daemon_port,
+                    media_backend=target.media_backend,
+                    log_level="WARNING",
+                )
+                self._robot.__enter__()
+            self._robot.media.start_recording()
+            self._robot.media.start_playing()
+
+    def close(self) -> None:
+        """Release the robot media connection, if this target uses one."""
+        if self._robot is not None:
+            self._robot.media.stop_recording()
+            self._robot.media.stop_playing()
+            if self._owns_robot:
+                self._robot.__exit__(None, None, None)
+            self._robot = None
 
     # --- offline processing, independent of the live mic: used both by the
     # real loop's helpers below and by scripted correctness tests that feed
@@ -108,61 +183,192 @@ class AudioIO:
             self._spotter.decode_stream(stream)
         return bool(self._spotter.get_result(stream))
 
-    # --- live mic/speaker on this machine ---
+    # --- live mic/speaker: robot.media in "robot" mode, this machine's real
+    # devices in "simulation" mode ---
+
+    def _log_level(self, samples: np.ndarray) -> None:
+        """Report post-gain mic level periodically.
+
+        Without this, "it didn't hear me" is unattributable: no audio arriving
+        at all, audio arriving too quiet to trigger, and audio clipping into
+        distortion all look identical from the outside. Peak is what the
+        wake-word model effectively sees; `clip` flags gain set too high.
+        """
+        now = time.monotonic()
+        self._level_peak = max(self._level_peak, float(np.abs(samples).max()))
+        self._level_clipped += int(np.count_nonzero(np.abs(samples) >= 0.999))
+        self._level_samples += samples.size
+        if now - self._level_logged_at < _LEVEL_LOG_INTERVAL_S:
+            return
+        clip_pct = 100.0 * self._level_clipped / max(1, self._level_samples)
+        logger.info(
+            "mic level: peak=%.3f clip=%.2f%% (gain=%.1fx%s)",
+            self._level_peak,
+            clip_pct,
+            self._agc_gain if self.target.mic_agc else self.target.mic_gain,
+            " auto" if self.target.mic_agc else "",
+        )
+        self._level_logged_at = now
+        self._level_peak = 0.0
+        self._level_clipped = 0
+        self._level_samples = 0
+
+    def _apply_gain(self, samples: np.ndarray) -> np.ndarray:
+        """Bring mic audio to a usable level for the STT/wake-word models.
+
+        A fixed multiplier can't work on this input: measured live, the same
+        speaker's wake word peaked at full scale (22% of samples clipped)
+        while their following question sat at 0.12 -- a ~20x spread, so any
+        constant either clips the loud parts or leaves the quiet ones
+        undecodable. Instead track a decaying peak envelope and derive the
+        gain from it, so loud passages are attenuated and quiet ones lifted.
+
+        The envelope decays slowly rather than following the signal down, so
+        gain doesn't surge during the pauses between words and amplify room
+        noise into the models.
+        """
+        if not self.target.mic_agc:
+            if self.target.mic_gain == 1.0:
+                return samples
+            return np.clip(samples * self.target.mic_gain, -1.0, 1.0)
+
+        peak = float(np.abs(samples).max())
+        self._agc_envelope = max(peak, self._agc_envelope * _AGC_DECAY)
+        if self._agc_envelope < _AGC_NOISE_FLOOR:
+            # Near-silence: leave it alone rather than amplifying hiss up to
+            # speech level, which would keep the recognizer permanently busy.
+            return np.clip(samples * self.target.mic_gain, -1.0, 1.0)
+
+        gain = min(_AGC_MAX_GAIN, _AGC_TARGET_PEAK / self._agc_envelope)
+        self._agc_gain = gain
+        return np.clip(samples * gain, -1.0, 1.0)
+
+    def _mic_frames(self) -> Iterator[np.ndarray]:
+        """Yield mono float32 chunks at MODELS.asr_sample_rate, forever."""
+        if self.target.mode == "robot":
+            input_rate = self._robot.media.get_input_audio_samplerate()
+            while True:
+                sample = self._robot.media.get_audio_sample()
+                if sample is None:
+                    time.sleep(0.01)
+                    continue
+                # robot.media returns interleaved-channel frames (stereo on this
+                # hardware); sherpa-onnx expects a flat mono sequence.
+                mono = sample[:, 0] if sample.ndim == 2 else sample
+                mono = self._apply_gain(mono)
+                self._log_level(mono)
+                yield _resample(mono, input_rate, MODELS.asr_sample_rate)
+        else:
+            with sd.InputStream(
+                samplerate=MODELS.asr_sample_rate,
+                channels=1,
+                dtype="float32",
+                device=self.target.audio_input_device,
+                blocksize=FRAME_SAMPLES,
+            ) as mic:
+                while True:
+                    samples, _ = mic.read(FRAME_SAMPLES)
+                    yield samples[:, 0]
 
     def wait_for_wake_word(self) -> None:
-        """Block on this machine's real mic until the wake word is heard."""
+        """Block until the wake word is heard."""
         stream = self._spotter.create_stream()
-        with sd.InputStream(
-            samplerate=MODELS.asr_sample_rate,
-            channels=1,
-            dtype="float32",
-            device=self.target.audio_input_device,
-            blocksize=FRAME_SAMPLES,
-        ) as mic:
-            while True:
-                samples, _ = mic.read(FRAME_SAMPLES)
-                stream.accept_waveform(MODELS.asr_sample_rate, samples[:, 0])
-                while self._spotter.is_ready(stream):
-                    self._spotter.decode_stream(stream)
-                if self._spotter.get_result(stream):
-                    self._spotter.reset_stream(stream)
-                    return
+        for frame in self._mic_frames():
+            stream.accept_waveform(MODELS.asr_sample_rate, frame)
+            while self._spotter.is_ready(stream):
+                self._spotter.decode_stream(stream)
+            result = self._spotter.get_result(stream)
+            if result:
+                logger.info("Wake word matched: %r", result)
+                self._spotter.reset_stream(stream)
+                # Drain whatever is still buffered from the wake phrase itself,
+                # so listen() starts on the request rather than transcribing
+                # the tail of "hey reachy" into it (that bleed produced
+                # "ISN'T THAT MOTIVE HAIR REACHY" from a clean utterance).
+                self._drain_mic(_WAKE_DRAIN_S)
+                return
+
+    def _drain_mic(self, seconds: float) -> None:
+        """Discard incoming mic audio for a short window."""
+        deadline = time.monotonic() + seconds
+        for _ in self._mic_frames():
+            if time.monotonic() >= deadline:
+                return
 
     def listen(self) -> str:
-        """Record and transcribe one utterance from this machine's real mic."""
+        """Record and transcribe one utterance.
+
+        Logs the partial transcript as it grows, so it's visible *what* the
+        recognizer is picking up and *when* -- a final-only log can't
+        distinguish "never heard you" from "heard you and mistranscribed it".
+        """
         stream = self._recognizer.create_stream()
-        with sd.InputStream(
-            samplerate=MODELS.asr_sample_rate,
-            channels=1,
-            dtype="float32",
-            device=self.target.audio_input_device,
-            blocksize=FRAME_SAMPLES,
-        ) as mic:
-            while True:
-                samples, _ = mic.read(FRAME_SAMPLES)
-                stream.accept_waveform(MODELS.asr_sample_rate, samples[:, 0])
-                while self._recognizer.is_ready(stream):
-                    self._recognizer.decode_stream(stream)
-                if self._recognizer.is_endpoint(stream):
-                    text = self._recognizer.get_result(stream).strip()
-                    self._recognizer.reset(stream)
-                    return text
+        partial = ""
+        started = time.monotonic()
+        for frame in self._mic_frames():
+            stream.accept_waveform(MODELS.asr_sample_rate, frame)
+            while self._recognizer.is_ready(stream):
+                self._recognizer.decode_stream(stream)
+
+            current = self._recognizer.get_result(stream).strip()
+            if current != partial:
+                partial = current
+                logger.info("  [%5.1fs] hearing: %s", time.monotonic() - started, partial)
+
+            if self._recognizer.is_endpoint(stream):
+                text = self._recognizer.get_result(stream).strip()
+                self._recognizer.reset(stream)
+                return text
 
     def speak(self, text: str, emotion_tag: str, motion: Optional[Any] = None) -> None:
-        """Synthesize text with piper and play it on this machine's real speaker."""
+        """Synthesize text with piper and play it."""
         if motion is not None:
             motion.begin_speech()
         try:
-            for chunk in self._voice.synthesize(text):
-                if motion is not None:
-                    motion.feed_speech_audio(chunk.audio_float_array)
-                sd.play(
-                    chunk.audio_float_array,
-                    samplerate=chunk.sample_rate,
-                    device=self.target.audio_output_device,
-                )
-                sd.wait()
+            if self.target.mode == "robot":
+                self._speak_robot(text, motion)
+            else:
+                self._speak_local(text, motion)
         finally:
             if motion is not None:
                 motion.end_speech()
+
+    def _speak_local(self, text: str, motion: Optional[Any]) -> None:
+        for chunk in self._voice.synthesize(text):
+            if motion is not None:
+                motion.feed_speech_audio(chunk.audio_float_array)
+            sd.play(
+                chunk.audio_float_array,
+                samplerate=chunk.sample_rate,
+                device=self.target.audio_output_device,
+            )
+            sd.wait()
+
+    def _speak_robot(self, text: str, motion: Optional[Any]) -> None:
+        """Stream synthesized audio to the robot, keeping its buffer ahead.
+
+        Pushing a chunk and then sleeping for exactly that chunk's duration
+        (the obvious approach) leaves the robot with no buffered audio at any
+        point, so every network hiccup lands as an audible gap mid-sentence.
+        Instead, run ahead by up to _PLAYBACK_LEAD_S of audio so there's always
+        a cushion queued to play through jitter, then sleep off whatever is
+        still unplayed so this call returns when the speech actually ends
+        (callers rely on that to sequence turns and motion).
+        """
+        output_rate = self._robot.media.get_output_audio_samplerate()
+        started = time.monotonic()
+        pushed_s = 0.0
+
+        for chunk in self._voice.synthesize(text):
+            if motion is not None:
+                motion.feed_speech_audio(chunk.audio_float_array)
+            audio = _resample(chunk.audio_float_array, chunk.sample_rate, output_rate)
+            self._robot.media.push_audio_sample(audio)
+            pushed_s += len(audio) / output_rate
+            ahead = pushed_s - (time.monotonic() - started)
+            if ahead > _PLAYBACK_LEAD_S:
+                time.sleep(ahead - _PLAYBACK_LEAD_S)
+
+        remaining = pushed_s - (time.monotonic() - started)
+        if remaining > 0:
+            time.sleep(remaining)

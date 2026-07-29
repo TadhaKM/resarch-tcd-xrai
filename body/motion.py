@@ -34,7 +34,10 @@ class EmotionMapper:
     """Map reply emotion tags to concrete pose targets.
 
     Angles are stored in degrees here because these are design-tuning values;
-    they are converted to radians at the SDK boundary.
+    they are converted to radians at the SDK boundary. This is the continuous
+    resting/baseline expression, held throughout a reply; MotionController's
+    express_move() layers a one-shot recorded animation (pollen-robotics/
+    reachy-mini-emotions-library) on top for a stronger physical flourish.
     """
 
     _POSES: dict[EmotionTag, HeadPose] = {
@@ -48,6 +51,19 @@ class EmotionMapper:
 
     def get(self, tag: str) -> HeadPose:
         return self._POSES.get(tag, self._POSES["neutral"])
+
+
+# One representative recorded move per brain emotion tag, picked from the 85
+# available in pollen-robotics/reachy-mini-emotions-library. No "neutral"
+# entry -- neutral is the resting baseline pose above, not worth interrupting
+# it for a flourish every reply.
+EMOTION_MOVES: dict[EmotionTag, str] = {
+    "happy": "cheerful1",
+    "sad": "sad1",
+    "curious": "curious1",
+    "surprised": "surprised1",
+    "thinking": "thoughtful1",
+}
 
 
 class HeadWobbler:
@@ -138,10 +154,40 @@ class _TrackingTarget:
     expires_at: float
 
 
+_SEND_WARNING_INTERVAL_S = 10.0
+
+
+def _enable_motors(robot: object) -> None:
+    """Arm the robot's motors, tolerating SDK versions that lack the call."""
+    if not hasattr(robot, "enable_motors"):
+        return
+    try:
+        robot.enable_motors()
+    except Exception:
+        logger.exception("Failed to enable Reachy Mini motors")
+
+
 class MotionController:
     """Coordinates Reachy Mini head and antenna personality motion."""
 
-    def __init__(self, target: HardwareTarget, *, connect: bool = True) -> None:
+    def __init__(
+        self,
+        target: HardwareTarget,
+        *,
+        connect: bool = True,
+        robot: object | None = None,
+    ) -> None:
+        """Coordinate motion, optionally over a caller-supplied connection.
+
+        Pass `robot` to reuse an existing ReachyMini instead of opening a
+        second one. Anything that also needs the daemon's camera/mic must do
+        this: MotionController's own connection (see _connect_robot) requests
+        media_backend="no_media", which makes the SDK call release_media() --
+        a *daemon-wide* teardown of the media server, not a per-connection
+        opt-out. It deletes the camera IPC socket and unregisters the WebRTC
+        producer, so any media connection made afterwards has nothing to
+        attach to, and one made earlier gets torn out from under it.
+        """
         self.target = target
         self.mapper = EmotionMapper()
         self.wobbler = HeadWobbler()
@@ -149,14 +195,28 @@ class MotionController:
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
-        self._robot: object | None = None
+        self._robot: object | None = robot
+        self._owns_robot = robot is None
         self._base_pose = self.mapper.get("neutral")
         self._current_pose = self._base_pose
         self._tracking: Optional[_TrackingTarget] = None
-        self._control_hz = 50.0
+        # Every pose update is a websocket message. On-device that's cheap, but
+        # to a remote client each one crosses the wireless link while WebRTC
+        # media is already saturating it -- 50Hz there mostly produces dropped
+        # frames and starves the status messages the SDK's 1s liveness check
+        # depends on. 20Hz still reads as smooth for breathing/idle motion.
+        self._control_hz = 20.0 if target.daemon_host not in ("localhost", "127.0.0.1") else 50.0
+        self._send_failures = 0
+        self._last_send_warning_at = 0.0
+        self._paused = False
+        self._moves = self._load_recorded_moves()
 
-        if connect:
+        if self._robot is None and connect:
             self._robot = self._connect_robot()
+        elif self._robot is not None:
+            # Caller-supplied connection: still ours to arm, since
+            # _connect_robot's own enable_motors call is skipped.
+            _enable_motors(self._robot)
         self.start()
 
     def start(self) -> None:
@@ -171,16 +231,53 @@ class MotionController:
             self._thread.join(timeout=1.0)
             self._thread = None
         robot = self._robot
-        if robot is not None and hasattr(robot, "__exit__"):
+        if robot is not None and self._owns_robot and hasattr(robot, "__exit__"):
             try:
                 robot.__exit__(None, None, None)
             except Exception:
                 logger.exception("Failed to close Reachy Mini SDK connection")
+        self._robot = None
 
     def express(self, emotion_tag: str) -> None:
         """Set the primary expression pose for the next reply."""
         with self._lock:
             self._base_pose = self.mapper.get(emotion_tag)
+
+    def express_move(self, emotion_tag: str) -> None:
+        """Play a recorded emotion animation once, as a physical flourish.
+
+        Non-blocking (runs in a background thread) so it never adds latency
+        to a reply -- call this once per turn with the *final* tag, not per
+        streamed sentence. The continuous procedural loop is paused for the
+        move's duration since both would otherwise fight over set_target().
+        No-op for tags with no entry in EMOTION_MOVES (currently "neutral"),
+        if the robot isn't connected, or if the library failed to load.
+        """
+        move_name = EMOTION_MOVES.get(emotion_tag)
+        if move_name is None or self._robot is None or self._moves is None:
+            return
+        try:
+            move = self._moves.get(move_name)
+        except Exception:
+            logger.exception("Failed to load recorded move %r", move_name)
+            return
+
+        def _play() -> None:
+            with self._lock:
+                self._paused = True
+            try:
+                self._robot.play_move(move, initial_goto_duration=0.3)
+            except Exception as exc:
+                # Same transient link stall as _send_pose, and just as
+                # non-fatal -- the reply is already spoken; only the flourish
+                # is lost. Log one line, not a traceback: it fails in exactly
+                # the conditions that are already being reported there.
+                logger.warning("Skipped recorded move %r: %s", move_name, exc)
+            finally:
+                with self._lock:
+                    self._paused = False
+
+        threading.Thread(target=_play, name="motion-recorded-move", daemon=True).start()
 
     def track_face(
         self,
@@ -221,9 +318,12 @@ class MotionController:
         period = 1.0 / self._control_hz
         while not self._stop.is_set():
             started = time.monotonic()
-            pose = self._compose_pose(started)
-            self._current_pose = _lerp_pose(self._current_pose, pose, alpha=0.16)
-            self._send_pose(self._current_pose)
+            with self._lock:
+                paused = self._paused
+            if not paused:
+                pose = self._compose_pose(started)
+                self._current_pose = _lerp_pose(self._current_pose, pose, alpha=0.16)
+                self._send_pose(self._current_pose)
             elapsed = time.monotonic() - started
             self._stop.wait(max(0.0, period - elapsed))
 
@@ -248,6 +348,17 @@ class MotionController:
 
         return _clamp_pose(pose)
 
+    def _load_recorded_moves(self) -> object | None:
+        """Load pollen-robotics/reachy-mini-emotions-library. Independent of
+        the robot connection -- just a HuggingFace dataset download/cache."""
+        try:
+            from reachy_mini.motion.recorded_move import RecordedMoves
+
+            return RecordedMoves("pollen-robotics/reachy-mini-emotions-library")
+        except Exception as exc:
+            logger.warning("Recorded emotion moves disabled: %s", exc)
+            return None
+
     def _connect_robot(self) -> object | None:
         try:
             from reachy_mini import ReachyMini
@@ -262,8 +373,7 @@ class MotionController:
                 log_level="WARNING",
             )
             robot.__enter__()
-            if hasattr(robot, "enable_motors"):
-                robot.enable_motors()
+            _enable_motors(robot)
             return robot
         except Exception as exc:
             logger.warning("Reachy Mini motion disabled: %s", exc)
@@ -279,8 +389,34 @@ class MotionController:
                 antennas=np.deg2rad(np.array(pose.antennas, dtype=np.float64)),
                 body_yaw=0.0,
             )
-        except Exception:
-            logger.exception("Failed to send Reachy Mini target")
+        except Exception as exc:
+            # Best-effort cosmetic channel: drop the frame, never raise, and
+            # never log per-tick. The SDK flags the link dead when no status
+            # message arrives within 1s (WSClient.is_connected) and fails every
+            # send until one does -- routine over a congested wireless link,
+            # where the WebRTC media stream competes with these updates. It
+            # clears itself once messages resume, so retrying silently is the
+            # correct response; at 50Hz, logging each failure produced
+            # thousands of identical tracebacks and buried the real logs.
+            self._log_send_failure(exc)
+        else:
+            if self._send_failures:
+                logger.info(
+                    "Reachy Mini motion link recovered after %d dropped frame(s).",
+                    self._send_failures,
+                )
+                self._send_failures = 0
+
+    def _log_send_failure(self, exc: Exception) -> None:
+        """Count a dropped pose frame, logging at most once per interval."""
+        self._send_failures += 1
+        now = time.monotonic()
+        if now - self._last_send_warning_at < _SEND_WARNING_INTERVAL_S:
+            return
+        self._last_send_warning_at = now
+        logger.warning(
+            "Dropping Reachy Mini pose updates (%d so far): %s", self._send_failures, exc
+        )
 
 
 def _create_head_pose(pose: HeadPose) -> np.ndarray:

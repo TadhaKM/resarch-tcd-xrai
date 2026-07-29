@@ -1,17 +1,20 @@
 """Face detection, embedding, enrollment, and identity matching."""
 
+import logging
+import multiprocessing
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 import cv2
-import mediapipe as mp
 import numpy as np
 import onnxruntime as ort
 
 from brain import db
 from config import MODELS, HardwareTarget
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -21,6 +24,61 @@ class DetectedFace:
     bbox: tuple[int, int, int, int]
     confidence: float
     crop: np.ndarray
+
+
+def _build_face_detector(detector_path: str) -> None:
+    """Construct a MediaPipe FaceDetector. Run only inside the probe subprocess
+    below (or FaceIdentifier itself, once the probe has cleared it) -- never
+    call this directly in a process you can't afford to lose."""
+    import mediapipe as mp
+
+    base_options = mp.tasks.BaseOptions(model_asset_path=detector_path)
+    options = mp.tasks.vision.FaceDetectorOptions(
+        base_options=base_options,
+        running_mode=mp.tasks.vision.RunningMode.IMAGE,
+        min_detection_confidence=0.5,
+    )
+    mp.tasks.vision.FaceDetector.create_from_options(options)
+
+
+_face_detector_usable: Optional[bool] = None
+
+
+def _face_detector_is_usable(detector_path: Path) -> bool:
+    """Probe, once per process, whether this CPU can run the MediaPipe face
+    detector at all.
+
+    On some ARM CPUs (e.g. Raspberry Pi CM4's Cortex-A72, which lacks the
+    ARMv8 Crypto/AES extension MediaPipe's binary was built expecting),
+    constructing the detector doesn't raise a Python exception -- it's a
+    native SIGILL that kills the whole process, so it can't be caught with
+    try/except in-process. Building it once in a throwaway subprocess lets
+    any caller degrade to face-ID-disabled instead of taking the entire
+    voice assistant down with it, on whatever hardware this turns out to be
+    true for, not just one specific machine.
+    """
+    global _face_detector_usable
+    if _face_detector_usable is not None:
+        return _face_detector_usable
+
+    ctx = multiprocessing.get_context("spawn")
+    process = ctx.Process(target=_build_face_detector, args=(str(detector_path),))
+    process.start()
+    process.join(timeout=30)
+    if process.is_alive():
+        process.terminate()
+        process.join()
+        _face_detector_usable = False
+    else:
+        _face_detector_usable = process.exitcode == 0
+
+    if not _face_detector_usable:
+        logger.warning(
+            "MediaPipe face detector crashed probe construction (exit code %s) -- "
+            "disabling face ID for this run.",
+            process.exitcode,
+        )
+    return _face_detector_usable
 
 
 class FaceIdentifier:
@@ -35,6 +93,15 @@ class FaceIdentifier:
             raise FileNotFoundError(
                 f"MediaPipe face detector model not found at {detector_path}."
             )
+
+        self._available = _face_detector_is_usable(detector_path)
+        if not self._available:
+            self._detector = None
+            self._session = None
+            return
+
+        import mediapipe as mp
+
         base_options = mp.tasks.BaseOptions(model_asset_path=str(detector_path))
         options = mp.tasks.vision.FaceDetectorOptions(
             base_options=base_options,
@@ -62,13 +129,15 @@ class FaceIdentifier:
         instead of processing every one. Single-frame validation/conversation
         calls may pass force=True.
         """
-        if frame is None:
+        if not self._available or frame is None:
             return None
 
         now = time.monotonic()
         if not force and now - self._last_detection_at < self._min_interval:
             return None
         self._last_detection_at = now
+
+        import mediapipe as mp
 
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)

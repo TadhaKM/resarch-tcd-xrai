@@ -1,6 +1,10 @@
 __pycache__/
 *.pyc
 
+# Runtime logs from start_reachy.ps1 / main.py (per-run diagnostics, and they
+# contain transcripts of whatever was said to the robot).
+*.log
+
 # Downloaded model weights (~700MB) -- reproducible from the exact URLs/commands
 # documented in config.py and body/audio_io.py, not source to track in git.
 models/

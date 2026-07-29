@@ -49,6 +49,19 @@ class HardwareTarget:
     # "default" (Lite, USB), "gstreamer" (wireless, on-device),
     # "webrtc" (wireless, fully remote).
     media_backend: str = "default"
+    # Linear gain applied to captured mic audio before STT/wake-word decoding.
+    # Measured on the Reachy Mini's own mic through the daemon's pipeline:
+    # normal speech at conversational distance peaked at 0.04 of full scale
+    # (median RMS 0.0009), quiet enough that the wake-word spotter only fired
+    # if you shouted. The models want a signal near full scale, so this is a
+    # calibration constant for that hardware path, not a preference -- leave
+    # it 1.0 for a normal (already correctly-levelled) laptop mic.
+    mic_gain: float = 1.0
+    # When True, mic_gain is only the fallback used near silence, and the live
+    # gain is derived from the signal instead (AudioIO._apply_gain). Needed on
+    # the robot, where one speaker's wake word clipped at full scale while
+    # their next sentence sat at 0.12 -- no single multiplier covers both.
+    mic_agc: bool = False
 
 
 SIMULATION = HardwareTarget(
@@ -62,10 +75,53 @@ SIMULATION = HardwareTarget(
 
 ROBOT = HardwareTarget(
     mode="robot",
-    daemon_host="reachy-mini.local",
+    # This app runs *on* the robot's own CM4, alongside the daemon -- "localhost",
+    # not "reachy-mini.local" (that hostname is for a remote client controlling
+    # the robot over the network -- see ROBOT_REMOTE below).
+    daemon_host="localhost",
     daemon_port=8000,
     camera_source="default",
+    # "default", not "webrtc" or the deprecated "gstreamer" name: with
+    # daemon_host="localhost", connection_mode resolves to "localhost_only",
+    # so the SDK auto-selects LOCAL (reads camera/audio via the daemon's Unix
+    # socket / dmix-shared ALSA devices -- no WebRTC/ICE involved). WebRTC
+    # over loopback was tried and hit "Network error: Connection timed out"
+    # -- ICE doesn't like connecting to yourself. LOCAL only works once the
+    # daemon has actually built its media pipeline at least once since boot
+    # (its camera IPC socket is created at daemon startup, not before) --
+    # if this ever regresses to a connection error again, check whether the
+    # daemon needs restarting, not whether this value needs changing back.
+    media_backend="default",
+    # The daemon's own mic volume is already at 100%, so gain here is the only
+    # remaining lever. mic_agc drives it live; this fixed value applies only
+    # near silence, where dividing by a tiny envelope would otherwise amplify
+    # room noise to speech level.
+    mic_gain=20.0,
+    mic_agc=True,
+)
+
+# A laptop/desktop runs the STT/LLM/TTS pipeline (far more CPU than the CM4 has)
+# while the robot itself only serves as the media endpoint -- its own mic,
+# speaker, camera, and motors -- reached over the network through the daemon's
+# WebRTC transport instead of a local device. Same code path as ROBOT (mode
+# stays "robot": audio/camera/motion all still go through robot.media/
+# play_move), only daemon_host and media_backend differ, per media_backend's
+# docstring above ("webrtc" (wireless, fully remote)).
+#
+# daemon_host is the robot's current LAN address, not "reachy-mini.local":
+# mDNS resolution isn't reliable from this machine (confirmed failing while
+# the IP itself still pings fine), and DHCP has already renewed this IP once
+# this session -- re-check with `ping reachy-mini.local` or the robot's Wi-Fi
+# menu if this stops connecting.
+ROBOT_REMOTE = HardwareTarget(
+    mode="robot",
+    daemon_host="10.41.102.231",
+    daemon_port=8000,
+    camera_source=None,
     media_backend="webrtc",
+    # Same physical mic and daemon pipeline as ROBOT -- see mic_gain above.
+    mic_gain=20.0,
+    mic_agc=True,
 )
 
 
@@ -73,7 +129,12 @@ def default_target() -> HardwareTarget:
     """Return the active HardwareTarget, selected via the REACHY_TARGET env var."""
     import os
 
-    return ROBOT if os.getenv("REACHY_TARGET", "simulation") == "robot" else SIMULATION
+    target = os.getenv("REACHY_TARGET", "simulation")
+    if target == "robot":
+        return ROBOT
+    if target == "robot_remote":
+        return ROBOT_REMOTE
+    return SIMULATION
 
 
 @dataclass(frozen=True)
@@ -115,6 +176,11 @@ class ModelConfig:
     # ollama_model at OLLAMA_MODEL_FALLBACK below; no code changes needed.
     ollama_host: str
     ollama_model: str
+    # Hard cap on generated tokens (Ollama's num_predict). Measured on the
+    # robot's CM4: ~1-1.5 tokens/sec regardless of which small model was
+    # tried, so reply length -- not model choice -- is what makes worst-case
+    # latency unpredictable (a 73-token reply took 66s). This bounds it.
+    llm_max_tokens: int
 
     # Long-term (cross-session) memory: SQLite in WAL mode. See brain/db.py.
     db_path: Path
@@ -150,11 +216,17 @@ MODELS = ModelConfig(
     / "kws"
     / "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
     / "custom_keywords.txt",
-    kws_threshold=0.15,
+    # 0.05, not the 0.15 tuned in simulation: lower = easier to trigger. Over
+    # the robot's own (very quiet) mic, 0.15 needed shouting. Earlier testing
+    # found 0.05-0.2 indistinguishable on clean synthesized audio, so this
+    # trades nothing there and buys real sensitivity on weak live input. Raise
+    # it back toward 0.15 if "Reachy" starts firing on unrelated speech.
+    kws_threshold=0.05,
     tts_model_path=MODELS_DIR / "tts" / "en_US-amy-medium.onnx",
     tts_config_path=MODELS_DIR / "tts" / "en_US-amy-medium.onnx.json",
     ollama_host="http://localhost:11434",
     ollama_model=OLLAMA_MODEL_PRIMARY,
+    llm_max_tokens=60,
     db_path=Path(__file__).parent / "data" / "memory.db",
     face_detector_model_path=MODELS_DIR / "face" / "blaze_face_short_range.tflite",
     face_embedding_model_path=MODELS_DIR / "face" / "w600k_mbf.onnx",
