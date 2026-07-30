@@ -115,7 +115,7 @@ ROBOT = HardwareTarget(
 # menu if this stops connecting.
 ROBOT_REMOTE = HardwareTarget(
     mode="robot",
-    daemon_host="10.41.102.231",
+    daemon_host="10.142.104.231",
     daemon_port=8000,
     camera_source=None,
     media_backend="webrtc",

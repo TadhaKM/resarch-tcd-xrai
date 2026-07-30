@@ -2,6 +2,7 @@
 
 import logging
 import multiprocessing
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +16,59 @@ from brain import db
 from config import MODELS, HardwareTarget
 
 logger = logging.getLogger(__name__)
+
+
+#: Lead-ins people actually say when asked their name, stripped before the
+#: rest is treated as the name itself ("it's Tadhg" -> "Tadhg").
+_NAME_PREFIXES = (
+    "my name is",
+    "my names",
+    "i am",
+    "i'm",
+    "im",
+    "it is",
+    "it's",
+    "its",
+    "this is",
+    "call me",
+    "the name is",
+)
+
+_MAX_NAME_WORDS = 4
+_MAX_NAME_CHARS = 40
+
+
+def clean_spoken_name(text: str) -> Optional[str]:
+    """Return a plausible name from a speech transcript, or None.
+
+    The recognizer emits uppercase, unpunctuated text and will happily
+    transcribe overheard conversation, so this is a filter as much as a
+    formatter: anything too long to be a name is rejected outright rather
+    than truncated, since a long transcript means the robot captured
+    something other than an answer to "what's your name?".
+    """
+    cleaned = re.sub(r"[^A-Za-z' -]", " ", text or "")
+    cleaned = " ".join(cleaned.split()).strip(" -'")
+    if not cleaned:
+        return None
+
+    lowered = cleaned.lower()
+    for prefix in _NAME_PREFIXES:
+        if lowered.startswith(prefix + " "):
+            cleaned = cleaned[len(prefix) :].strip(" -'")
+            break
+
+    if not cleaned or len(cleaned) > _MAX_NAME_CHARS:
+        return None
+    words = cleaned.split()
+    if not (1 <= len(words) <= _MAX_NAME_WORDS):
+        return None
+    # A single letter or two is far more often a mis-decode of noise than a
+    # real answer, and it would bind a face embedding permanently.
+    if len(cleaned.replace(" ", "")) < 3:
+        return None
+
+    return " ".join(word.capitalize() for word in words)
 
 
 @dataclass(frozen=True)
@@ -200,10 +254,24 @@ class FaceIdentifier:
         person_id, score = self.match_embedding(embedding)
         return person_id, face, score
 
-    def enroll(self, name: str, face: DetectedFace) -> int:
-        """Create a person record and save this face embedding."""
-        person_id = db.create_person(name.strip() or None)
+    def enroll(self, name: str, face: DetectedFace) -> Optional[int]:
+        """Create a person record and save this face embedding.
+
+        Returns None when `name` doesn't look like one, rather than enrolling
+        anyway -- what reaches here is raw speech-to-text of a noisy room, and
+        storing it unchecked filled the people table with rows like
+        "IS IT THAT CONNECTED THROUGH OPEN AIR HE ASKED AS IT'S LIKE A SOME
+        PANAD OF THEM...". A bad enrollment is worse than none: it also binds
+        a face embedding, so the robot then "recognises" someone by the wrong
+        name and can't be corrected without editing the database.
+        """
+        clean = clean_spoken_name(name)
+        if clean is None:
+            logger.info("Rejected implausible name from speech: %r", name)
+            return None
+        person_id = db.create_person(clean)
         db.save_embedding(person_id, self.embedding_for_face(face))
+        logger.info("Enrolled %r as person %d", clean, person_id)
         return person_id
 
     @staticmethod

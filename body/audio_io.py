@@ -53,7 +53,17 @@ _LEVEL_LOG_INTERVAL_S = 3.0
 _AGC_TARGET_PEAK = 0.65
 _AGC_MAX_GAIN = 120.0
 _AGC_DECAY = 0.985
-_AGC_NOISE_FLOOR = 0.0015
+
+# Noise gate. The floor tracks the room's quiet level: fast toward quieter
+# input, slow away from it, so a pause pulls it down within a second or so
+# while speech barely moves it. Audio only counts as speech once it exceeds
+# that floor by _NOISE_GATE_RATIO -- 4x (~12dB) clears typical room tone
+# without needing someone to raise their voice. _AGC_ABSOLUTE_FLOOR stops a
+# dead-silent room from driving the gate to zero and re-opening on hiss.
+_NOISE_FLOOR_ATTACK = 0.05
+_NOISE_FLOOR_RELEASE = 0.0008
+_NOISE_GATE_RATIO = 4.0
+_AGC_ABSOLUTE_FLOOR = 0.002
 
 # Streaming zipformer models need silence before AND after the real audio in a
 # one-shot (offline) decode: leading padding warms up the encoder's left
@@ -127,6 +137,7 @@ class AudioIO:
         self._level_logged_at = 0.0
         self._agc_envelope = 0.0
         self._agc_gain = float(target.mic_gain)
+        self._agc_noise_floor = _AGC_ABSOLUTE_FLOOR
         if target.mode == "robot":
             if self._robot is None:
                 from reachy_mini import ReachyMini
@@ -233,11 +244,27 @@ class AudioIO:
             return np.clip(samples * self.target.mic_gain, -1.0, 1.0)
 
         peak = float(np.abs(samples).max())
+
+        # Learn the room's own quiet level instead of assuming one. A fixed
+        # floor was tried and failed live: set below this room's ambient, the
+        # AGC normalised background conversation to full scale and the
+        # recognizer transcribed the room continuously (which then reached
+        # enrollment and stored overheard speech as a person's name). The
+        # floor rises quickly toward quiet input and falls back slowly, so it
+        # settles on the background level rather than on speech.
+        if peak < self._agc_noise_floor:
+            self._agc_noise_floor += (peak - self._agc_noise_floor) * _NOISE_FLOOR_ATTACK
+        else:
+            self._agc_noise_floor += (peak - self._agc_noise_floor) * _NOISE_FLOOR_RELEASE
+
         self._agc_envelope = max(peak, self._agc_envelope * _AGC_DECAY)
-        if self._agc_envelope < _AGC_NOISE_FLOOR:
-            # Near-silence: leave it alone rather than amplifying hiss up to
-            # speech level, which would keep the recognizer permanently busy.
-            return np.clip(samples * self.target.mic_gain, -1.0, 1.0)
+
+        # Gate: only treat this as speech when it stands clear of the room.
+        # Below that, pass it through at unity so silence stays silent --
+        # amplifying it would just manufacture input out of noise.
+        if self._agc_envelope < max(_AGC_ABSOLUTE_FLOOR, self._agc_noise_floor * _NOISE_GATE_RATIO):
+            self._agc_gain = 1.0
+            return samples
 
         gain = min(_AGC_MAX_GAIN, _AGC_TARGET_PEAK / self._agc_envelope)
         self._agc_gain = gain
