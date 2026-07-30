@@ -65,6 +65,11 @@ _NOISE_FLOOR_RELEASE = 0.0008
 _NOISE_GATE_RATIO = 4.0
 _AGC_ABSOLUTE_FLOOR = 0.002
 
+# How often to start a fresh wake-word stream while idle (see
+# wait_for_wake_word). Short enough that a degraded stream self-corrects
+# within one attempt, long enough not to sit mid-phrase repeatedly.
+_KWS_STREAM_RECYCLE_S = 20.0
+
 # Streaming zipformer models need silence before AND after the real audio in a
 # one-shot (offline) decode: leading padding warms up the encoder's left
 # context (a stream that starts cold garbles the first word or two), and
@@ -298,9 +303,24 @@ class AudioIO:
                     yield samples[:, 0]
 
     def wait_for_wake_word(self) -> None:
-        """Block until the wake word is heard."""
+        """Block until the wake word is heard.
+
+        The spotter stream is recycled periodically. This loop can run for
+        hours between matches, and a single stream fed continuously that whole
+        time stops detecting reliably -- observed live, where the wake word
+        matched shortly after startup and then went unrecognised for minutes
+        while audio was still clearly arriving at a healthy level. Starting a
+        fresh stream costs nothing here (no audio is buffered across the swap
+        beyond the gap between frames) and bounds how much state can build up.
+        """
         stream = self._spotter.create_stream()
+        recycle_at = time.monotonic() + _KWS_STREAM_RECYCLE_S
         for frame in self._mic_frames():
+            now = time.monotonic()
+            if now >= recycle_at:
+                stream = self._spotter.create_stream()
+                recycle_at = now + _KWS_STREAM_RECYCLE_S
+
             stream.accept_waveform(MODELS.asr_sample_rate, frame)
             while self._spotter.is_ready(stream):
                 self._spotter.decode_stream(stream)
