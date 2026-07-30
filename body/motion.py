@@ -125,19 +125,23 @@ class IdleAnimator:
         self._look_target = HeadPose()
 
     def offset(self, now: float) -> HeadPose:
+        # Amplitudes are deliberately well above the smallest visible movement.
+        # These started around 1 degree of pitch, which is real motion the
+        # motors do execute but nobody can see -- the robot read as switched
+        # off while sitting there idling correctly.
         breathing = HeadPose(
-            pitch=1.2 * math.sin(now * math.tau * 0.18),
-            roll=0.7 * math.sin(now * math.tau * 0.11),
-            z=2.5 * math.sin(now * math.tau * 0.18),
+            pitch=3.5 * math.sin(now * math.tau * 0.18),
+            roll=1.8 * math.sin(now * math.tau * 0.11),
+            z=7.0 * math.sin(now * math.tau * 0.18),
         )
 
         if now >= self._next_look_at:
             self._look_until = now + self._rng.uniform(1.4, 2.8)
-            self._next_look_at = self._look_until + self._rng.uniform(4.0, 9.0)
+            self._next_look_at = self._look_until + self._rng.uniform(3.0, 6.5)
             self._look_target = HeadPose(
-                pitch=self._rng.uniform(-3.0, 4.0),
-                yaw=self._rng.uniform(-13.0, 13.0),
-                roll=self._rng.uniform(-3.0, 3.0),
+                pitch=self._rng.uniform(-6.0, 8.0),
+                yaw=self._rng.uniform(-22.0, 22.0),
+                roll=self._rng.uniform(-6.0, 6.0),
             )
 
         if now < self._look_until:
@@ -155,6 +159,11 @@ class _TrackingTarget:
 
 
 _SEND_WARNING_INTERVAL_S = 10.0
+
+# Blend factor for daemon-side face tracking (see set_face_tracking). High
+# enough to hold someone's gaze convincingly, low enough that the emotion
+# poses and speech wobble still read on the head.
+_FACE_TRACK_WEIGHT = 0.65
 
 
 def _enable_motors(robot: object) -> None:
@@ -209,6 +218,7 @@ class MotionController:
         self._send_failures = 0
         self._last_send_warning_at = 0.0
         self._paused = False
+        self._daemon_tracking = False
         self._moves = self._load_recorded_moves()
 
         if self._robot is None and connect:
@@ -242,6 +252,127 @@ class MotionController:
         """Set the primary expression pose for the next reply."""
         with self._lock:
             self._base_pose = self.mapper.get(emotion_tag)
+
+    def set_face_tracking(self, enabled: bool) -> None:
+        """Record whether something is continuously aiming the head at a face.
+
+        Tracking itself is done by the caller (see body/face_tracker.py), not
+        here and not by the daemon: the SDK exposes start_head_tracking(), but
+        this robot's daemon (1.8.3) has no such command and rejects it over the
+        websocket -- "Input tag 'set_head_tracking' does not match any of the
+        expected tags" -- while the SDK call itself returns normally, so the
+        feature looks enabled and does nothing. This flag only lets other
+        motion (dance, per-turn aiming) know to stand aside.
+        """
+        self._daemon_tracking = enabled
+
+    def wake_up(self) -> None:
+        """Play a short, unmistakable greeting: look around, then nod."""
+        if self._robot is None:
+            logger.info("Wake-up skipped: no robot connection.")
+            return
+
+        def _perform() -> None:
+            with self._lock:
+                self._paused = True
+            try:
+                logger.info("Waking up.")
+                for pose in (
+                    HeadPose(yaw=22.0, antennas=(35.0, -35.0)),
+                    HeadPose(yaw=-22.0, antennas=(-35.0, 35.0)),
+                    HeadPose(pitch=14.0, z=10.0, antennas=(45.0, -45.0)),
+                    HeadPose(pitch=-10.0, z=-6.0, antennas=(-20.0, 20.0)),
+                    self.mapper.get("neutral"),
+                ):
+                    deadline = time.monotonic() + 0.55
+                    while time.monotonic() < deadline:
+                        self._send_pose(pose)
+                        time.sleep(0.02)
+                self._current_pose = self.mapper.get("neutral")
+                logger.info("Awake.")
+            except Exception as exc:
+                logger.warning("Wake-up interrupted: %s", exc)
+            finally:
+                with self._lock:
+                    self._paused = False
+
+        threading.Thread(target=_perform, name="motion-wake", daemon=True).start()
+
+    def dance(self, beats: int = 8, bpm: float = 108.0) -> None:
+        """Perform a short head-and-antenna dance.
+
+        Generated rather than played from the recorded-move library so it can
+        run for any number of beats and stay in time with itself. Like
+        express_move this pauses the procedural loop for the duration --
+        otherwise breathing and idle motion fight the choreography for the
+        same joints -- and runs on its own thread so a caller can keep talking
+        over it.
+        """
+        if self._robot is None:
+            logger.info("Dance skipped: no robot connection.")
+            return
+
+        def _perform() -> None:
+            # Face tracking steers the head too, so it has to stand down for
+            # the duration or the choreography and the tracker pull against
+            # each other and the dance comes out muddy.
+            was_tracking = self._daemon_tracking
+            if was_tracking:
+                self.set_face_tracking(False)
+            with self._lock:
+                self._paused = True
+            try:
+                self._run_dance(beats, bpm)
+            except Exception as exc:
+                logger.warning("Dance interrupted: %s", exc)
+            finally:
+                with self._lock:
+                    self._paused = False
+                if was_tracking:
+                    self.set_face_tracking(True)
+
+        threading.Thread(target=_perform, name="motion-dance", daemon=True).start()
+
+    def _run_dance(self, beats: int, bpm: float) -> None:
+        """Drive the joints through the choreography, in time."""
+        beat_s = 60.0 / bpm
+        step_hz = 50.0
+        started = time.monotonic()
+        total_s = beats * beat_s
+        logger.info("Dancing: %d beats at %.0f bpm (%.1fs)", beats, bpm, total_s)
+
+        while True:
+            elapsed = time.monotonic() - started
+            if elapsed >= total_s:
+                break
+            # Position within the bar, so the moves repeat on a musical cycle
+            # rather than drifting.
+            beat = elapsed / beat_s
+            phase = 2.0 * math.pi * beat
+
+            # Head: bob on every beat, sway across two, tilt across four --
+            # layering periods keeps it from looking like a metronome.
+            pitch = 9.0 * math.sin(phase)
+            yaw = 14.0 * math.sin(phase / 2.0)
+            roll = 7.0 * math.sin(phase / 4.0)
+            # Millimetres, like EmotionMapper's poses (converted at the SDK
+            # boundary), so this is a visible bounce rather than a rounding error.
+            z = 9.0 * math.sin(phase)
+
+            # Antennas flick on the offbeat and alternate, which reads as
+            # deliberate rather than as a symmetric twitch.
+            offbeat = math.sin(phase + math.pi / 2.0)
+            antennas = (35.0 * offbeat, -35.0 * offbeat)
+
+            pose = HeadPose(pitch=pitch, yaw=yaw, roll=roll, z=z, antennas=antennas)
+            self._current_pose = pose
+            self._send_pose(pose)
+            time.sleep(1.0 / step_hz)
+
+        # Settle back to neutral rather than stopping wherever the last beat
+        # happened to leave the head.
+        self._send_pose(self.mapper.get("neutral"))
+        logger.info("Dance finished.")
 
     def express_move(self, emotion_tag: str) -> None:
         """Play a recorded emotion animation once, as a physical flourish.
@@ -286,7 +417,12 @@ class MotionController:
         *,
         ttl: float = 1.2,
     ) -> None:
-        """Bias the head toward the active face before words are spoken."""
+        """Aim the head at a detected face, held for `ttl` seconds.
+
+        Called continuously by body/face_tracker.py to follow someone, and the
+        ttl is what makes that work: each detection refreshes the target, and
+        the head drifts back to its resting pose only once detections stop.
+        """
         if bbox is None or frame_shape is None:
             return
         height, width = frame_shape[:2]

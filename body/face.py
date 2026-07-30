@@ -148,7 +148,8 @@ class FaceIdentifier:
                 f"MediaPipe face detector model not found at {detector_path}."
             )
 
-        self._available = _face_detector_is_usable(detector_path)
+        self.available = _face_detector_is_usable(detector_path)
+        self._available = self.available
         if not self._available:
             self._detector = None
             self._session = None

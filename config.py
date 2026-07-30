@@ -115,7 +115,7 @@ ROBOT = HardwareTarget(
 # menu if this stops connecting.
 ROBOT_REMOTE = HardwareTarget(
     mode="robot",
-    daemon_host="10.142.104.231",
+    daemon_host="172.20.10.3",
     daemon_port=8000,
     camera_source=None,
     media_backend="webrtc",
@@ -125,15 +125,41 @@ ROBOT_REMOTE = HardwareTarget(
 )
 
 
+ROBOT_HOSTNAME = "reachy-mini.local"
+
+
+def resolve_robot_host(fallback: str, hostname: str = ROBOT_HOSTNAME) -> str:
+    """Return the robot's current address, preferring mDNS over a fixed IP.
+
+    The robot's IP is assigned by whatever network it joins and has changed
+    repeatedly mid-session on a phone hotspot -- each time presenting as the
+    app hanging or exiting with a connection error, and each time needing this
+    file edited. Its mDNS name follows it, so resolve that when it answers and
+    keep the last known address only as a fallback for networks where mDNS is
+    blocked (which has also happened here).
+    """
+    import socket
+
+    try:
+        resolved = socket.gethostbyname(hostname)
+    except OSError:
+        return fallback
+    return resolved
+
+
 def default_target() -> HardwareTarget:
     """Return the active HardwareTarget, selected via the REACHY_TARGET env var."""
+    import dataclasses
     import os
 
     target = os.getenv("REACHY_TARGET", "simulation")
     if target == "robot":
         return ROBOT
     if target == "robot_remote":
-        return ROBOT_REMOTE
+        # Override at use time rather than editing the constant, so the
+        # committed fallback stays a record of a known-good address.
+        host = os.getenv("REACHY_HOST") or resolve_robot_host(ROBOT_REMOTE.daemon_host)
+        return dataclasses.replace(ROBOT_REMOTE, daemon_host=host)
     return SIMULATION
 
 

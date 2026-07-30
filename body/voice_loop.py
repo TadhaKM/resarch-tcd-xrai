@@ -4,19 +4,18 @@ Models (STT/KWS/TTS) are loaded once in AudioIO.__init__, not per turn -- run_on
 takes already-constructed components so run_forever can reuse them across turns.
 
 The reply is streamed and spoken sentence-by-sentence (brain.interface.stream_reply)
-rather than generated in full before speaking a word, because on hardware this
-slow (see llm_max_tokens' docstring in config.py) waiting for the whole reply
-means 10s of seconds of dead air. A short filler line plays immediately after
-listening ends, before generation is even requested, so there's never silence
-right after the user finishes speaking.
+rather than generated in full before speaking a word, so the robot starts
+answering as soon as it has a complete sentence instead of after the whole
+reply exists.
+
+A wake word starts a conversation rather than a single question: run_once
+keeps listening after each reply and only returns to the wake word once
+nobody answers.
 """
 
 import logging
-import queue
-import random
-import threading
 import time
-from typing import Iterator
+from typing import Optional
 
 from brain.interface import stream_reply
 from config import HardwareTarget
@@ -24,21 +23,44 @@ from config import HardwareTarget
 from .audio_io import AudioIO
 from .camera import Camera
 from .face import FaceIdentifier
+from .face_tracker import FaceTracker
 from .motion import MotionController
 
 logger = logging.getLogger(__name__)
 
-_THINKING_FILLERS = [
-    "Hmm, let me think.",
-    "Good question, one moment.",
-    "Let's see.",
-    "Okay, thinking.",
-]
+class ShutdownRequested(Exception):
+    """Raised when the user asks the robot to stop listening."""
 
-#: How long to wait for the first sentence before covering the gap with a
-#: filler. Below this, silence reads as normal conversational pause and
-#: saying "let me think" only delays the answer it was meant to hide.
-_FILLER_AFTER_S = 1.2
+
+#: Spoken ways of saying "stop". Matched as substrings of the transcript
+#: because the recognizer emits no punctuation and often trails extra words
+#: ("OK TURN OFF NOW THANKS"). Kept explicit rather than asking the LLM,
+#: since shutting down has to be reliable and instant, not a generated
+#: decision that might arrive three seconds later.
+_SHUTDOWN_PHRASES = (
+    "turn off",
+    "turn yourself off",
+    "shut down",
+    "shutdown",
+    "shut off",
+    "power off",
+    "power down",
+    "stop listening",
+    "go to sleep",
+    "goodbye",
+    "good bye",
+    "bye bye",
+    "that is all",
+    "that's all",
+)
+
+#: Spoken ways of asking for a dance.
+_DANCE_PHRASES = (
+    "dance",
+    "dancing",
+    "bust a move",
+    "show me some moves",
+)
 
 #: Replies before a conversation returns to requiring the wake word. Bounds
 #: how long a room full of talking can hold the robot's attention, since
@@ -46,43 +68,13 @@ _FILLER_AFTER_S = 1.2
 _MAX_EXCHANGES = 12
 
 
-def _stream_reply_async(person_id: int, message: str) -> "queue.Queue":
-    """Begin generating in a worker thread, delivering sentences via a queue.
-
-    stream_reply is a generator, so nothing runs until it is iterated -- and
-    iterating blocks. Handing it to a thread lets the caller start generation
-    immediately and still make a timing decision (filler or not) while tokens
-    are already being produced.
-
-    Queue items are ``("sentence", (text, tag))``, ``("error", exception)``,
-    or ``("done", None)``.
-    """
-    items: "queue.Queue" = queue.Queue()
-
-    def worker() -> None:
-        try:
-            for sentence in stream_reply(person_id, message):
-                items.put(("sentence", sentence))
-        except Exception as exc:  # surfaced to the caller by _drain
-            items.put(("error", exc))
-        finally:
-            items.put(("done", None))
-
-    threading.Thread(target=worker, name="reply-stream", daemon=True).start()
-    return items
-
-
-def _drain(items: "queue.Queue", first: tuple) -> Iterator[tuple[str, str]]:
-    """Yield sentences from the queue, starting with an already-taken item."""
-    kind, payload = first
-    while kind != "done":
-        if kind == "error":
-            raise payload
-        yield payload
-        kind, payload = items.get()
-
-
-def run_once(audio: AudioIO, camera: Camera, face: FaceIdentifier, motion: MotionController) -> None:
+def run_once(
+    audio: AudioIO,
+    camera: Camera,
+    face: FaceIdentifier,
+    motion: MotionController,
+    tracker: Optional[FaceTracker] = None,
+) -> None:
     """Wake once, then converse until the person stops replying.
 
     The wake word opens a conversation rather than buying a single question.
@@ -99,10 +91,17 @@ def run_once(audio: AudioIO, camera: Camera, face: FaceIdentifier, motion: Motio
     audio.wait_for_wake_word()
     logger.info("Wake word detected.")
 
-    frame = camera.get_frame()
-    person_id, active_face, _score = face.identify(frame, force=True)
-    if active_face is not None and frame is not None:
-        motion.track_face(active_face.bbox, frame.shape)
+    # Identity comes from the tracker, which is already watching continuously
+    # and owns the detector -- calling it again here would mean two threads in
+    # MediaPipe at once. Falls back to a one-off detection when tracking is
+    # unavailable (e.g. the CM4, where the detector can't run at all).
+    if tracker is not None and tracker.enabled:
+        person_id, _active_face = tracker.current()
+    else:
+        frame = camera.get_frame()
+        person_id, active_face, _score = face.identify(frame, force=True)
+        if active_face is not None and frame is not None:
+            motion.track_face(active_face.bbox, frame.shape)
 
     # Deliberately no enrollment here. It used to interrupt mid-turn to ask
     # for a name, which meant the rest of the user's own question landed in
@@ -131,7 +130,26 @@ def run_once(audio: AudioIO, camera: Camera, face: FaceIdentifier, motion: Motio
 
     exchanges = 0
     while message.strip():
-        _respond(audio, motion, person_id, message)
+        spoken = message.lower()
+
+        # Checked before the LLM sees the message: "turn off" has to act, not
+        # be answered, and waiting on generation to decide would make it feel
+        # unresponsive at exactly the moment the user wants it to stop.
+        if any(phrase in spoken for phrase in _SHUTDOWN_PHRASES):
+            logger.info("Shutdown phrase heard in %r.", message)
+            motion.express("sad")
+            audio.speak("Okay, goodbye!", "sad", motion=motion)
+            raise ShutdownRequested
+
+        if any(phrase in spoken for phrase in _DANCE_PHRASES):
+            logger.info("Dance requested.")
+            motion.express("happy")
+            # Started before speaking so the robot is already moving as it
+            # answers, rather than talking about dancing and then dancing.
+            motion.dance()
+            audio.speak("Watch this!", "happy", motion=motion)
+        else:
+            _respond(audio, motion, person_id, message)
         exchanges += 1
         if exchanges >= _MAX_EXCHANGES:
             logger.info("Conversation length limit reached -- back to wake word.")
@@ -148,24 +166,17 @@ def run_once(audio: AudioIO, camera: Camera, face: FaceIdentifier, motion: Motio
 
 def _respond(audio: AudioIO, motion: MotionController, person_id: int, message: str) -> None:
     """Generate and speak one reply, with matching expression and gesture."""
-    # Start generating *before* deciding whether to stall for time. The filler
-    # used to be spoken first and generation only began once it finished, so
-    # its ~2-3s was added to every reply. Now it overlaps generation and is
-    # only spoken at all if the first sentence is slow to arrive -- on a fast
-    # machine most replies skip it entirely.
+    # No spoken filler while thinking. It was there to cover slow generation on
+    # the robot's own CPU, but the first sentence now arrives in a few seconds
+    # and a canned "let me think" only delays the answer it was meant to hide.
+    # The thinking *pose* stays -- that reads as considering the question
+    # without putting words in the robot's mouth.
     motion.express("thinking")
     logger.info("Generating reply (person_id=%s)...", person_id)
     started = time.monotonic()
-    replies = _stream_reply_async(person_id, message)
 
-    try:
-        pending = replies.get(timeout=_FILLER_AFTER_S)
-    except queue.Empty:
-        logger.info("Reply slow (>%.1fs) -- speaking filler.", _FILLER_AFTER_S)
-        audio.speak(random.choice(_THINKING_FILLERS), "thinking", motion=motion)
-        pending = replies.get()
     final_tag = "neutral"
-    for index, (sentence, emotion_tag) in enumerate(_drain(replies, pending)):
+    for index, (sentence, emotion_tag) in enumerate(stream_reply(person_id, message)):
         if index == 0:
             logger.info("First sentence after %.1fs", time.monotonic() - started)
         logger.info("Saying [%s]: %r", emotion_tag, sentence)
@@ -212,12 +223,28 @@ def run_forever(target: HardwareTarget) -> None:
     face = FaceIdentifier(target)
     motion = MotionController(target, robot=robot)
 
+    # Follow whoever is in view for the whole session, not just at the moment
+    # a turn starts -- the robot should hold your gaze while you talk to it and
+    # between questions, which is what makes it feel present rather than
+    # snapping to attention only when addressed.
+    tracker = FaceTracker(camera, face, motion)
+    tracker.start()
+
+    # A visible greeting on startup. Idle motion is subtle by design, so a
+    # working robot and a disconnected one look identical from across a room;
+    # this makes "connected and under control" unmistakable without reading a
+    # log, and doubles as a check that the motors are actually holding.
+    motion.wake_up()
+
     try:
         while True:
-            run_once(audio, camera, face, motion)
-    except KeyboardInterrupt:
-        pass
+            run_once(audio, camera, face, motion, tracker)
+    except (KeyboardInterrupt, ShutdownRequested):
+        # Both are ordinary ways to end a session, not failures -- fall through
+        # to the same cleanup as a normal exit.
+        logger.info("Shutting down.")
     finally:
+        tracker.stop()
         camera.close()
         audio.close()
         motion.stop()
