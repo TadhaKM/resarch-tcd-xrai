@@ -19,6 +19,7 @@ from, so the STT/KWS decode loops aren't duplicated per mode.
 """
 
 import logging
+import re
 import time
 from typing import Any, Iterator, Optional
 
@@ -107,6 +108,24 @@ def _build_recognizer() -> sherpa_onnx.OnlineRecognizer:
         hotwords_file=str(MODELS.asr_hotwords_file),
         hotwords_score=MODELS.asr_hotwords_score,
     )
+
+
+#: Whisper labels non-speech audio rather than returning nothing for it --
+#: "(tapping)", "[door closes]", "*sounds of a bird*". Live, that turned every
+#: knock and chair scrape into a turn: the robot solemnly replied "I can't
+#: respond with a tap", which then became conversation history. These are
+#: descriptions of the audio, never words anybody said, so they are dropped.
+_SOUND_EVENT_RE = re.compile(r"[\(\[\*][^\)\]\*]*[\)\]\*]")
+
+
+def _strip_sound_events(text: str) -> str:
+    """Remove Whisper's non-speech annotations; "" if nothing else remains."""
+    cleaned = _SOUND_EVENT_RE.sub(" ", text)
+    cleaned = " ".join(cleaned.split())
+    # Punctuation-only leftovers ("...", "-") are not speech either.
+    if not any(ch.isalnum() for ch in cleaned):
+        return ""
+    return cleaned
 
 
 def _build_whisper() -> Optional[sherpa_onnx.OfflineRecognizer]:
@@ -271,7 +290,7 @@ class AudioIO:
             stream = self._whisper.create_stream()
             stream.accept_waveform(MODELS.asr_sample_rate, samples)
             self._whisper.decode_stream(stream)
-            return stream.result.text.strip()
+            return _strip_sound_events(stream.result.text.strip())
         except Exception:
             # Never lose a turn to this -- listen() falls back to the streaming
             # model's transcript, which is already in hand.
