@@ -62,19 +62,15 @@ def run_once(audio: AudioIO, camera: Camera, face: FaceIdentifier, motion: Motio
             logger.info("Still nothing -- returning to wake word.")
             return
 
-    # Only offer to enroll when there's a name-shaped answer to enroll with.
-    # face.enroll returns None if what it heard doesn't look like a name --
-    # continue the turn anonymously in that case rather than retrying, so a
-    # noisy room can't turn every turn into an interrogation (or, as it did
-    # before, a new person row per turn).
-    if person_id is None and active_face is not None:
-        motion.express("curious")
-        audio.speak("I don't think we've met yet. What's your name?", "curious", motion=motion)
-        name = audio.listen()
-        logger.info("Name heard: %r", name)
-        person_id = face.enroll(name, active_face)
-        if person_id is None:
-            logger.info("Not enrolling from that -- continuing anonymously.")
+    # Deliberately no enrollment here. It used to interrupt mid-turn to ask
+    # for a name, which meant the rest of the user's own question landed in
+    # the answer -- one utterance became "HE MUST" as the question and "HAVE
+    # COME" as the name, and that got stored as a person. Enrollment now only
+    # happens when the user asks for it (see manage_people.py), where the
+    # name can be typed and confirmed instead of guessed from noisy audio.
+    # Unknown faces simply converse anonymously.
+    if person_id is None:
+        person_id = 0
 
     if person_id is None:
         person_id = 0
