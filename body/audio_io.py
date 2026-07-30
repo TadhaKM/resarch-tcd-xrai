@@ -117,10 +117,16 @@ def _build_recognizer() -> sherpa_onnx.OnlineRecognizer:
 #: descriptions of the audio, never words anybody said, so they are dropped.
 _SOUND_EVENT_RE = re.compile(r"[\(\[\*][^\)\]\*]*[\)\]\*]")
 
+#: The same annotation with its closing bracket missing -- Whisper truncates
+#: them ("(static"), and the paired pattern above leaves those untouched, so
+#: "(static" reached the LLM and was answered.
+_UNCLOSED_EVENT_RE = re.compile(r"[\(\[\*][^\)\]\*]*$")
+
 
 def _strip_sound_events(text: str) -> str:
     """Remove Whisper's non-speech annotations; "" if nothing else remains."""
     cleaned = _SOUND_EVENT_RE.sub(" ", text)
+    cleaned = _UNCLOSED_EVENT_RE.sub(" ", cleaned)
     cleaned = " ".join(cleaned.split())
     # Punctuation-only leftovers ("...", "-") are not speech either.
     if not any(ch.isalnum() for ch in cleaned):
