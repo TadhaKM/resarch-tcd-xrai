@@ -160,6 +160,15 @@ class _TrackingTarget:
 
 _SEND_WARNING_INTERVAL_S = 10.0
 
+# Sustained failure before rebuilding the connection. Longer than the SDK's 1s
+# liveness window and the multi-second stalls seen on this wireless link, so
+# transient drops still resolve themselves without a reconnect.
+_RECONNECT_AFTER_S = 8.0
+
+# Minimum gap between reconnect attempts, so a robot that is off or
+# unreachable is retried steadily rather than hammered.
+_RECONNECT_COOLDOWN_S = 15.0
+
 # Blend factor for daemon-side face tracking (see set_face_tracking). High
 # enough to hold someone's gaze convincingly, low enough that the emotion
 # poses and speech wobble still read on the head.
@@ -217,6 +226,11 @@ class MotionController:
         self._control_hz = 20.0 if target.daemon_host not in ("localhost", "127.0.0.1") else 50.0
         self._send_failures = 0
         self._last_send_warning_at = 0.0
+        self._failing_since: Optional[float] = None
+        self._last_reconnect_at = 0.0
+        #: Set when the link has been down long enough that it will not come
+        #: back by itself and cannot be rebuilt here. run_forever watches this.
+        self.link_lost = threading.Event()
         self._paused = False
         self._daemon_tracking = False
         self._moves = self._load_recorded_moves()
@@ -534,8 +548,12 @@ class MotionController:
             # clears itself once messages resume, so retrying silently is the
             # correct response; at 50Hz, logging each failure produced
             # thousands of identical tracebacks and buried the real logs.
+            if self._failing_since is None:
+                self._failing_since = time.monotonic()
             self._log_send_failure(exc)
+            self._maybe_reconnect()
         else:
+            self._failing_since = None
             if self._send_failures:
                 logger.info(
                     "Reachy Mini motion link recovered after %d dropped frame(s).",
@@ -553,6 +571,62 @@ class MotionController:
         logger.warning(
             "Dropping Reachy Mini pose updates (%d so far): %s", self._send_failures, exc
         )
+
+    def _maybe_reconnect(self) -> None:
+        """Rebuild a connection that has stopped coming back on its own.
+
+        Two different failures look alike here. A momentary stall -- no daemon
+        status message within the SDK's 1s liveness window -- clears itself
+        once messages resume, and reconnecting for that would be churn. But a
+        websocket that actually closes ("no close frame received or sent")
+        never returns: every later send raises, the head freezes, and the app
+        carries on talking as though nothing is wrong. That was observed
+        dropping 1400+ consecutive frames with no recovery.
+
+        Distinguishing them by exception text is unreliable, so this waits out
+        the transient case by duration and then rebuilds. Only connections
+        this controller owns are replaced -- a shared one belongs to the
+        caller, which would also have to rebuild its media session.
+        """
+        if self._robot is None:
+            return
+        now = time.monotonic()
+        if not self._owns_robot:
+            # A shared connection also carries audio and camera, and the SDK's
+            # websocket client cannot reconnect (disconnect() is terminal), so
+            # only the owner can rebuild it. Raise a flag instead of failing
+            # silently forever: the alternative, observed live, is 2500+
+            # consecutive dropped frames while the robot sits frozen and the
+            # app cheerfully carries on listening and replying.
+            if self._failing_since is not None and now - self._failing_since >= _RECONNECT_AFTER_S:
+                if not self.link_lost.is_set():
+                    logger.error(
+                        "Motion link dead for %.0fs and cannot be rebuilt from here.",
+                        now - self._failing_since,
+                    )
+                    self.link_lost.set()
+            return
+        if now - self._last_reconnect_at < _RECONNECT_COOLDOWN_S:
+            return
+        if self._failing_since is None or now - self._failing_since < _RECONNECT_AFTER_S:
+            return
+
+        self._last_reconnect_at = now
+        logger.warning("Motion link down for %.0fs -- reconnecting.", now - self._failing_since)
+        old = self._robot
+        self._robot = None
+        try:
+            old.__exit__(None, None, None)
+        except Exception:
+            pass
+        robot = self._connect_robot()
+        if robot is None:
+            logger.warning("Reconnect failed; will retry.")
+            return
+        self._robot = robot
+        self._failing_since = None
+        self._send_failures = 0
+        logger.info("Motion link reconnected.")
 
 
 def _create_head_pose(pose: HeadPose) -> np.ndarray:

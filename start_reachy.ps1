@@ -9,7 +9,10 @@
 
 param(
     [switch]$OnRobot,
-    [string]$RobotIp = "10.41.102.231"
+    # mDNS name, not a fixed IP: the address is assigned by whatever network
+    # the robot joins and changed three times in one session, each time
+    # leaving this script's reachability check pointing at a dead address.
+    [string]$RobotIp = "reachy-mini.local"
 )
 
 $ErrorActionPreference = "Stop"
@@ -90,19 +93,28 @@ $env:PYTHONIOENCODING = "utf-8"   # replies contain curly quotes; cp1252 mangles
 # so a Python traceback arrives as an unreadable .NET error blob with the
 # actual message truncated. Let Python write both streams to the log itself
 # and tail that instead -- the traceback then survives verbatim.
-$py = Start-Process -FilePath $python -ArgumentList "-u", "main.py" `
-    -NoNewWindow -PassThru `
-    -RedirectStandardOutput $logPath -RedirectStandardError $errPath
+# Exit code 3 means the robot connection died in a way the app cannot repair
+# in-process (see body/voice_loop.py). Relaunching is the fix, and doing it
+# here beats leaving a frozen robot that still listens and answers.
+$LINK_LOST = 3
 
-try {
-    # Follow the log until Python exits, so the window shows progress live.
-    Get-Content -Path $logPath -Wait -Tail 0 |
-        Where-Object { $_ -notmatch 'device_discovery|GetGpuDevices|XNNPACK|InitGoogle|inference_feedback' }
-} finally {
-    if (-not $py.HasExited) { $py.Kill() }
-    if ((Test-Path $errPath) -and (Get-Item $errPath).Length -gt 0) {
-        Write-Host ""
-        Write-Host "--- stderr ---" -ForegroundColor Yellow
-        Get-Content $errPath -Tail 40
-    }
+while ($true) {
+    $py = Start-Process -FilePath $python -ArgumentList "-u", "main.py" `
+        -NoNewWindow -PassThru -Wait `
+        -RedirectStandardOutput $logPath -RedirectStandardError $errPath
+
+    if ($py.ExitCode -ne $LINK_LOST) { break }
+
+    Write-Host ""
+    Write-Host "Lost the connection to the robot. Restarting..." -ForegroundColor Yellow
+    Start-Sleep -Seconds 5
+    try {
+        Invoke-RestMethod -Method Post -Uri "http://${RobotIp}:8000/api/media/acquire" -TimeoutSec 5 | Out-Null
+    } catch { }
+}
+
+if ((Test-Path $errPath) -and (Get-Item $errPath).Length -gt 0) {
+    Write-Host ""
+    Write-Host "--- stderr ---" -ForegroundColor Yellow
+    Get-Content $errPath -Tail 40
 }

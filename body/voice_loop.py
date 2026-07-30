@@ -14,7 +14,13 @@ nobody answers.
 """
 
 import logging
+import os
+import threading
 import time
+
+#: Exit code meaning "the robot connection died and only a restart can fix it".
+#: start_reachy.ps1 relaunches on this rather than leaving a deaf, frozen app.
+_EXIT_LINK_LOST = 3
 from typing import Optional
 
 from brain.interface import stream_reply
@@ -235,6 +241,19 @@ def run_forever(target: HardwareTarget) -> None:
     # this makes "connected and under control" unmistakable without reading a
     # log, and doubles as a check that the motors are actually holding.
     motion.wake_up()
+
+    # This session cannot repair its own connection: the SDK's websocket client
+    # has no reconnect (disconnect() is terminal), and this connection carries
+    # audio and camera too, so rebuilding it means rebuilding everything.
+    # Rather than keep listening and replying with a frozen head -- which is
+    # what happened, for thousands of consecutive dropped frames -- end the
+    # process so the launcher can start a fresh session.
+    def _watch_link() -> None:
+        motion.link_lost.wait()
+        logger.error("Motion link unrecoverable -- exiting for a clean restart.")
+        os._exit(_EXIT_LINK_LOST)
+
+    threading.Thread(target=_watch_link, name="link-watchdog", daemon=True).start()
 
     try:
         while True:
