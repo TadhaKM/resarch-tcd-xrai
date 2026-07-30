@@ -40,6 +40,11 @@ _THINKING_FILLERS = [
 #: saying "let me think" only delays the answer it was meant to hide.
 _FILLER_AFTER_S = 1.2
 
+#: Replies before a conversation returns to requiring the wake word. Bounds
+#: how long a room full of talking can hold the robot's attention, since
+#: follow-ups are accepted without one.
+_MAX_EXCHANGES = 12
+
 
 def _stream_reply_async(person_id: int, message: str) -> "queue.Queue":
     """Begin generating in a worker thread, delivering sentences via a queue.
@@ -78,7 +83,14 @@ def _drain(items: "queue.Queue", first: tuple) -> Iterator[tuple[str, str]]:
 
 
 def run_once(audio: AudioIO, camera: Camera, face: FaceIdentifier, motion: MotionController) -> None:
-    """Run a single wake -> listen -> think -> speak/express turn."""
+    """Wake once, then converse until the person stops replying.
+
+    The wake word opens a conversation rather than buying a single question.
+    Requiring "Hey Reachy" before every sentence made follow-ups feel like
+    separate transactions instead of a conversation; now the robot keeps
+    listening after each reply and only falls back to the wake word once
+    nobody answers.
+    """
     # A voice loop is invisible from the outside: when nothing happens there's
     # no way to tell "didn't hear the wake word" from "heard it but
     # transcribed nothing" from "still waiting on the LLM". These logs mark
@@ -91,6 +103,17 @@ def run_once(audio: AudioIO, camera: Camera, face: FaceIdentifier, motion: Motio
     person_id, active_face, _score = face.identify(frame, force=True)
     if active_face is not None and frame is not None:
         motion.track_face(active_face.bbox, frame.shape)
+
+    # Deliberately no enrollment here. It used to interrupt mid-turn to ask
+    # for a name, which meant the rest of the user's own question landed in
+    # the answer -- one utterance became "HE MUST" as the question and "HAVE
+    # COME" as the name, and that got stored as a person. Enrollment now only
+    # happens when the user asks for it (see manage_people.py), where the
+    # name can be typed and confirmed instead of guessed from noisy audio.
+    # Unknown faces simply converse anonymously.
+    if person_id is None:
+        person_id = 0
+
     message = audio.listen()
     logger.info("Heard: %r", message)
 
@@ -106,16 +129,25 @@ def run_once(audio: AudioIO, camera: Camera, face: FaceIdentifier, motion: Motio
             logger.info("Still nothing -- returning to wake word.")
             return
 
-    # Deliberately no enrollment here. It used to interrupt mid-turn to ask
-    # for a name, which meant the rest of the user's own question landed in
-    # the answer -- one utterance became "HE MUST" as the question and "HAVE
-    # COME" as the name, and that got stored as a person. Enrollment now only
-    # happens when the user asks for it (see manage_people.py), where the
-    # name can be typed and confirmed instead of guessed from noisy audio.
-    # Unknown faces simply converse anonymously.
-    if person_id is None:
-        person_id = 0
+    exchanges = 0
+    while message.strip():
+        _respond(audio, motion, person_id, message)
+        exchanges += 1
+        if exchanges >= _MAX_EXCHANGES:
+            logger.info("Conversation length limit reached -- back to wake word.")
+            return
+        # No wake word needed for the follow-up. listen() returns "" once it
+        # has waited out the silence, which doubles as "the conversation is
+        # over" without needing a separate timeout mechanism.
+        logger.info("Listening for a follow-up...")
+        message = audio.listen()
+        logger.info("Heard: %r", message)
 
+    logger.info("No follow-up -- returning to wake word.")
+
+
+def _respond(audio: AudioIO, motion: MotionController, person_id: int, message: str) -> None:
+    """Generate and speak one reply, with matching expression and gesture."""
     # Start generating *before* deciding whether to stall for time. The filler
     # used to be spoken first and generation only began once it finished, so
     # its ~2-3s was added to every reply. Now it overlaps generation and is

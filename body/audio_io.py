@@ -70,6 +70,10 @@ _AGC_ABSOLUTE_FLOOR = 0.002
 # within one attempt, long enough not to sit mid-phrase repeatedly.
 _KWS_STREAM_RECYCLE_S = 20.0
 
+# Upper bound on flush_mic, so a mic delivering samples faster than realtime
+# can't hold the loop there indefinitely.
+_MAX_FLUSH_CHUNKS = 2000
+
 # Streaming zipformer models need silence before AND after the real audio in a
 # one-shot (offline) decode: leading padding warms up the encoder's left
 # context (a stream that starts cold garbles the first word or two), and
@@ -313,6 +317,7 @@ class AudioIO:
         fresh stream costs nothing here (no audio is buffered across the swap
         beyond the gap between frames) and bounds how much state can build up.
         """
+        self.flush_mic()
         stream = self._spotter.create_stream()
         recycle_at = time.monotonic() + _KWS_STREAM_RECYCLE_S
         for frame in self._mic_frames():
@@ -342,6 +347,26 @@ class AudioIO:
             if time.monotonic() >= deadline:
                 return
 
+    def flush_mic(self) -> None:
+        """Drop mic audio captured while the robot was busy.
+
+        Capture doesn't pause while the robot speaks, so by the end of a reply
+        the daemon holds a backlog containing the robot's own voice. Consuming
+        it takes real time and is decoded before any live audio, which is why
+        a "Hey Reachy" spoken right after a reply appeared to be ignored -- the
+        spotter was still working through the previous turn. Dropping whatever
+        is already queued makes the next turn start from now.
+        """
+        if self.target.mode != "robot" or self._robot is None:
+            return
+        dropped = 0
+        while dropped < _MAX_FLUSH_CHUNKS:
+            if self._robot.media.get_audio_sample() is None:
+                break
+            dropped += 1
+        if dropped:
+            logger.info("Flushed %d stale mic chunk(s).", dropped)
+
     def listen(self) -> str:
         """Record and transcribe one utterance.
 
@@ -349,6 +374,7 @@ class AudioIO:
         recognizer is picking up and *when* -- a final-only log can't
         distinguish "never heard you" from "heard you and mistranscribed it".
         """
+        self.flush_mic()
         stream = self._recognizer.create_stream()
         partial = ""
         started = time.monotonic()
