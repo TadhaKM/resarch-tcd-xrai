@@ -64,6 +64,19 @@ if (-not $OnRobot) {
     }
 }
 
+# Only one client can hold the robot's mic. A second instance doesn't fail
+# loudly -- both connect and split the audio, so the robot simply stops
+# responding, which looks like a microphone problem rather than a duplicate
+# process. Stopping a launcher shell does not stop the Python child, so these
+# accumulate easily across restarts.
+$running = @(Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+    Where-Object { $_.CommandLine -like '*main.py*' })
+if ($running.Count -gt 0) {
+    Write-Host "Already running (PID $($running.ProcessId -join ', ')) -- stopping it first." -ForegroundColor Yellow
+    $running | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Seconds 2
+}
+
 Write-Host ""
 Write-Host "Loading speech models (~20s), then say 'Hey Reachy'." -ForegroundColor Cyan
 Write-Host "Close the Reachy Mini control app first -- it takes the mic." -ForegroundColor DarkGray
