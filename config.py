@@ -177,6 +177,7 @@ class ModelConfig:
     asr_hotwords_file: Path
     asr_hotwords_score: float
 
+
     # Wake word: sherpa-onnx open-vocabulary keyword spotting (same toolkit as
     # STT, ~5MB int8). Custom phrases are added by tokenizing them with the
     # model's own bpe.model via `sherpa-onnx-cli text2token` -- see
@@ -218,6 +219,19 @@ class ModelConfig:
     face_match_threshold: float
     face_detection_fps: float
 
+    # Whisper (offline, via the same sherpa-onnx runtime). When set, it decodes
+    # what was said; the streaming zipformer above still runs the turn, since
+    # it is what detects that speech has ended, and remains the fallback.
+    #
+    # The tradeoff is deliberate. Whisper decodes a finished utterance rather
+    # than streaming, so the reply starts slightly later. Measured on the same
+    # audio it was 0.08s slower per utterance and noticeably more accurate
+    # ("HOW ARE YOU TO DAY" -> "How are you today?"), and it is trained on
+    # varied real-world speech rather than read audiobooks -- which is what
+    # the robot's noisy far-field mic actually delivers.
+    whisper_dir: Optional[Path] = None
+    whisper_threads: int = 6
+
 
 OLLAMA_MODEL_PRIMARY = "qwen2.5:1.5b-instruct-q4_K_M"
 OLLAMA_MODEL_FALLBACK = "llama3.2:1b-instruct-q4_K_M"
@@ -247,6 +261,7 @@ MODELS = ModelConfig(
     # found 0.05-0.2 indistinguishable on clean synthesized audio, so this
     # trades nothing there and buys real sensitivity on weak live input. Raise
     # it back toward 0.15 if "Reachy" starts firing on unrelated speech.
+    whisper_dir=MODELS_DIR / "asr" / "sherpa-onnx-whisper-base.en",
     kws_threshold=0.05,
     tts_model_path=MODELS_DIR / "tts" / "en_US-amy-medium.onnx",
     tts_config_path=MODELS_DIR / "tts" / "en_US-amy-medium.onnx.json",

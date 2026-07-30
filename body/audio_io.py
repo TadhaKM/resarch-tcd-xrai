@@ -109,6 +109,34 @@ def _build_recognizer() -> sherpa_onnx.OnlineRecognizer:
     )
 
 
+def _build_whisper() -> Optional[sherpa_onnx.OfflineRecognizer]:
+    """Load Whisper for utterance transcription, or None to stay with the
+    streaming zipformer.
+
+    int8 weights: on CPU they decode meaningfully faster than the float
+    versions for no accuracy difference that matters at this size.
+    """
+    d = MODELS.whisper_dir
+    if d is None:
+        return None
+    encoder = d / "base.en-encoder.int8.onnx"
+    decoder = d / "base.en-decoder.int8.onnx"
+    tokens = d / "base.en-tokens.txt"
+    if not (encoder.exists() and decoder.exists() and tokens.exists()):
+        logger.warning("Whisper files missing in %s -- using the streaming model.", d)
+        return None
+    try:
+        return sherpa_onnx.OfflineRecognizer.from_whisper(
+            encoder=str(encoder),
+            decoder=str(decoder),
+            tokens=str(tokens),
+            num_threads=MODELS.whisper_threads,
+        )
+    except Exception as exc:
+        logger.warning("Whisper unavailable (%s) -- using the streaming model.", exc)
+        return None
+
+
 def _build_spotter() -> sherpa_onnx.KeywordSpotter:
     d = MODELS.kws_dir
     return sherpa_onnx.KeywordSpotter(
@@ -136,6 +164,10 @@ class AudioIO:
         self.target = target
         self._recognizer = _build_recognizer()
         self._spotter = _build_spotter()
+        self._whisper = _build_whisper()
+        logger.info(
+            "Transcription: %s", "Whisper" if self._whisper is not None else "streaming zipformer"
+        )
         self._voice = PiperVoice.load(str(MODELS.tts_model_path), str(MODELS.tts_config_path))
 
         self._robot: Optional[Any] = robot
@@ -232,6 +264,19 @@ class AudioIO:
         self._level_peak = 0.0
         self._level_clipped = 0
         self._level_samples = 0
+
+    def _transcribe_whisper(self, samples: np.ndarray) -> str:
+        """Decode one complete utterance with Whisper. Returns "" on failure."""
+        try:
+            stream = self._whisper.create_stream()
+            stream.accept_waveform(MODELS.asr_sample_rate, samples)
+            self._whisper.decode_stream(stream)
+            return stream.result.text.strip()
+        except Exception:
+            # Never lose a turn to this -- listen() falls back to the streaming
+            # model's transcript, which is already in hand.
+            logger.exception("Whisper decode failed")
+            return ""
 
     def _apply_gain(self, samples: np.ndarray) -> np.ndarray:
         """Bring mic audio to a usable level for the STT/wake-word models.
@@ -377,6 +422,7 @@ class AudioIO:
         self.flush_mic()
         stream = self._recognizer.create_stream()
         partial = ""
+        captured: list[np.ndarray] = []
         started = time.monotonic()
         for frame in self._mic_frames():
             stream.accept_waveform(MODELS.asr_sample_rate, frame)
@@ -388,9 +434,25 @@ class AudioIO:
                 partial = current
                 logger.info("  [%5.1fs] hearing: %s", time.monotonic() - started, partial)
 
+            if self._whisper is not None:
+                captured.append(frame)
+
             if self._recognizer.is_endpoint(stream):
                 text = self._recognizer.get_result(stream).strip()
                 self._recognizer.reset(stream)
+
+                # The streaming model still runs the turn -- it is what detects
+                # that speech has ended -- but Whisper re-decodes the captured
+                # audio for the answer, because it is markedly better on live
+                # far-field speech. Its result is preferred only when it found
+                # something; an empty Whisper result on audio the streaming
+                # model did transcribe is far more likely a decode failure than
+                # genuine silence.
+                if self._whisper is not None and captured:
+                    better = self._transcribe_whisper(np.concatenate(captured))
+                    if better:
+                        logger.info("  whisper: %s", better)
+                        return better
                 return text
 
     def speak(self, text: str, emotion_tag: str, motion: Optional[Any] = None) -> None:
