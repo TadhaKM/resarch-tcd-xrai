@@ -12,8 +12,11 @@ right after the user finishes speaking.
 """
 
 import logging
+import queue
 import random
+import threading
 import time
+from typing import Iterator
 
 from brain.interface import stream_reply
 from config import HardwareTarget
@@ -31,6 +34,47 @@ _THINKING_FILLERS = [
     "Let's see.",
     "Okay, thinking.",
 ]
+
+#: How long to wait for the first sentence before covering the gap with a
+#: filler. Below this, silence reads as normal conversational pause and
+#: saying "let me think" only delays the answer it was meant to hide.
+_FILLER_AFTER_S = 1.2
+
+
+def _stream_reply_async(person_id: int, message: str) -> "queue.Queue":
+    """Begin generating in a worker thread, delivering sentences via a queue.
+
+    stream_reply is a generator, so nothing runs until it is iterated -- and
+    iterating blocks. Handing it to a thread lets the caller start generation
+    immediately and still make a timing decision (filler or not) while tokens
+    are already being produced.
+
+    Queue items are ``("sentence", (text, tag))``, ``("error", exception)``,
+    or ``("done", None)``.
+    """
+    items: "queue.Queue" = queue.Queue()
+
+    def worker() -> None:
+        try:
+            for sentence in stream_reply(person_id, message):
+                items.put(("sentence", sentence))
+        except Exception as exc:  # surfaced to the caller by _drain
+            items.put(("error", exc))
+        finally:
+            items.put(("done", None))
+
+    threading.Thread(target=worker, name="reply-stream", daemon=True).start()
+    return items
+
+
+def _drain(items: "queue.Queue", first: tuple) -> Iterator[tuple[str, str]]:
+    """Yield sentences from the queue, starting with an already-taken item."""
+    kind, payload = first
+    while kind != "done":
+        if kind == "error":
+            raise payload
+        yield payload
+        kind, payload = items.get()
 
 
 def run_once(audio: AudioIO, camera: Camera, face: FaceIdentifier, motion: MotionController) -> None:
@@ -72,16 +116,24 @@ def run_once(audio: AudioIO, camera: Camera, face: FaceIdentifier, motion: Motio
     if person_id is None:
         person_id = 0
 
-    if person_id is None:
-        person_id = 0
-
+    # Start generating *before* deciding whether to stall for time. The filler
+    # used to be spoken first and generation only began once it finished, so
+    # its ~2-3s was added to every reply. Now it overlaps generation and is
+    # only spoken at all if the first sentence is slow to arrive -- on a fast
+    # machine most replies skip it entirely.
     motion.express("thinking")
-    audio.speak(random.choice(_THINKING_FILLERS), "thinking", motion=motion)
-
     logger.info("Generating reply (person_id=%s)...", person_id)
     started = time.monotonic()
+    replies = _stream_reply_async(person_id, message)
+
+    try:
+        pending = replies.get(timeout=_FILLER_AFTER_S)
+    except queue.Empty:
+        logger.info("Reply slow (>%.1fs) -- speaking filler.", _FILLER_AFTER_S)
+        audio.speak(random.choice(_THINKING_FILLERS), "thinking", motion=motion)
+        pending = replies.get()
     final_tag = "neutral"
-    for index, (sentence, emotion_tag) in enumerate(stream_reply(person_id, message)):
+    for index, (sentence, emotion_tag) in enumerate(_drain(replies, pending)):
         if index == 0:
             logger.info("First sentence after %.1fs", time.monotonic() - started)
         logger.info("Saying [%s]: %r", emotion_tag, sentence)
