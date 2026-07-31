@@ -163,7 +163,7 @@ class _TrackingTarget:
 #: standing or sitting near the robot: a captured frame showed a chest and
 #: hands with the head cropped off the top, which is why face detection
 #: reported "no faces" while working perfectly.
-_CAMERA_PITCH_BIAS = 18.0
+_CAMERA_PITCH_BIAS = 26.0
 
 _SEND_WARNING_INTERVAL_S = 10.0
 
@@ -751,7 +751,12 @@ def _lerp(a: float, b: float, alpha: float) -> float:
 
 def _clamp_pose(pose: HeadPose) -> HeadPose:
     return HeadPose(
-        pitch=max(-18.0, min(18.0, pose.pitch)),
+        # Asymmetric on purpose. The camera needs a permanent upward tilt to
+        # frame faces (_CAMERA_PITCH_BIAS), and the old symmetric +/-18 limit
+        # sat exactly at that bias -- so the head was pinned at the ceiling and
+        # every breath or downward expression could only drag it lower, never
+        # higher. Looking further up is useful; looking further down is not.
+        pitch=max(-15.0, min(34.0, pose.pitch)),
         yaw=max(-24.0, min(24.0, pose.yaw)),
         roll=max(-16.0, min(16.0, pose.roll)),
         z=max(-15.0, min(15.0, pose.z)),
