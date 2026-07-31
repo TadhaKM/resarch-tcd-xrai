@@ -104,6 +104,12 @@ def _build_recognizer() -> sherpa_onnx.OnlineRecognizer:
         # starts) is left at its default so replies still come promptly once
         # you've actually said something.
         rule1_min_trailing_silence=5.0,
+        # Silence *after* speech has started, i.e. how long it waits to be sure
+        # you have finished. This is pure dead air before anything begins, and
+        # the 1.2s default is the single largest fixed delay left in a turn.
+        # 0.8s still rides over the gaps between words and between clauses
+        # without cutting people off; raise it if it starts clipping sentences.
+        rule2_min_trailing_silence=0.8,
         decoding_method="modified_beam_search",
         hotwords_file=str(MODELS.asr_hotwords_file),
         hotwords_score=MODELS.asr_hotwords_score,

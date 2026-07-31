@@ -265,7 +265,12 @@ MODELS = ModelConfig(
     kws_threshold=0.05,
     tts_model_path=MODELS_DIR / "tts" / "en_US-amy-medium.onnx",
     tts_config_path=MODELS_DIR / "tts" / "en_US-amy-medium.onnx.json",
-    ollama_host="http://localhost:11434",
+    # 127.0.0.1, never "localhost". On Windows that name resolves to IPv6 ::1
+    # first, and Ollama listens on IPv4 only -- so every request spent ~2s
+    # failing over before it was even seen. Measured: 2.87s vs 0.82s for an
+    # identical call, against ~0.4s of actual generation. It looked like a
+    # slow model and was entirely name resolution.
+    ollama_host="http://127.0.0.1:11434",
     ollama_model=OLLAMA_MODEL_PRIMARY,
     llm_max_tokens=60,
     db_path=Path(__file__).parent / "data" / "memory.db",
