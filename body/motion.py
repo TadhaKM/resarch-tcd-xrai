@@ -163,7 +163,7 @@ class _TrackingTarget:
 #: standing or sitting near the robot: a captured frame showed a chest and
 #: hands with the head cropped off the top, which is why face detection
 #: reported "no faces" while working perfectly.
-_CAMERA_PITCH_BIAS = 26.0
+_CAMERA_PITCH_BIAS = 15.0
 
 _SEND_WARNING_INTERVAL_S = 10.0
 
@@ -697,7 +697,15 @@ class MotionController:
 def _create_head_pose(pose: HeadPose) -> np.ndarray:
     matrix = np.eye(4, dtype=np.float64)
     roll = math.radians(pose.roll)
-    pitch = math.radians(pose.pitch)
+    # HeadPose.pitch is positive-is-up, which is how every pose in this file
+    # reads (surprised looks up at +10, sad looks down at -12) and how
+    # track_face's arithmetic is written. The robot's own convention is the
+    # opposite: a positive rotation about Y tips the nose down. Negating here,
+    # once, at the boundary is what makes all of that true -- without it the
+    # whole file means the reverse of what it says, which is exactly what
+    # happened: expressions were inverted, face tracking aimed away from
+    # people, and three rounds of "tilt the camera up" aimed it at the floor.
+    pitch = math.radians(-pose.pitch)
     yaw = math.radians(pose.yaw)
 
     cx, sx = math.cos(roll), math.sin(roll)
