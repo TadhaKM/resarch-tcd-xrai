@@ -19,11 +19,32 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
+from body.voice_loop import _DANCE_PHRASES as DANCE_PHRASES
+from body.voice_loop import _SHUTDOWN_PHRASES as SLEEP_PHRASES
 from brain.modes import STATE
+from config import MODELS
 
 logger = logging.getLogger(__name__)
 
 _PAGE = Path(__file__).parent / "index.html"
+
+
+def read_wake_phrases() -> list[str]:
+    """Wake phrases in readable form.
+
+    The file the spotter loads holds BPE token sequences ("▁HE Y ▁RE A CH Y"),
+    which is unreadable, so this reads the raw text the tokenized file was
+    generated from. Returns [] rather than guessing if it is missing -- an
+    empty list shows as "unavailable", which is honest, where a hardcoded
+    fallback could confidently list phrases that do not work.
+    """
+    raw = MODELS.kws_keywords_file.with_name("custom_keywords_raw.txt")
+    try:
+        lines = raw.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        logger.warning("Could not read %s", raw)
+        return []
+    return [line.strip().title() for line in lines if line.strip()]
 
 app = FastAPI(title="Reachy Mini")
 
@@ -40,6 +61,22 @@ def index() -> FileResponse:
 @app.get("/api/status")
 def status() -> JSONResponse:
     return JSONResponse(STATE.snapshot())
+
+
+@app.get("/api/phrases")
+def phrases() -> JSONResponse:
+    """What the robot listens for.
+
+    Read from the keyword file rather than hardcoded here, so the page can
+    never disagree with what the spotter is actually matching.
+    """
+    return JSONResponse(
+        {
+            "wake": read_wake_phrases(),
+            "sleep": list(SLEEP_PHRASES),
+            "dance": list(DANCE_PHRASES),
+        }
+    )
 
 
 @app.get("/api/events")
