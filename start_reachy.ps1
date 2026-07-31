@@ -9,6 +9,7 @@
 
 param(
     [switch]$OnRobot,
+    [switch]$NoBrowser,
     # mDNS name, not a fixed IP: the address is assigned by whatever network
     # the robot joins and changed three times in one session, each time
     # leaving this script's reachability check pointing at a dead address.
@@ -22,16 +23,18 @@ $target = if ($OnRobot) { "robot" } else { "robot_remote" }
 $logPath = Join-Path $PSScriptRoot "reachy_live.log"
 $errPath = Join-Path $PSScriptRoot "reachy_live.err.log"
 
-# The project's dependencies (ollama, sherpa_onnx, piper, reachy_mini) live in
-# the reachy_mini_env virtualenv that contains this folder. Resolve its
-# interpreter explicitly -- a bare `python` picks up whatever is first on PATH,
-# which on this machine is a different interpreter without those packages and
-# fails at import with a bare ModuleNotFoundError.
-$python = Join-Path (Split-Path -Parent $PSScriptRoot) "Scripts\python.exe"
-if (-not (Test-Path $python)) {
-    Write-Host "Could not find the project's Python at:" -ForegroundColor Red
-    Write-Host "  $python" -ForegroundColor Red
-    Write-Host "Expected reachy_companion to sit inside the reachy_mini_env virtualenv." -ForegroundColor Yellow
+# Resolve the project's interpreter explicitly -- a bare `python` picks up
+# whatever is first on PATH, which on at least one machine was a different
+# interpreter without the packages, failing with a bare ModuleNotFoundError.
+# Two layouts: .venv inside the repo (what install.ps1 creates) or the
+# original development layout with the repo inside the virtualenv folder.
+$candidates = @(
+    (Join-Path $PSScriptRoot ".venv\Scripts\python.exe"),
+    (Join-Path (Split-Path -Parent $PSScriptRoot) "Scripts\python.exe")
+)
+$python = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $python) {
+    Write-Host "No Python environment found. Run .\install.ps1 first." -ForegroundColor Red
     exit 1
 }
 
@@ -80,10 +83,28 @@ if ($running.Count -gt 0) {
     Start-Sleep -Seconds 2
 }
 
+# Every address a phone on the same network could use -- printed because
+# "what do I type on my phone" is the first question every new operator asks.
+$lanIps = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+    Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" } |
+    Select-Object -ExpandProperty IPAddress)
+
 Write-Host ""
-Write-Host "Loading speech models (~20s), then say 'Hey Reachy'." -ForegroundColor Cyan
+Write-Host "Dashboard (this laptop):  http://localhost:8080" -ForegroundColor Green
+foreach ($ip in $lanIps) {
+    Write-Host "Dashboard (phone, same WiFi): http://${ip}:8080" -ForegroundColor Green
+}
+Write-Host ""
+Write-Host "Loading speech models (~20s). The robot wiggles when it is ready," -ForegroundColor Cyan
+Write-Host "then say 'Hey Reachy'." -ForegroundColor Cyan
 Write-Host "Close the Reachy Mini control app first -- it takes the mic." -ForegroundColor DarkGray
 Write-Host ""
+
+if (-not $NoBrowser) {
+    # Detached so it survives this script's supervision loop; the page shows
+    # "starting..." until the app is up, which is the right feedback anyway.
+    Start-Process cmd -ArgumentList "/c timeout /t 8 /nobreak >nul & start http://localhost:8080" -WindowStyle Hidden
+}
 
 $env:REACHY_TARGET = $target
 $env:PYTHONIOENCODING = "utf-8"   # replies contain curly quotes; cp1252 mangles them

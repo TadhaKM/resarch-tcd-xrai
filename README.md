@@ -12,9 +12,17 @@ which is the difference between 12s and ~2s to the first spoken word.
 
 ## Running it
 
+New machine: run `.\install.ps1` once (installs Python/Ollama if missing,
+creates a venv, fetches ~1GB of models, regenerates wake phrases, and puts
+"Start Reachy" + "Reachy Dashboard" icons on the desktop). Day-to-day use by
+a non-technical operator is covered in **OPERATOR.md** -- the short version
+is: laptop hotspot on, robot on, double-click Start Reachy. Running the
+robot against the laptop's own Mobile Hotspot makes venue WiFi irrelevant;
+nothing here needs the internet.
+
 ```powershell
 cd reachy_companion
-.\start_reachy.ps1            # laptop-as-brain (default)
+.\start_reachy.ps1            # laptop-as-brain (default); opens the dashboard
 .\start_reachy.ps1 -OnRobot   # everything on the robot's CM4 instead
 ```
 
@@ -104,12 +112,14 @@ run; several moves are mapped per emotion and picked at random per turn).
 
 ### Wake phrases
 
-`models/kws/.../custom_keywords_raw.txt` holds the phrases (uppercase, one
-per line). The spotter matches BPE token sequences, not text, so after
-editing it the tokenized file must be regenerated with the model's own
-`bpe.model` -- encode each line with sentencepiece and verify every piece
-exists in `tokens.txt` (a phrase with unknown tokens can never fire). The
-dashboard reads the raw file, so it always shows what is actually active.
+`assets/wake_phrases.txt` holds the phrases (tracked in git -- everything
+under `models/` is gitignored, so keeping them there would lose them on a
+fresh clone). After editing, run `python tools/generate_wake_tokens.py`: the
+spotter matches BPE token sequences, not text, so the file must be encoded
+with the model's own `bpe.model`, and the script verifies every token exists
+in the model's vocabulary (a phrase with unknown tokens silently never
+fires). The dashboard reads the generated raw file, so it always shows what
+is actually active.
 
 ## Hardware findings (why parts of this code look the way they do)
 
