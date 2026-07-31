@@ -14,6 +14,7 @@ import logging
 import threading
 from pathlib import Path
 
+import requests
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
@@ -22,7 +23,7 @@ from pydantic import BaseModel
 from body.voice_loop import _DANCE_PHRASES as DANCE_PHRASES
 from body.voice_loop import _SHUTDOWN_PHRASES as SLEEP_PHRASES
 from brain.modes import STATE
-from config import MODELS
+from config import MODELS, default_target
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +90,44 @@ def events(since: int = 0) -> JSONResponse:
     """
     latest, items = STATE.events_since(since)
     return JSONResponse({"seq": latest, "events": items, "status": STATE.snapshot()})
+
+
+def _daemon_url() -> str:
+    # Resolved per request, not at import: the robot's address changes (DHCP
+    # renewals mid-session are routine here) and default_target() re-resolves
+    # the mDNS name each call.
+    target = default_target()
+    return f"http://{target.daemon_host}:{target.daemon_port}"
+
+
+class VolumeRequest(BaseModel):
+    volume: int
+
+
+@app.get("/api/volume")
+def get_volume() -> JSONResponse:
+    """Proxy the robot's current speaker volume.
+
+    Proxied through this server rather than fetched by the browser so the
+    page stays same-origin and never needs to know the robot's address.
+    """
+    try:
+        r = requests.get(f"{_daemon_url()}/api/volume/current", timeout=3)
+        return JSONResponse(r.json())
+    except Exception as exc:
+        return JSONResponse({"error": f"robot unreachable: {exc}"}, status_code=502)
+
+
+@app.post("/api/volume")
+def set_volume(req: VolumeRequest) -> JSONResponse:
+    level = max(0, min(100, req.volume))
+    try:
+        r = requests.post(
+            f"{_daemon_url()}/api/volume/set", json={"volume": level}, timeout=3
+        )
+        return JSONResponse(r.json())
+    except Exception as exc:
+        return JSONResponse({"error": f"robot unreachable: {exc}"}, status_code=502)
 
 
 @app.post("/api/mode")

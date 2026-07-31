@@ -37,6 +37,8 @@
   .dot.warn { background: var(--warn); box-shadow: 0 0 0 3px rgba(255,180,84,.18); }
   .dot.bad { background: var(--bad); box-shadow: 0 0 0 3px rgba(255,107,107,.18); }
   .dot.live { animation: pulse 1.4s ease-in-out infinite; }
+  #vol { width: 90px; accent-color: var(--accent); }
+  #vol-val { min-width: 2.2em; text-align: right; font-variant-numeric: tabular-nums; }
   @keyframes pulse { 50% { opacity: .35; } }
 
   .panel {
@@ -122,6 +124,11 @@
     <span class="pill"><span class="dot" id="d-conn"></span><span id="s-conn">connecting</span></span>
     <span class="pill"><span class="dot" id="d-act"></span><span id="s-act">&mdash;</span></span>
     <span class="pill" id="p-up">up &mdash;</span>
+    <span class="pill">
+      <span title="Speaker volume">&#128266;</span>
+      <input id="vol" type="range" min="0" max="100" step="5" aria-label="Speaker volume">
+      <span id="vol-val">&mdash;</span>
+    </span>
   </header>
 
   <div class="panel">
@@ -252,6 +259,28 @@
     const log = $("log");
     log.scrollTop = log.scrollHeight;
   };
+
+  // Volume: read once at load, write on release (not every tick of the drag,
+  // which would hammer the robot's API mid-gesture).
+  (async () => {
+    const slider = $("vol"), label = $("vol-val");
+    try {
+      const v = await (await fetch("/api/volume")).json();
+      if (v.volume != null) { slider.value = v.volume; label.textContent = v.volume; }
+    } catch (e) { label.textContent = "—"; }
+    slider.oninput = () => { label.textContent = slider.value; };
+    slider.onchange = async () => {
+      try {
+        const r = await fetch("/api/volume", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({volume: Number(slider.value)})
+        });
+        const v = await r.json();
+        label.textContent = v.volume != null ? v.volume : "!";
+      } catch (e) { label.textContent = "!"; }
+    };
+  })();
 
   // Fetched once: these change only when the keyword file is regenerated.
   (async () => {
