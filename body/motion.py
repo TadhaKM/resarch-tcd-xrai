@@ -57,12 +57,17 @@ class EmotionMapper:
 # available in pollen-robotics/reachy-mini-emotions-library. No "neutral"
 # entry -- neutral is the resting baseline pose above, not worth interrupting
 # it for a flourish every reply.
-EMOTION_MOVES: dict[EmotionTag, str] = {
-    "happy": "cheerful1",
-    "sad": "sad1",
-    "curious": "curious1",
-    "surprised": "surprised1",
-    "thinking": "thoughtful1",
+# Several per tag, chosen at random per turn: with a single move each, the
+# robot repeated the identical flourish every time an emotion recurred, which
+# reads as mechanical within a few exchanges. Every name here was checked
+# against the cached library (85 moves) -- an unknown name doesn't fail
+# loudly, it just never plays.
+EMOTION_MOVES: dict[EmotionTag, tuple[str, ...]] = {
+    "happy": ("cheerful1", "enthusiastic1", "laughing1", "success1", "proud1"),
+    "sad": ("sad1", "sad2", "downcast1", "lonely1"),
+    "curious": ("curious1", "inquiring1", "inquiring2", "attentive1"),
+    "surprised": ("surprised1", "surprised2", "amazed1", "oops1"),
+    "thinking": ("thoughtful1", "thoughtful2", "uncertain1"),
 }
 
 
@@ -443,9 +448,10 @@ class MotionController:
         No-op for tags with no entry in EMOTION_MOVES (currently "neutral"),
         if the robot isn't connected, or if the library failed to load.
         """
-        move_name = EMOTION_MOVES.get(emotion_tag)
-        if move_name is None or self._robot is None or self._moves is None:
+        choices = EMOTION_MOVES.get(emotion_tag)
+        if not choices or self._robot is None or self._moves is None:
             return
+        move_name = random.choice(choices)
         try:
             move = self._moves.get(move_name)
         except Exception:
