@@ -158,6 +158,13 @@ class _TrackingTarget:
     expires_at: float
 
 
+#: Upward tilt held at all times so the camera frames faces rather than
+#: torsos. The lens is in the head and sits below head height for anyone
+#: standing or sitting near the robot: a captured frame showed a chest and
+#: hands with the head cropped off the top, which is why face detection
+#: reported "no faces" while working perfectly.
+_CAMERA_PITCH_BIAS = 18.0
+
 _SEND_WARNING_INTERVAL_S = 10.0
 
 # Sustained failure before rebuilding the connection. Longer than the SDK's 1s
@@ -424,6 +431,19 @@ class MotionController:
 
         threading.Thread(target=_play, name="motion-recorded-move", daemon=True).start()
 
+    def look(self, *, yaw: float = 0.0, pitch: float = 0.0, ttl: float = 1.2) -> None:
+        """Aim the head at an absolute direction, held for `ttl` seconds.
+
+        Shares the tracking slot with track_face, so a real detection replaces
+        a search sweep immediately rather than the two fighting.
+        """
+        pose = HeadPose(
+            yaw=max(-25.0, min(25.0, yaw)),
+            pitch=max(-15.0, min(25.0, pitch)),
+        )
+        with self._lock:
+            self._tracking = _TrackingTarget(pose=pose, expires_at=time.monotonic() + ttl)
+
     def track_face(
         self,
         bbox: tuple[int, int, int, int] | None,
@@ -486,7 +506,14 @@ class MotionController:
                 tracking = None
 
         speech_active = self.wobbler.is_active(now)
-        pose = base
+        # Where the camera points must not depend on the robot's mood. The
+        # emotion pose *is* the base, so expressions with a downward tilt
+        # (thinking -4, sad -12) were aiming the lens at people's chests, and
+        # face detection went from working to finding nothing the moment the
+        # robot expressed anything. Applying the aim here, on top of whatever
+        # is being expressed, keeps expressions relative to each other while
+        # the camera stays on faces.
+        pose = _add_pose(base, HeadPose(pitch=_CAMERA_PITCH_BIAS))
 
         if tracking is not None:
             pose = _add_pose(pose, tracking.pose)

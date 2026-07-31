@@ -11,6 +11,7 @@ FaceTracker.current) instead of running its own detection per turn.
 """
 
 import logging
+import math
 import threading
 import time
 from typing import Optional
@@ -35,6 +36,14 @@ _ERROR_BACKOFF_S = 1.0
 #: How often to report what the tracker is actually seeing.
 _STATS_INTERVAL_S = 5.0
 
+#: Search sweep, used when nobody is in view. Waits a beat first so a single
+#: missed detection doesn't set the head wandering, then arcs slowly across
+#: and around head height rather than sweeping fast enough to blur frames.
+_SEARCH_AFTER_S = 4.0
+_SEARCH_PERIOD_S = 12.0
+_SEARCH_YAW_DEG = 20.0
+_SEARCH_PITCH_DEG = 16.0
+
 
 class FaceTracker:
     """Background loop: detect the active face, aim the head, cache identity."""
@@ -49,6 +58,7 @@ class FaceTracker:
         self._person_id: Optional[int] = None
         self._active_face: Optional[DetectedFace] = None
         self._seen_at = 0.0
+        self._searching_since: Optional[float] = None
 
     @property
     def enabled(self) -> bool:
@@ -78,6 +88,31 @@ class FaceTracker:
             if time.monotonic() - self._seen_at > max_age_s:
                 return None, None
             return self._person_id, self._active_face
+
+    def _search(self, now: float) -> None:
+        """Sweep the head slowly while nobody is in view.
+
+        Resting pitch aims where faces usually are, but "usually" depends on
+        whether the person is standing or sitting and how close they are --
+        get it wrong and the camera frames a chest and finds nothing, with no
+        way to recover because the head never moves to look elsewhere. This
+        scans a slow arc so the robot finds people instead of waiting to be
+        stood in front of correctly.
+        """
+        if self._searching_since is None:
+            self._searching_since = now
+            return
+        # Give tracking a moment to reacquire before starting to sweep, so a
+        # single missed detection doesn't make the head wander.
+        elapsed = now - self._searching_since
+        if elapsed < _SEARCH_AFTER_S:
+            return
+
+        phase = (elapsed - _SEARCH_AFTER_S) / _SEARCH_PERIOD_S
+        yaw = _SEARCH_YAW_DEG * math.sin(2.0 * math.pi * phase)
+        # Bias upward: people are above the lens far more often than below it.
+        pitch = _SEARCH_PITCH_DEG + 6.0 * math.sin(4.0 * math.pi * phase)
+        self._motion.look(yaw=yaw, pitch=pitch, ttl=_TRACK_TTL_S)
 
     def _run(self) -> None:
         period = 1.0 / max(0.5, MODELS.face_detection_fps)
@@ -112,8 +147,10 @@ class FaceTracker:
                 # detector's own rate limiter would otherwise drop most calls.
                 detected = self._face.detect_active_face(frame, force=True)
                 if detected is None:
+                    self._search(now)
                     continue
                 faces += 1
+                self._searching_since = None
 
                 self._motion.track_face(detected.bbox, frame.shape, ttl=_TRACK_TTL_S)
 
