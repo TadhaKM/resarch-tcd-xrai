@@ -29,6 +29,7 @@ import sounddevice as sd
 from piper import PiperVoice
 from scipy.signal import resample
 
+from brain.modes import STATE
 from config import MODELS, HardwareTarget
 
 logger = logging.getLogger(__name__)
@@ -382,8 +383,12 @@ class AudioIO:
                     samples, _ = mic.read(FRAME_SAMPLES)
                     yield samples[:, 0]
 
-    def wait_for_wake_word(self) -> None:
-        """Block until the wake word is heard.
+    def wait_for_wake_word(self, timeout: Optional[float] = None) -> bool:
+        """Wait for the wake word. Returns True if heard, False on timeout.
+
+        `timeout` lets a caller interleave other behaviour (see the modes in
+        body/voice_loop.py) without ever stopping listening: capture continues
+        regardless, so returning early loses nothing.
 
         The spotter stream is recycled periodically. This loop can run for
         hours between matches, and a single stream fed continuously that whole
@@ -396,8 +401,13 @@ class AudioIO:
         self.flush_mic()
         stream = self._spotter.create_stream()
         recycle_at = time.monotonic() + _KWS_STREAM_RECYCLE_S
+        deadline = None if timeout is None else time.monotonic() + timeout
         for frame in self._mic_frames():
             now = time.monotonic()
+            if deadline is not None and now >= deadline:
+                # Caller wants to do something else and ask again; audio keeps
+                # being captured either way, so nothing is missed by returning.
+                return False
             if now >= recycle_at:
                 stream = self._spotter.create_stream()
                 recycle_at = now + _KWS_STREAM_RECYCLE_S
@@ -414,7 +424,8 @@ class AudioIO:
                 # the tail of "hey reachy" into it (that bleed produced
                 # "ISN'T THAT MOTIVE HAIR REACHY" from a clean utterance).
                 self._drain_mic(_WAKE_DRAIN_S)
-                return
+                return True
+        return False
 
     def _drain_mic(self, seconds: float) -> None:
         """Discard incoming mic audio for a short window."""
@@ -464,6 +475,10 @@ class AudioIO:
             if current != partial:
                 partial = current
                 logger.info("  [%5.1fs] hearing: %s", time.monotonic() - started, partial)
+                # Streamed to the dashboard so words appear as they are spoken,
+                # which is what makes a mishearing visible as it happens rather
+                # than only in the final transcript.
+                STATE.note("partial", partial)
 
             if self._whisper is not None:
                 captured.append(frame)

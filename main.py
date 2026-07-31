@@ -22,6 +22,17 @@ def main() -> None:
     )
     logging.basicConfig(level=logging.INFO, handlers=[handler])
 
+    # Dashboard first, so it is already answering while the speech models load
+    # (~20s) and can show "starting" rather than looking like nothing is there.
+    # It runs in a daemon thread and never blocks the robot: if it fails, the
+    # voice loop carries on regardless.
+    try:
+        from web.server import serve
+
+        serve()
+    except Exception:
+        logging.getLogger(__name__).exception("Dashboard unavailable; continuing without it")
+
     run_forever(default_target())
 
 

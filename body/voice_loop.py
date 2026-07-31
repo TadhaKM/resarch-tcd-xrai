@@ -15,15 +15,15 @@ nobody answers.
 
 import logging
 import os
+import random
 import threading
 import time
 
-#: Exit code meaning "the robot connection died and only a restart can fix it".
-#: start_reachy.ps1 relaunches on this rather than leaving a deaf, frozen app.
-_EXIT_LINK_LOST = 3
 from typing import Optional
 
+from brain import db
 from brain.interface import stream_reply
+from brain.modes import STATE
 from config import HardwareTarget
 
 from .audio_io import AudioIO
@@ -33,6 +33,11 @@ from .face_tracker import FaceTracker
 from .motion import MotionController
 
 logger = logging.getLogger(__name__)
+
+#: Exit code meaning "the robot connection died and only a restart can fix it".
+#: start_reachy.ps1 relaunches on this rather than leaving a deaf, frozen app.
+_EXIT_LINK_LOST = 3
+
 
 class ShutdownRequested(Exception):
     """Raised when the user asks the robot to stop listening."""
@@ -68,10 +73,100 @@ _DANCE_PHRASES = (
     "show me some moves",
 )
 
+#: Openers for greeter mode, when the person isn't recognised by name.
+_GREETINGS = (
+    "Oh, hello there!",
+    "Hi! Nice to see you.",
+    "Hello! I'm Reachy Mini.",
+    "Hey there, good to see you.",
+)
+
+#: Minimum gap between greetings, so standing in view isn't greeted on every
+#: pass -- the same runaway-turn problem the empty-transcript guard fixed.
+_GREETING_COOLDOWN_S = 45.0
+_last_greeting_at = 0.0
+
+#: One repetition of the dance, so a mode change lands between repetitions.
+_DANCE_BEAT_S = 5.0
+
 #: Replies before a conversation returns to requiring the wake word. Bounds
 #: how long a room full of talking can hold the robot's attention, since
 #: follow-ups are accepted without one.
 _MAX_EXCHANGES = 12
+
+
+def _wait_for_wake_word_in_mode(
+    audio: AudioIO, motion: MotionController, tracker: Optional[FaceTracker]
+) -> bool:
+    """Wait for the wake word, doing whatever the current mode does meanwhile.
+
+    Returns True if the wake word was heard, False if the mode acted instead
+    and the caller should start a fresh cycle (re-reading the mode, so a
+    change made in the dashboard takes effect immediately).
+
+    Modes are polled in short slices rather than run as long blocking
+    behaviours, so switching mode in the dashboard is felt within a second or
+    two instead of after whatever the robot happened to start.
+    """
+    mode = STATE.mode
+
+    if mode == "dance":
+        # Dance until told otherwise. dance() returns immediately and the
+        # sleep covers the choreography, so a mode change lands between
+        # repetitions rather than being ignored until this one finishes.
+        motion.dance()
+        if audio.wait_for_wake_word(timeout=_DANCE_BEAT_S):
+            return True
+        return False
+
+    if mode == "greeter":
+        # Greet someone who has just appeared, then fall through to the normal
+        # conversation so they can reply without saying the wake word.
+        if tracker is not None and tracker.enabled:
+            person_id, active_face = tracker.current(max_age_s=1.5)
+            seen = active_face is not None
+            STATE.set_flags(face_visible=seen)
+            if seen and _greeting_due():
+                greeting = _greeting_for(person_id)
+                logger.info("Greeting someone: %r", greeting)
+                STATE.add("said", greeting)
+                motion.express("happy")
+                motion.express_move("happy")
+                audio.speak(greeting, "happy", motion=motion)
+                return True
+        if audio.wait_for_wake_word(timeout=1.0):
+            return True
+        return False
+
+    if mode == "idle":
+        return audio.wait_for_wake_word(timeout=1.0)
+
+    # conversation: the default, and the only mode that just waits.
+    return audio.wait_for_wake_word(timeout=2.0)
+
+
+def _greeting_due() -> bool:
+    """True if enough time has passed to greet again.
+
+    Without this the robot re-greets on every pass while someone stands in
+    front of it, which is the same runaway-turn problem the empty-transcript
+    guard fixed for silence.
+    """
+    global _last_greeting_at
+    now = time.monotonic()
+    if now - _last_greeting_at < _GREETING_COOLDOWN_S:
+        return False
+    _last_greeting_at = now
+    return True
+
+
+def _greeting_for(person_id: Optional[int]) -> str:
+    """Greet by name when the person is recognised, generically otherwise."""
+    if person_id:
+        name = db.get_person_name(person_id)
+        if name:
+            return f"Hello again, {name}!"
+    return random.choice(_GREETINGS)
 
 
 def run_once(
@@ -94,8 +189,17 @@ def run_once(
     # transcribed nothing" from "still waiting on the LLM". These logs mark
     # each stage boundary so a silent robot is diagnosable from the log alone.
     logger.info("Waiting for wake word...")
-    audio.wait_for_wake_word()
+    STATE.set_flags(listening=True, ready=True)
+    STATE.note("listen", 'Waiting for "Hey Reachy"...')
+
+    # Every mode still listens for the wake word -- talking to the robot must
+    # work whatever it is doing, so a mode can never leave it unresponsive.
+    # What differs is what it does *while* waiting, which is why the modes act
+    # here rather than replacing this loop.
+    if not _wait_for_wake_word_in_mode(audio, motion, tracker):
+        return
     logger.info("Wake word detected.")
+    STATE.add("listen", 'Heard "Hey Reachy" -- listening for your question')
 
     # Identity comes from the tracker, which is already watching continuously
     # and owns the detector -- calling it again here would mean two threads in
@@ -121,6 +225,7 @@ def run_once(
 
     message = audio.listen()
     logger.info("Heard: %r", message)
+    STATE.add("heard", message)
 
     # Silence is not a question. Without this the empty string went to the LLM,
     # which duly invented a greeting and spoke it -- burning a whole turn on
@@ -128,10 +233,13 @@ def run_once(
     # giving up and going back to listening.
     if not message.strip():
         logger.info("Nothing transcribed -- listening once more.")
+        STATE.add("status", "Didn't catch that -- listening again")
         message = audio.listen()
         logger.info("Heard: %r", message)
+        STATE.add("heard", message)
         if not message.strip():
             logger.info("Still nothing -- returning to wake word.")
+            STATE.add("status", "Nothing heard -- back to the wake word")
             return
 
     exchanges = 0
@@ -186,6 +294,8 @@ def _respond(audio: AudioIO, motion: MotionController, person_id: int, message: 
         if index == 0:
             logger.info("First sentence after %.1fs", time.monotonic() - started)
         logger.info("Saying [%s]: %r", emotion_tag, sentence)
+        STATE.add("said", sentence)
+        STATE.set_flags(speaking=True)
         motion.express(emotion_tag)
         audio.speak(sentence, emotion_tag, motion=motion)
         final_tag = emotion_tag

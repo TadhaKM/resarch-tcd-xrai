@@ -110,6 +110,20 @@ def create_person(name: Optional[str] = None) -> int:
         raise
 
 
+def get_person_name(person_id: int) -> Optional[str]:
+    """Return a person's name, or None if unknown or never named."""
+    try:
+        with _connection() as conn:
+            row = conn.execute(
+                "SELECT name FROM people WHERE id = ?", (person_id,)
+            ).fetchone()
+    except sqlite3.Error:
+        # Greeting someone is not worth failing a turn over.
+        logger.exception("Failed to read person name")
+        return None
+    return row[0] if row and row[0] else None
+
+
 def list_people() -> list[dict[str, object]]:
     """Return enrolled people and lightweight counts for management UIs/CLI."""
     try:
