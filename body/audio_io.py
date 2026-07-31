@@ -211,6 +211,9 @@ class AudioIO:
         self._agc_envelope = 0.0
         self._agc_gain = float(target.mic_gain)
         self._agc_noise_floor = _AGC_ABSOLUTE_FLOOR
+        #: Whether the noise gate applies (see _apply_gain). Off while waiting
+        #: for the wake word, on while transcribing what was said.
+        self._gate_enabled = True
         if target.mode == "robot":
             if self._robot is None:
                 from reachy_mini import ReachyMini
@@ -348,7 +351,17 @@ class AudioIO:
         # Gate: only treat this as speech when it stands clear of the room.
         # Below that, pass it through at unity so silence stays silent --
         # amplifying it would just manufacture input out of noise.
-        if self._agc_envelope < max(_AGC_ABSOLUTE_FLOOR, self._agc_noise_floor * _NOISE_GATE_RATIO):
+        #
+        # Skipped entirely while listening for the wake word. The gate exists
+        # to stop room noise being transcribed as a question, which only
+        # matters once the robot is already listening to you. Applying it
+        # beforehand meant quiet speech never reached the spotter and the wake
+        # word had to be shouted. The two failures are not equally bad: a
+        # false wake costs a moment of listening to nothing, a missed one
+        # costs the user raising their voice at a robot.
+        if self._gate_enabled and self._agc_envelope < max(
+            _AGC_ABSOLUTE_FLOOR, self._agc_noise_floor * _NOISE_GATE_RATIO
+        ):
             self._agc_gain = 1.0
             return samples
 
@@ -399,6 +412,7 @@ class AudioIO:
         beyond the gap between frames) and bounds how much state can build up.
         """
         self.flush_mic()
+        self._gate_enabled = False  # maximum sensitivity; see _apply_gain
         stream = self._spotter.create_stream()
         recycle_at = time.monotonic() + _KWS_STREAM_RECYCLE_S
         deadline = None if timeout is None else time.monotonic() + timeout
@@ -462,6 +476,7 @@ class AudioIO:
         distinguish "never heard you" from "heard you and mistranscribed it".
         """
         self.flush_mic()
+        self._gate_enabled = True  # room noise must not become a question
         stream = self._recognizer.create_stream()
         partial = ""
         captured: list[np.ndarray] = []

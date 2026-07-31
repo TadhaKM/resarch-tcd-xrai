@@ -268,7 +268,13 @@ MODELS = ModelConfig(
     # trades nothing there and buys real sensitivity on weak live input. Raise
     # it back toward 0.15 if "Reachy" starts firing on unrelated speech.
     whisper_dir=MODELS_DIR / "asr" / "sherpa-onnx-whisper-base.en",
-    kws_threshold=0.05,
+    # Lower = easier to trigger. 0.15 was tuned against clean synthesized
+    # audio and needed shouting over the robot's quiet far-field mic; 0.05 was
+    # still not enough. Testing found 0.05-0.2 indistinguishable on clean
+    # audio, so nothing is being protected at the top of that range. A false
+    # wake costs a moment of listening to nothing, so this errs that way
+    # deliberately. Raise it if the robot starts waking on unrelated speech.
+    kws_threshold=0.02,
     tts_model_path=MODELS_DIR / "tts" / "en_US-amy-medium.onnx",
     tts_config_path=MODELS_DIR / "tts" / "en_US-amy-medium.onnx.json",
     # 127.0.0.1, never "localhost". On Windows that name resolves to IPv6 ::1
