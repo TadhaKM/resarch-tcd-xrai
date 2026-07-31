@@ -183,6 +183,12 @@ class ModelConfig:
     # model's own bpe.model via `sherpa-onnx-cli text2token` -- see
     # models/kws/.../custom_keywords_raw.txt and custom_keywords.txt.
     kws_dir: Path
+    #: Tokenized wake phrases. Edit custom_keywords_raw.txt (one phrase per
+    #: line, uppercase) and regenerate this with the model's own bpe.model --
+    #: the spotter matches token sequences, not text, so a phrase added here
+    #: by hand would never fire. Several phrasings are listed because people
+    #: do not reliably say the one they were told to: "hi reachy", "okay
+    #: reachy" and "excuse me reachy" all now work.
     kws_keywords_file: Path
     kws_threshold: float
     """Tuned empirically against synthesized "Hey Reachy" audio (see

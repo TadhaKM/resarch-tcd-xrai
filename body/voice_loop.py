@@ -108,6 +108,7 @@ def _wait_for_wake_word_in_mode(
     if STATE.sleeping:
         if audio.wait_for_wake_word(timeout=2.0):
             STATE.set_sleeping(False)
+            motion.acknowledge()
             motion.express("happy")
             audio.speak("I'm awake.", "happy", motion=motion)
             return False
@@ -203,7 +204,10 @@ def run_once(
     if not _wait_for_wake_word_in_mode(audio, motion, tracker):
         return
     logger.info("Wake word detected.")
-    STATE.add("listen", 'Heard "Hey Reachy" -- listening for your question')
+    STATE.add("listen", "Wake word heard -- listening for your question")
+    # Visible acknowledgement before listening, so it is obvious the robot is
+    # waiting for you rather than ignoring you.
+    motion.acknowledge()
 
     # Identity comes from the tracker, which is already watching continuously
     # and owns the detector -- calling it again here would mean two threads in

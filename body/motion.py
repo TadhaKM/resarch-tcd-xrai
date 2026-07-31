@@ -287,6 +287,44 @@ class MotionController:
         """
         self._daemon_tracking = enabled
 
+    def acknowledge(self) -> None:
+        """Perk up briefly: "I heard you, go ahead".
+
+        Deliberately silent and short. Between the wake word and the first
+        word of an answer there are several seconds of nothing, which is long
+        enough to wonder whether it heard you at all and start repeating
+        yourself -- and repeating yourself over the top of it is exactly what
+        makes the transcript garbage. A spoken acknowledgement would collide
+        with the question; a movement does not.
+
+        Non-blocking, so listening starts immediately rather than after the
+        gesture finishes.
+        """
+        if self._robot is None:
+            return
+
+        def _perform() -> None:
+            with self._lock:
+                self._paused = True
+            try:
+                # Antennas up and a small lift, then settle -- reads as
+                # attention rather than as one of the emotion poses.
+                for pose, hold in (
+                    (HeadPose(pitch=10.0, z=8.0, antennas=(55.0, -55.0)), 0.22),
+                    (HeadPose(pitch=4.0, z=3.0, antennas=(30.0, -30.0)), 0.18),
+                ):
+                    deadline = time.monotonic() + hold
+                    while time.monotonic() < deadline:
+                        self._send_pose(pose)
+                        time.sleep(0.02)
+            except Exception as exc:
+                logger.debug("Acknowledge gesture skipped: %s", exc)
+            finally:
+                with self._lock:
+                    self._paused = False
+
+        threading.Thread(target=_perform, name="motion-ack", daemon=True).start()
+
     def wake_up(self) -> None:
         """Play a short, unmistakable greeting: look around, then nod."""
         if self._robot is None:
