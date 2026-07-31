@@ -284,7 +284,14 @@ MODELS = ModelConfig(
     # slow model and was entirely name resolution.
     ollama_host="http://127.0.0.1:11434",
     ollama_model=OLLAMA_MODEL_PRIMARY,
-    llm_max_tokens=60,
+    # 140, not the 60 tuned for the CM4's ~1 token/sec. The cap exists so a
+    # runaway reply cannot stall a turn; at 60 it was also truncating ordinary
+    # answers mid-sentence ("highs around 25-30(" -- observed live) because on
+    # the CM4 every token cost a full second. The laptop generates ~25/sec, so
+    # 140 buys complete sentences for ~1s of worst-case latency, and the
+    # prompt still asks for one-to-two short sentences -- the cap is headroom
+    # for the emotion tag, not the brevity mechanism.
+    llm_max_tokens=140,
     db_path=Path(__file__).parent / "data" / "memory.db",
     face_detector_model_path=MODELS_DIR / "face" / "blaze_face_short_range.tflite",
     face_embedding_model_path=MODELS_DIR / "face" / "w600k_mbf.onnx",
