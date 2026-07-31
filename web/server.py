@@ -14,10 +14,12 @@ import logging
 import threading
 from pathlib import Path
 
+import time
+
 import requests
 import uvicorn
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 
 from body.voice_loop import _DANCE_PHRASES as DANCE_PHRASES
@@ -90,6 +92,45 @@ def events(since: int = 0) -> JSONResponse:
     """
     latest, items = STATE.events_since(since)
     return JSONResponse({"seq": latest, "events": items, "status": STATE.snapshot()})
+
+
+class SayRequest(BaseModel):
+    text: str
+
+
+@app.post("/api/say")
+def say(req: SayRequest) -> JSONResponse:
+    """Queue a sentence for the robot to speak (dashboard 'Say it' box)."""
+    text = req.text.strip()[:300]
+    if not text:
+        return JSONResponse({"ok": False, "error": "empty"}, status_code=400)
+    if not STATE.request("say", text):
+        return JSONResponse({"ok": False, "error": "queue full"}, status_code=429)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/listen")
+def listen_now() -> JSONResponse:
+    """Start listening as if the wake word had been heard.
+
+    Exists because the wake-word model is the least reliable link in a loud
+    room; a button on a phone works at any noise level.
+    """
+    STATE.request("listen")
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/transcript")
+def transcript() -> PlainTextResponse:
+    """The whole session as plain text, for download."""
+    lines = []
+    for e in STATE.history():
+        stamp = time.strftime("%H:%M:%S", time.localtime(e.at))
+        lines.append(f"{stamp}  {e.kind.upper():7}  {e.text}")
+    return PlainTextResponse(
+        "\n".join(lines) + "\n",
+        headers={"Content-Disposition": 'attachment; filename="reachy-transcript.txt"'},
+    )
 
 
 def _daemon_url() -> str:

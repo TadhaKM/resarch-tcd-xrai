@@ -11,28 +11,38 @@ import time
 from dataclasses import dataclass, field
 from typing import Literal, Optional
 
-Mode = Literal["conversation", "greeter", "dance", "idle"]
+Mode = Literal["conversation", "greeter", "dance", "story", "idle"]
 
 #: Order here is the order shown in the dashboard.
-MODES: tuple[Mode, ...] = ("conversation", "greeter", "dance", "idle")
+MODES: tuple[Mode, ...] = ("conversation", "greeter", "dance", "story", "idle")
 
 MODE_LABELS: dict[Mode, str] = {
     "conversation": "Conversation",
     "greeter": "Greeter",
     "dance": "Dance",
+    "story": "Storyteller",
     "idle": "Idle",
 }
 
 MODE_HELP: dict[Mode, str] = {
-    "conversation": "Say \"Hey Reachy\", then talk. Follow-ups need no wake word.",
+    "conversation": "Say a wake phrase, then talk. One wake phrase per question.",
     "greeter": "Greets people it sees, then chats. Needs face detection.",
-    "dance": "Dances on a loop. Say \"Hey Reachy\" to talk instead.",
+    "dance": "Dances on a loop. Say a wake phrase to talk instead.",
+    "story": "Tells a short story now and then. Ask for another one anytime.",
     "idle": "Awake and listening for the wake word, but starts nothing itself.",
 }
 
 #: How many events the dashboard can show. Old ones are dropped rather than
 #: kept forever -- this is a live view, not a transcript archive.
 _MAX_EVENTS = 200
+
+#: The transcript archive, by contrast, keeps the whole session (capped so a
+#: robot left running for a week cannot eat the laptop's memory).
+_MAX_HISTORY = 10000
+
+#: Queued dashboard requests waiting for the voice loop to pick them up.
+#: Small on purpose: these are button presses, not a message bus.
+_MAX_REQUESTS = 5
 
 
 @dataclass
@@ -67,6 +77,11 @@ class RobotState:
         # Set once the loop is past model loading; the dashboard shows
         # "starting" until then, so a slow start is not mistaken for a fault.
         self._ready = False
+        self._history: list[Event] = []
+        self._requests: list[tuple[str, str, str]] = []
+        # Set on every mode change, consumed by whoever needs an
+        # on-entry action (storyteller tells its first story from this).
+        self._mode_dirty = False
 
     # --- mode ---
 
@@ -82,8 +97,35 @@ class RobotState:
             if mode == self._mode:
                 return True
             self._mode = mode
+            self._mode_dirty = True
         self.add("status", f"Mode set to {MODE_LABELS[mode]}")
         return True
+
+    def pop_mode_changed(self) -> bool:
+        """True exactly once after each mode change."""
+        with self._lock:
+            dirty = self._mode_dirty
+            self._mode_dirty = False
+            return dirty
+
+    # --- dashboard requests ---
+
+    def request(self, kind: str, text: str = "", tag: str = "neutral") -> bool:
+        """Queue a dashboard action ("say" or "listen") for the voice loop.
+
+        The loop is the only thing allowed to drive the speaker and mic --
+        speaking from the web thread would interleave two audio streams into
+        garbage -- so buttons queue here and the loop acts between turns.
+        """
+        with self._lock:
+            if len(self._requests) >= _MAX_REQUESTS:
+                return False
+            self._requests.append((kind, text, tag))
+            return True
+
+    def pop_request(self) -> Optional[tuple[str, str, str]]:
+        with self._lock:
+            return self._requests.pop(0) if self._requests else None
 
     @property
     def sleeping(self) -> bool:
@@ -106,11 +148,20 @@ class RobotState:
             return
         with self._lock:
             self._seq += 1
-            self._events.append(Event(kind=kind, text=text))
+            event = Event(kind=kind, text=text)
+            self._events.append(event)
             if len(self._events) > _MAX_EVENTS:
                 del self._events[: len(self._events) - _MAX_EVENTS]
+            self._history.append(event)
+            if len(self._history) > _MAX_HISTORY:
+                del self._history[: len(self._history) - _MAX_HISTORY]
             if kind == "heard":
                 self._last_heard_at = time.time()
+
+    def history(self) -> list[Event]:
+        """The whole session's events, for transcript export."""
+        with self._lock:
+            return list(self._history)
 
     def note(self, kind: str, text: str) -> None:
         """Record an event, unless it repeats the one before it.

@@ -16,6 +16,7 @@ can be woken by voice.
 import logging
 import os
 import random
+import re
 import threading
 import time
 
@@ -73,6 +74,40 @@ _DANCE_PHRASES = (
     "show me some moves",
 )
 
+#: Spoken ways of asking for a story. Works in any mode; storyteller mode
+#: also volunteers one on entry and then occasionally.
+_STORY_PHRASES = (
+    "tell me a story",
+    "tell us a story",
+    "another story",
+    "one more story",
+    "tell a story",
+)
+
+#: What the LLM is asked for when a story is due. Words are capped in the
+#: instruction rather than trusting num_predict, which truncates mid-sentence.
+_STORY_REQUEST = (
+    "Tell me a brand new, very short story for all ages: three to five short "
+    "sentences, vivid and warm, with a clear little ending. Under 70 words. "
+    "Pick a different topic than last time."
+)
+
+#: How long storyteller mode waits before volunteering another story.
+_STORY_INTERVAL_S = 240.0
+_last_story_at = 0.0
+
+#: Active spoken timers: (threading.Timer, description, fire_at_monotonic).
+_timers: list[tuple[threading.Timer, str, float]] = []
+_timers_lock = threading.Lock()
+
+#: Word numbers Whisper actually emits for small counts; digits cover the rest.
+_NUMBER_WORDS = {
+    "a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11,
+    "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15, "twenty": 20,
+    "thirty": 30, "forty": 40, "forty-five": 45, "fifty": 50, "sixty": 60,
+}
+
 #: Openers for greeter mode, when the person isn't recognised by name.
 _GREETINGS = (
     "Oh, hello there!",
@@ -89,6 +124,84 @@ _last_greeting_at = 0.0
 #: One repetition of the dance, so a mode change lands between repetitions.
 _DANCE_BEAT_S = 5.0
 
+def _parse_timer(spoken: str) -> Optional[tuple[int, str]]:
+    """Extract (seconds, human description) from a timer request, else None.
+
+    Handles both digits and the number words Whisper produces ("set a timer
+    for five minutes" / "timer for 30 seconds" / "remind me in an hour").
+    """
+    text = spoken.lower()
+    if "timer" not in text and "remind me in" not in text:
+        return None
+    if "half an hour" in text:
+        return 1800, "30 minute"
+    if "half a minute" in text:
+        return 30, "30 second"
+
+    m = re.search(r"(?:timer[^a-z0-9]*(?:for|of)?|remind me in)\s+([a-z0-9-]+)\s+(second|minute|hour)s?", text)
+    if not m:
+        return None
+    raw, unit = m.group(1), m.group(2)
+    amount = _NUMBER_WORDS.get(raw)
+    if amount is None:
+        try:
+            amount = int(raw)
+        except ValueError:
+            return None
+    seconds = amount * {"second": 1, "minute": 60, "hour": 3600}[unit]
+    if not 5 <= seconds <= 2 * 3600:
+        return None
+    return seconds, f"{amount} {unit}"
+
+
+def _handle_timer_command(spoken: str, audio: AudioIO, motion: MotionController) -> bool:
+    """Set or cancel spoken timers. Returns True if this turn was a timer."""
+    if "cancel" in spoken and "timer" in spoken:
+        with _timers_lock:
+            cancelled = len(_timers)
+            for t, _, _ in _timers:
+                t.cancel()
+            _timers.clear()
+        motion.express("neutral")
+        audio.speak(
+            f"Okay, cancelled {cancelled} timer{'s' if cancelled != 1 else ''}."
+            if cancelled else "There were no timers running.",
+            "neutral", motion=motion,
+        )
+        return True
+
+    parsed = _parse_timer(spoken)
+    if parsed is None:
+        return False
+    seconds, desc = parsed
+
+    def _fire() -> None:
+        with _timers_lock:
+            _timers[:] = [t for t in _timers if t[0] is not timer]
+        # Queued rather than spoken from this thread: only the voice loop may
+        # drive the speaker, or two audio streams interleave into garbage.
+        STATE.request("say", f"Ding ding! Your {desc} timer is finished.", "happy")
+
+    timer = threading.Timer(seconds, _fire)
+    timer.daemon = True
+    with _timers_lock:
+        _timers.append((timer, desc, time.monotonic() + seconds))
+    timer.start()
+    logger.info("Timer set: %s (%ds)", desc, seconds)
+    STATE.add("status", f"Timer set for {desc}")
+    motion.express("happy")
+    audio.speak(f"Timer set for {desc}. I'll let you know.", "happy", motion=motion)
+    return True
+
+
+def _tell_story(audio: AudioIO, motion: MotionController) -> None:
+    global _last_story_at
+    _last_story_at = time.monotonic()
+    logger.info("Telling a story.")
+    STATE.add("status", "Telling a story")
+    _respond(audio, motion, 0, _STORY_REQUEST)
+
+
 def _wait_for_wake_word_in_mode(
     audio: AudioIO, motion: MotionController, tracker: Optional[FaceTracker]
 ) -> bool:
@@ -102,6 +215,23 @@ def _wait_for_wake_word_in_mode(
     behaviours, so switching mode in the dashboard is felt within a second or
     two instead of after whatever the robot happened to start.
     """
+    # Dashboard requests come first, even asleep: "Say it" speaks regardless,
+    # and "Listen now" behaves exactly like the wake word (waking if needed).
+    request = STATE.pop_request()
+    if request is not None:
+        kind, text, tag = request
+        if kind == "say":
+            logger.info("Dashboard say: %r", text)
+            STATE.add("said", text)
+            motion.express(tag)
+            audio.speak(text, tag, motion=motion)
+            return False
+        if kind == "listen":
+            logger.info("Dashboard listen-now pressed.")
+            STATE.add("status", "Listen button pressed")
+            STATE.set_sleeping(False)
+            return True
+
     # Asleep: the wake word is the only thing that gets a response. Modes stay
     # selected but dormant, so "turn off" quietens the robot without ending the
     # process and without losing what it was set to do.
@@ -143,6 +273,14 @@ def _wait_for_wake_word_in_mode(
         if audio.wait_for_wake_word(timeout=1.0):
             return True
         return False
+
+    if mode == "story":
+        # A story on entering the mode, then occasionally; a wake phrase in
+        # between works as normal (and "another story" asks for one directly).
+        if STATE.pop_mode_changed() or time.monotonic() - _last_story_at > _STORY_INTERVAL_S:
+            _tell_story(audio, motion)
+            return False
+        return audio.wait_for_wake_word(timeout=2.0)
 
     if mode == "idle":
         return audio.wait_for_wake_word(timeout=1.0)
@@ -274,13 +412,17 @@ def run_once(
         STATE.set_sleeping(True)
         return
 
-    if any(phrase in spoken for phrase in _DANCE_PHRASES):
+    if _handle_timer_command(spoken, audio, motion):
+        pass
+    elif any(phrase in spoken for phrase in _DANCE_PHRASES):
         logger.info("Dance requested.")
         motion.express("happy")
         # Started before speaking so the robot is already moving as it answers,
         # rather than talking about dancing and then dancing.
         motion.dance()
         audio.speak("Watch this!", "happy", motion=motion)
+    elif any(phrase in spoken for phrase in _STORY_PHRASES):
+        _tell_story(audio, motion)
     else:
         _respond(audio, motion, person_id, message)
 

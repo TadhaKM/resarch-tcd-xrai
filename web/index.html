@@ -91,6 +91,22 @@
     color: var(--accent); text-transform: uppercase; letter-spacing: .05em;
   }
 
+  .ctl-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .ctl-row input {
+    flex: 1; min-width: 200px; font: inherit; color: var(--text);
+    background: var(--bg); border: 1px solid var(--line);
+    border-radius: 10px; padding: 9px 12px;
+  }
+  .ctl-row input:focus { outline: none; border-color: var(--accent); }
+  button.act {
+    font: inherit; cursor: pointer; color: var(--text); white-space: nowrap;
+    background: var(--bg); border: 1px solid var(--line);
+    border-radius: 10px; padding: 9px 14px;
+  }
+  button.act:hover { border-color: var(--accent); }
+  button.act:disabled { opacity: .5; cursor: default; }
+  a.toggle { text-decoration: none; display: inline-flex; }
+
   .phrase-group { margin-bottom: 12px; }
   .phrase-group:last-child { margin-bottom: 0; }
   .phrase-group .lead { color: var(--dim); font-size: 12.5px; margin-bottom: 6px; }
@@ -137,6 +153,16 @@
   </div>
 
   <div class="panel">
+    <h2>Direct control</h2>
+    <div class="ctl-row">
+      <input id="say-text" type="text" maxlength="300"
+             placeholder="Type something for Reachy to say&hellip;">
+      <button id="btn-say" class="act" type="button">Say it</button>
+      <button id="btn-listen" class="act" type="button">&#127908; Listen now</button>
+    </div>
+  </div>
+
+  <div class="panel">
     <h2>Say any of these</h2>
     <div id="phrases"><span class="dim">loading&hellip;</span></div>
   </div>
@@ -144,7 +170,10 @@
   <div class="panel">
     <div class="panel-head">
       <h2>What it hears &amp; says</h2>
-      <button id="btn-logs" class="toggle" type="button" aria-pressed="false">Logs</button>
+      <span>
+        <a id="btn-dl" class="toggle" href="/api/transcript" download="reachy-transcript.txt">Download</a>
+        <button id="btn-logs" class="toggle" type="button" aria-pressed="false">Logs</button>
+      </span>
     </div>
     <div id="log"><div class="empty">Waiting for the robot&hellip;</div></div>
   </div>
@@ -258,6 +287,31 @@
     localStorage.setItem("reachy-logs", on ? "1" : "0");
     const log = $("log");
     log.scrollTop = log.scrollHeight;
+  };
+
+  // Direct control: say-box and listen-now. Both queue a request the voice
+  // loop picks up between turns, so there can be a couple of seconds before
+  // the robot acts -- the button disable is feedback that the press landed.
+  const sayBox = $("say-text"), saidBtn = $("btn-say"), listenBtn = $("btn-listen");
+  async function sendSay() {
+    const text = sayBox.value.trim();
+    if (!text) return;
+    saidBtn.disabled = true;
+    try {
+      const r = await fetch("/api/say", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({text})
+      });
+      if (r.ok) sayBox.value = "";
+    } catch (e) { /* leave the text so it can be retried */ }
+    setTimeout(() => { saidBtn.disabled = false; }, 800);
+  }
+  saidBtn.onclick = sendSay;
+  sayBox.addEventListener("keydown", e => { if (e.key === "Enter") sendSay(); });
+  listenBtn.onclick = async () => {
+    listenBtn.disabled = true;
+    try { await fetch("/api/listen", {method: "POST"}); } catch (e) {}
+    setTimeout(() => { listenBtn.disabled = false; }, 1500);
   };
 
   // Volume: read once at load, write on release (not every tick of the drag,
