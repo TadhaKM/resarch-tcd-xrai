@@ -200,10 +200,13 @@
     conn.className = "dot " + (s.ready ? "on" : "warn");
     connText.textContent = s.ready ? "running" : "starting…";
 
+    // Asleep is a normal resting state, not a fault -- say so plainly, and say
+    // how to get out of it, so it is never mistaken for the robot being stuck.
     const act = $("d-act");
-    if (s.speaking)      { act.className = "dot on live";   $("s-act").textContent = "speaking"; }
-    else if (s.listening){ act.className = "dot on live";   $("s-act").textContent = "listening"; }
-    else                 { act.className = "dot";           $("s-act").textContent = "idle"; }
+    if (s.sleeping)      { act.className = "dot warn"; $("s-act").textContent = 'asleep — say "Hey Reachy"'; }
+    else if (s.speaking) { act.className = "dot on live"; $("s-act").textContent = "speaking"; }
+    else if (s.listening){ act.className = "dot on live"; $("s-act").textContent = "listening"; }
+    else                 { act.className = "dot"; $("s-act").textContent = "idle"; }
 
     const m = Math.floor(s.uptime_s / 60), sec = Math.floor(s.uptime_s % 60);
     $("p-up").textContent = `up ${m}m ${sec}s`;

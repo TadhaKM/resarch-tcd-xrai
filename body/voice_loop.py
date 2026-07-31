@@ -8,9 +8,9 @@ rather than generated in full before speaking a word, so the robot starts
 answering as soon as it has a complete sentence instead of after the whole
 reply exists.
 
-A wake word starts a conversation rather than a single question: run_once
-keeps listening after each reply and only returns to the wake word once
-nobody answers.
+Each turn needs its own wake word, and "turn off" puts the robot to sleep
+rather than ending the process -- it keeps listening for "Hey Reachy" so it
+can be woken by voice.
 """
 
 import logging
@@ -89,12 +89,6 @@ _last_greeting_at = 0.0
 #: One repetition of the dance, so a mode change lands between repetitions.
 _DANCE_BEAT_S = 5.0
 
-#: Replies before a conversation returns to requiring the wake word. Bounds
-#: how long a room full of talking can hold the robot's attention, since
-#: follow-ups are accepted without one.
-_MAX_EXCHANGES = 12
-
-
 def _wait_for_wake_word_in_mode(
     audio: AudioIO, motion: MotionController, tracker: Optional[FaceTracker]
 ) -> bool:
@@ -108,6 +102,17 @@ def _wait_for_wake_word_in_mode(
     behaviours, so switching mode in the dashboard is felt within a second or
     two instead of after whatever the robot happened to start.
     """
+    # Asleep: the wake word is the only thing that gets a response. Modes stay
+    # selected but dormant, so "turn off" quietens the robot without ending the
+    # process and without losing what it was set to do.
+    if STATE.sleeping:
+        if audio.wait_for_wake_word(timeout=2.0):
+            STATE.set_sleeping(False)
+            motion.express("happy")
+            audio.speak("I'm awake.", "happy", motion=motion)
+            return False
+        return False
+
     mode = STATE.mode
 
     if mode == "dance":
@@ -176,13 +181,12 @@ def run_once(
     motion: MotionController,
     tracker: Optional[FaceTracker] = None,
 ) -> None:
-    """Wake once, then converse until the person stops replying.
+    """Handle one wake -> listen -> answer turn, then return to the wake word.
 
-    The wake word opens a conversation rather than buying a single question.
-    Requiring "Hey Reachy" before every sentence made follow-ups feel like
-    separate transactions instead of a conversation; now the robot keeps
-    listening after each reply and only falls back to the wake word once
-    nobody answers.
+    Follow-ups without a wake word were tried and removed: in a room with
+    other people talking, the robot answered whatever was said next by anyone
+    and kept the thread running from there. Requiring "Hey Reachy" each time
+    is what makes it unambiguous who is being spoken to.
     """
     # A voice loop is invisible from the outside: when nothing happens there's
     # no way to tell "didn't hear the wake word" from "heard it but
@@ -242,40 +246,41 @@ def run_once(
             STATE.add("status", "Nothing heard -- back to the wake word")
             return
 
-    exchanges = 0
-    while message.strip():
-        spoken = message.lower()
+    # One exchange per wake word, then back to waiting.
+    #
+    # This did once continue listening for follow-ups, which reads better on
+    # paper but not in a room with other people in it: the robot picked up
+    # whatever was said next by anyone, answered it, and kept the thread going
+    # from there -- it spent minutes replying to a conversation it was not part
+    # of. Requiring "Hey Reachy" each time is what makes it clear who is being
+    # addressed, and it costs one short phrase.
+    spoken = message.lower()
 
-        # Checked before the LLM sees the message: "turn off" has to act, not
-        # be answered, and waiting on generation to decide would make it feel
-        # unresponsive at exactly the moment the user wants it to stop.
-        if any(phrase in spoken for phrase in _SHUTDOWN_PHRASES):
-            logger.info("Shutdown phrase heard in %r.", message)
-            motion.express("sad")
-            audio.speak("Okay, goodbye!", "sad", motion=motion)
-            raise ShutdownRequested
+    # Checked before the LLM sees the message: "turn off" has to act, not be
+    # answered, and waiting on generation to decide would make it feel
+    # unresponsive at exactly the moment the user wants it to stop.
+    if any(phrase in spoken for phrase in _SHUTDOWN_PHRASES):
+        # Sleep, don't exit. Ending the process meant the only way back was
+        # relaunching it from a terminal, which is no use to someone standing
+        # in front of the robot -- it should be wakeable the same way it is
+        # woken any other time.
+        logger.info("Sleep phrase heard in %r.", message)
+        motion.express("sad")
+        audio.speak("Okay, goodbye! Say Hey Reachy when you need me.", "sad", motion=motion)
+        STATE.set_sleeping(True)
+        return
 
-        if any(phrase in spoken for phrase in _DANCE_PHRASES):
-            logger.info("Dance requested.")
-            motion.express("happy")
-            # Started before speaking so the robot is already moving as it
-            # answers, rather than talking about dancing and then dancing.
-            motion.dance()
-            audio.speak("Watch this!", "happy", motion=motion)
-        else:
-            _respond(audio, motion, person_id, message)
-        exchanges += 1
-        if exchanges >= _MAX_EXCHANGES:
-            logger.info("Conversation length limit reached -- back to wake word.")
-            return
-        # No wake word needed for the follow-up. listen() returns "" once it
-        # has waited out the silence, which doubles as "the conversation is
-        # over" without needing a separate timeout mechanism.
-        logger.info("Listening for a follow-up...")
-        message = audio.listen()
-        logger.info("Heard: %r", message)
+    if any(phrase in spoken for phrase in _DANCE_PHRASES):
+        logger.info("Dance requested.")
+        motion.express("happy")
+        # Started before speaking so the robot is already moving as it answers,
+        # rather than talking about dancing and then dancing.
+        motion.dance()
+        audio.speak("Watch this!", "happy", motion=motion)
+    else:
+        _respond(audio, motion, person_id, message)
 
-    logger.info("No follow-up -- returning to wake word.")
+    logger.info("Turn finished -- waiting for the wake word again.")
 
 
 def _respond(audio: AudioIO, motion: MotionController, person_id: int, message: str) -> None:

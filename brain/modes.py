@@ -59,6 +59,10 @@ class RobotState:
         self._speaking = False
         self._face_visible = False
         self._started_at = time.time()
+        # "Turn off" puts the robot to sleep rather than ending the process:
+        # it stays listening for the wake word so it can be woken by voice,
+        # but does nothing on its own until then.
+        self._sleeping = False
         self._last_heard_at: Optional[float] = None
         # Set once the loop is past model loading; the dashboard shows
         # "starting" until then, so a slow start is not mistaken for a fault.
@@ -80,6 +84,18 @@ class RobotState:
             self._mode = mode
         self.add("status", f"Mode set to {MODE_LABELS[mode]}")
         return True
+
+    @property
+    def sleeping(self) -> bool:
+        with self._lock:
+            return self._sleeping
+
+    def set_sleeping(self, sleeping: bool) -> None:
+        with self._lock:
+            if sleeping == self._sleeping:
+                return
+            self._sleeping = sleeping
+        self.add("status", "Asleep -- say \"Hey Reachy\" to wake me" if sleeping else "Awake")
 
     # --- events ---
 
@@ -146,6 +162,7 @@ class RobotState:
         with self._lock:
             return {
                 "mode": self._mode,
+                "sleeping": self._sleeping,
                 "ready": self._ready,
                 "listening": self._listening,
                 "speaking": self._speaking,
