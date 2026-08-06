@@ -1,7 +1,7 @@
 """The public entry points body/ calls into brain/."""
 
 import re
-from typing import Iterator, Optional
+from typing import Iterator
 
 from . import long_term_memory, memory
 from .emotion import extract_emotion_tag
@@ -29,21 +29,25 @@ def stream_reply(person_id: int, message: str) -> Iterator[tuple[str, str]]:
     slow for full-reply latency to feel conversational (see llm_max_tokens'
     docstring in config.py).
 
-    Every sentence is tagged "thinking" except the last: the real tag is a
-    trailing "[emotion: tag]" (see emotion.py), which only becomes known once
-    the whole reply has arrived. The most recently completed sentence is
-    always held back by one step, so it's never spoken until we've seen
-    something follow it -- otherwise the final sentence and its trailing tag
-    would be indistinguishable from "a sentence, mid-stream" the moment it
-    completes.
+    Each sentence is yielded as soon as it is complete. An earlier version held
+    the newest one back until the one after it arrived, so that the last
+    sentence could be paired with the reply's trailing "[emotion: tag]". That
+    cost a whole sentence of generation before the robot said anything --
+    measured live at 3.8s to first word against 0.36s to first token -- and it
+    read as the robot pausing before every answer. The tag is now carried by a
+    final pair instead, whose text is usually empty (the tag is all that is
+    left after the last sentence boundary); callers use it for the closing
+    gesture and skip speaking when there is nothing to say.
+
+    Sentences are tagged "thinking" because the real one isn't known until the
+    reply ends. Every yielded sentence is passed through extract_emotion_tag,
+    so a tag the model puts mid-reply is stripped rather than spoken.
     """
     history = memory.get_history(person_id)
     context = long_term_memory.get_context(person_id)
     messages = build_messages(context, history, message)
 
     buffer = ""
-    pending: Optional[str] = None
-    spoken_chars = 0
     raw_parts: list[str] = []
 
     for piece in stream_response(messages):
@@ -51,19 +55,16 @@ def stream_reply(person_id: int, message: str) -> Iterator[tuple[str, str]]:
         buffer += piece
         match = _SENTENCE_BOUNDARY_RE.search(buffer)
         while match:
-            candidate = buffer[: match.end()].strip()
+            candidate, _ = extract_emotion_tag(buffer[: match.end()])
             buffer = buffer[match.end() :]
-            if pending is not None:
-                yield pending, "thinking"
-                spoken_chars += len(pending) + 1
-            pending = candidate
+            if candidate:
+                yield candidate, "thinking"
             match = _SENTENCE_BOUNDARY_RE.search(buffer)
 
     raw_output = "".join(raw_parts)
     reply_text, emotion_tag = extract_emotion_tag(raw_output)
-    remaining = reply_text[spoken_chars:].strip()
-    if remaining:
-        yield remaining, emotion_tag
+    tail, _ = extract_emotion_tag(buffer)
+    yield tail, emotion_tag
 
     memory.remember_turn(person_id, message, reply_text)
 

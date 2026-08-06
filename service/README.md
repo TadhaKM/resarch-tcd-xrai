@@ -27,7 +27,7 @@ where these units were installed and tested (as user units, via
 `systemctl --user`, no root needed). WSL2's default networking mode doesn't
 bridge to the Windows host's `127.0.0.1`, so `.wslconfig` was set to
 `networkingMode=mirrored` (a machine-wide WSL networking change, not scoped
-to just this project) so WSL's `localhost:8000` reaches the Windows-side
+to just this project) so WSL's `localhost:8888` reaches the Windows-side
 `reachy-mini-daemon --sim`.
 
 ## Why `supervised_process.py` isn't the real `main.py`

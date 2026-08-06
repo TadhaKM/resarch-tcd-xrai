@@ -26,7 +26,7 @@ import time
 
 import requests
 
-DAEMON_STATUS_URL = "http://localhost:8000/api/daemon/status"
+DAEMON_STATUS_URL = "http://localhost:8888/api/daemon/status"
 HEARTBEAT_PATH = os.environ.get(
     "REACHY_HEARTBEAT_PATH", os.path.expanduser("~/reachy_supervisor/heartbeat")
 )

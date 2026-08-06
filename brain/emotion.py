@@ -4,10 +4,15 @@ import re
 
 VALID_EMOTION_TAGS = frozenset({"happy", "sad", "curious", "thinking", "surprised", "neutral"})
 
-# The tag body, matched in two forms because small models drift from the
-# prompt: the requested "emotion: happy" and a bare "happy". Restricted to the
-# known tags so ordinary bracketed prose is never mistaken for one.
-_TAG_BODY = r"(?:emotion\s*:\s*)?\s*(" + "|".join(sorted(VALID_EMOTION_TAGS)) + r")"
+# The tag body, matched in several forms because small models drift from the
+# prompt: the requested "emotion: happy", a bare "happy", and -- seen live from
+# qwen2.5 on nearly every turn -- some other word in the key position
+# ("[thinking: happy]", "[neutral: curious]"). Any key is accepted and the tag
+# read from the value after the colon, so a drifting key is ignored rather than
+# leaving the whole bracket unmatched: unmatched meant it was never stripped
+# and the robot read "[thinking: happy]" out loud. Restricted to the known tags
+# so ordinary bracketed prose is never mistaken for one.
+_TAG_BODY = r"(?:[a-z_]+\s*:\s*)?\s*(" + "|".join(sorted(VALID_EMOTION_TAGS)) + r")"
 
 # Tolerates one trailing punctuation mark after the bracket (e.g. "[emotion: happy].")
 # -- small models often add closing punctuation as if the tag were a normal word.

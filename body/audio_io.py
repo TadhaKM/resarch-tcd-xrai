@@ -41,6 +41,14 @@ FRAME_SAMPLES = int(MODELS.asr_sample_rate * 0.1)  # 100ms chunks
 # body/motion.py's _send_pose), since the same congestion gaps the audio.
 _PLAYBACK_LEAD_S = 1.0
 
+# Headroom applied to synthesized speech before it goes to the robot. Piper's
+# output is normalised right up to full scale (measured: every test sentence
+# peaks at exactly 1.0000), and the robot's own speaker volume ships at 100%,
+# so the amplifier is asked for full-scale audio at maximum gain and crackles
+# on the peaks. Backing the digital level off is the fix that survives someone
+# moving the dashboard volume slider back up.
+_OUTPUT_HEADROOM = 0.8
+
 # Audio discarded right after a wake-word match, to clear the tail of the wake
 # phrase out of the buffer before the request is transcribed.
 _WAKE_DRAIN_S = 0.35
@@ -106,11 +114,15 @@ def _build_recognizer() -> sherpa_onnx.OnlineRecognizer:
         # you've actually said something.
         rule1_min_trailing_silence=5.0,
         # Silence *after* speech has started, i.e. how long it waits to be sure
-        # you have finished. This is pure dead air before anything begins, and
-        # the 1.2s default is the single largest fixed delay left in a turn.
-        # 0.8s still rides over the gaps between words and between clauses
-        # without cutting people off; raise it if it starts clipping sentences.
-        rule2_min_trailing_silence=0.8,
+        # you have finished. This is pure dead air before anything begins, so
+        # it was trimmed to 0.8s from the 1.2s default -- but that clipped
+        # sentences exactly as the old comment here warned it might: an
+        # ordinary pause mid-question ended the turn, and because the captured
+        # audio stops at the endpoint, Whisper only ever saw the fragment too
+        # ("hearing: AND", then a one-word answer to a full question). Back
+        # above the default, since a turn that transcribes one word in five
+        # costs far more than half a second of dead air.
+        rule2_min_trailing_silence=1.5,
         decoding_method="modified_beam_search",
         hotwords_file=str(MODELS.asr_hotwords_file),
         hotwords_score=MODELS.asr_hotwords_score,
@@ -214,6 +226,16 @@ class AudioIO:
         #: Whether the noise gate applies (see _apply_gain). Off while waiting
         #: for the wake word, on while transcribing what was said.
         self._gate_enabled = True
+        #: The spotter stream, kept across wait_for_wake_word calls (which the
+        #: voice loop makes every 1-2s to stay responsive to mode changes).
+        #: None means "build a fresh one, flushing first" -- set after the robot
+        #: has used the mic itself. See wait_for_wake_word.
+        self._kws_stream: Optional[Any] = None
+        self._kws_recycle_at = 0.0
+        #: True when the mic backlog was just drained on purpose by a wake-word
+        #: match, so listen() knows the audio waiting for it is the question
+        #: itself rather than a backlog to throw away. See listen().
+        self._mic_fresh = False
         if target.mode == "robot":
             if self._robot is None:
                 from reachy_mini import ReachyMini
@@ -403,28 +425,40 @@ class AudioIO:
         body/voice_loop.py) without ever stopping listening: capture continues
         regardless, so returning early loses nothing.
 
-        The spotter stream is recycled periodically. This loop can run for
-        hours between matches, and a single stream fed continuously that whole
-        time stops detecting reliably -- observed live, where the wake word
-        matched shortly after startup and then went unrecognised for minutes
-        while audio was still clearly arriving at a healthy level. Starting a
-        fresh stream costs nothing here (no audio is buffered across the swap
-        beyond the gap between frames) and bounds how much state can build up.
+        The stream and the mic backlog therefore have to survive across calls.
+        Rebuilding either one per call destroys the phrase being spoken across
+        the boundary: the loop polls every 1-2s, "hey reachy" takes about one,
+        and a fresh stream starts with no memory of the audio that already
+        arrived while flush_mic drops whatever landed between calls. That is
+        why the wake word only answered about one time in five -- it was heard
+        reliably, just not by a stream that lived long enough to finish
+        matching it. The flush still happens, but only when the robot has just
+        used the mic itself (see speak/listen, which clear the stream so the
+        backlog of its own voice is dropped before listening resumes).
+
+        The stream is still recycled periodically. This loop can run for hours
+        between matches, and a single stream fed continuously that whole time
+        stops detecting reliably -- observed live, where the wake word matched
+        shortly after startup and then went unrecognised for minutes while
+        audio was still clearly arriving at a healthy level.
         """
-        self.flush_mic()
         self._gate_enabled = False  # maximum sensitivity; see _apply_gain
-        stream = self._spotter.create_stream()
-        recycle_at = time.monotonic() + _KWS_STREAM_RECYCLE_S
-        deadline = None if timeout is None else time.monotonic() + timeout
+        now = time.monotonic()
+        if self._kws_stream is None:
+            self.flush_mic()
+            self._kws_stream = self._spotter.create_stream()
+            self._kws_recycle_at = now + _KWS_STREAM_RECYCLE_S
+        deadline = None if timeout is None else now + timeout
         for frame in self._mic_frames():
             now = time.monotonic()
             if deadline is not None and now >= deadline:
                 # Caller wants to do something else and ask again; audio keeps
                 # being captured either way, so nothing is missed by returning.
                 return False
-            if now >= recycle_at:
-                stream = self._spotter.create_stream()
-                recycle_at = now + _KWS_STREAM_RECYCLE_S
+            if now >= self._kws_recycle_at:
+                self._kws_stream = self._spotter.create_stream()
+                self._kws_recycle_at = now + _KWS_STREAM_RECYCLE_S
+            stream = self._kws_stream
 
             stream.accept_waveform(MODELS.asr_sample_rate, frame)
             while self._spotter.is_ready(stream):
@@ -438,6 +472,7 @@ class AudioIO:
                 # the tail of "hey reachy" into it (that bleed produced
                 # "ISN'T THAT MOTIVE HAIR REACHY" from a clean utterance).
                 self._drain_mic(_WAKE_DRAIN_S)
+                self._mic_fresh = True
                 return True
         return False
 
@@ -475,8 +510,19 @@ class AudioIO:
         recognizer is picking up and *when* -- a final-only log can't
         distinguish "never heard you" from "heard you and mistranscribed it".
         """
-        self.flush_mic()
+        # Only drop the backlog when it is genuinely stale (the robot's own
+        # voice from the previous turn). Straight after a wake-word match it
+        # holds the start of the question -- wait_for_wake_word has already
+        # drained the wake phrase itself -- and flushing it unconditionally
+        # threw away the opening words of anyone who ran "hey reachy" and their
+        # question together in one breath.
+        if not self._mic_fresh:
+            self.flush_mic()
+        self._mic_fresh = False
         self._gate_enabled = True  # room noise must not become a question
+        # These frames go to the recognizer, not the spotter, so the spotter's
+        # stream would resume with a hole in it. Drop it and start clean.
+        self._kws_stream = None
         stream = self._recognizer.create_stream()
         partial = ""
         captured: list[np.ndarray] = []
@@ -528,6 +574,10 @@ class AudioIO:
         finally:
             if motion is not None:
                 motion.end_speech()
+            # The mic kept capturing while we spoke, so the backlog now holds
+            # the robot's own voice. Dropping the stream makes the next
+            # wait_for_wake_word flush that before it starts matching.
+            self._kws_stream = None
 
     def _speak_local(self, text: str, motion: Optional[Any]) -> None:
         for chunk in self._voice.synthesize(text):
@@ -559,7 +609,7 @@ class AudioIO:
             if motion is not None:
                 motion.feed_speech_audio(chunk.audio_float_array)
             audio = _resample(chunk.audio_float_array, chunk.sample_rate, output_rate)
-            self._robot.media.push_audio_sample(audio)
+            self._robot.media.push_audio_sample(audio * _OUTPUT_HEADROOM)
             pushed_s += len(audio) / output_rate
             ahead = pushed_s - (time.monotonic() - started)
             if ahead > _PLAYBACK_LEAD_S:

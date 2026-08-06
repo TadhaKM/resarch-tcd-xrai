@@ -22,6 +22,8 @@ import time
 
 from typing import Optional
 
+import requests
+
 from brain import db
 from brain.interface import stream_reply
 from brain.modes import STATE
@@ -38,6 +40,10 @@ logger = logging.getLogger(__name__)
 #: Exit code meaning "the robot connection died and only a restart can fix it".
 #: start_reachy.ps1 relaunches on this rather than leaving a deaf, frozen app.
 _EXIT_LINK_LOST = 3
+
+# How long to wait for the daemon to come back after _ensure_daemon_advertises
+# restarts it. Measured at roughly a minute on this hardware.
+_DAEMON_RESTART_TIMEOUT_S = 90.0
 
 
 class ShutdownRequested(Exception):
@@ -441,21 +447,86 @@ def _respond(audio: AudioIO, motion: MotionController, person_id: int, message: 
     started = time.monotonic()
 
     final_tag = "neutral"
-    for index, (sentence, emotion_tag) in enumerate(stream_reply(person_id, message)):
-        if index == 0:
+    spoken = 0
+    for sentence, emotion_tag in stream_reply(person_id, message):
+        # The reply's real emotion arrives on a final pair that is usually just
+        # the tag, with no text left to say (see stream_reply).
+        final_tag = emotion_tag
+        if not sentence:
+            continue
+        if spoken == 0:
             logger.info("First sentence after %.1fs", time.monotonic() - started)
+        spoken += 1
         logger.info("Saying [%s]: %r", emotion_tag, sentence)
         STATE.add("said", sentence)
         STATE.set_flags(speaking=True)
         motion.express(emotion_tag)
         audio.speak(sentence, emotion_tag, motion=motion)
-        final_tag = emotion_tag
     logger.info("Turn complete in %.1fs", time.monotonic() - started)
 
     # Recorded-move flourish, once per turn with the real (final) tag -- not
     # per streamed sentence, since play_move() would otherwise add latency to
     # every sentence instead of just topping off the finished reply.
     motion.express_move(final_tag)
+
+
+def _ensure_daemon_advertises(host: str, port: int) -> None:
+    """Restart the daemon if it is still advertising a stale address.
+
+    The SDK does not open its WebRTC media connection to the host we connected
+    to. It opens it to whatever address the daemon reports as its own in
+    /api/daemon/status, and the daemon reads that once at startup. Any network
+    change the robot makes afterwards therefore leaves it advertising an
+    address that no longer exists: joining a WiFi network, or falling back to
+    its own hotspot, which the daemon's own wifi_config does automatically
+    whenever a connection attempt fails.
+
+    Nothing else notices, because the daemon still answers on the address we
+    do have -- the launcher's reachability check passes, the REST API works.
+    It surfaces only as ReachyMini() hanging and then raising a bare
+    "TimeoutError: timed out" from inside the media stack, which kills the app
+    before the first turn. Seen both ways round: advertising its hotspot
+    address while on WiFi, and (starting the robot on its own WiFi, offline)
+    advertising the old WiFi address while in hotspot mode.
+
+    Restarting the daemon is the documented fix, so do it here rather than
+    leaving a crash for someone to diagnose.
+    """
+    status_url = f"http://{host}:{port}/api/daemon/status"
+    try:
+        advertised = requests.get(status_url, timeout=5).json().get("wlan_ip")
+    except (requests.RequestException, ValueError) as exc:
+        logger.warning("Could not read daemon status (%s); connecting anyway.", exc)
+        return
+    if advertised == host:
+        return
+
+    logger.warning(
+        "Daemon reached at %s but advertising itself as %s -- media would be opened "
+        "to an unreachable address. Restarting it (takes up to %.0fs).",
+        host,
+        advertised,
+        _DAEMON_RESTART_TIMEOUT_S,
+    )
+    try:
+        requests.post(f"http://{host}:{port}/api/daemon/restart", timeout=20)
+    except requests.RequestException as exc:
+        logger.warning("Daemon restart request failed (%s); connecting anyway.", exc)
+        return
+
+    deadline = time.monotonic() + _DAEMON_RESTART_TIMEOUT_S
+    while time.monotonic() < deadline:
+        time.sleep(5.0)
+        try:
+            status = requests.get(status_url, timeout=5).json()
+        except (requests.RequestException, ValueError):
+            continue  # still coming back up
+        if status.get("state") == "running" and status.get("wlan_ip") == host:
+            logger.info("Daemon restarted and now advertising %s.", host)
+            return
+    logger.warning(
+        "Daemon did not come back advertising %s in time; connecting anyway.", host
+    )
 
 
 def run_forever(target: HardwareTarget) -> None:
@@ -476,6 +547,12 @@ def run_forever(target: HardwareTarget) -> None:
     robot = None
     if target.mode == "robot":
         from reachy_mini import ReachyMini
+
+        # Only the remote path routes media over WebRTC to the advertised
+        # address; on the robot itself the media backend is local, so a stale
+        # value is harmless there and not worth a restart.
+        if target.media_backend == "webrtc":
+            _ensure_daemon_advertises(target.daemon_host, target.daemon_port)
 
         robot = ReachyMini(
             host=target.daemon_host,

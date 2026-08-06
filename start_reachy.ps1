@@ -20,6 +20,9 @@ $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
 
 $target = if ($OnRobot) { "robot" } else { "robot_remote" }
+# Matches config.py's DAEMON_PORT / REACHY_DAEMON_PORT, so the media-acquire
+# call below reaches the same daemon the app itself connects to.
+$daemonPort = if ($env:REACHY_DAEMON_PORT) { $env:REACHY_DAEMON_PORT } else { 8888 }
 $logPath = Join-Path $PSScriptRoot "reachy_live.log"
 $errPath = Join-Path $PSScriptRoot "reachy_live.err.log"
 
@@ -47,7 +50,21 @@ if (-not $OnRobot) {
     # Fail loudly here rather than 20s later inside model loading: nothing in
     # remote mode works if the robot isn't reachable.
     Write-Host "Checking robot at $RobotIp ... " -NoNewline
-    if (Test-Connection -ComputerName $RobotIp -Count 2 -Quiet) {
+    # Test-Connection's WMI backend throws "Generic failure" instead of
+    # returning $false when a .local name resolves to a link-local IPv6
+    # address (seen on this hotspot's mDNS replies) -- fall back to a raw
+    # ping, which handles that case fine.
+    $reachable = $false
+    try {
+        $reachable = Test-Connection -ComputerName $RobotIp -Count 2 -Quiet
+    } catch {
+        # ping.exe's exit code, not its text, since IPv6 replies (this mDNS
+        # name currently resolves to a link-local IPv6-only address) format
+        # as "Reply from ...: time=" with no "TTL=" field like IPv4 has.
+        ping.exe $RobotIp -n 2 | Out-Null
+        $reachable = ($LASTEXITCODE -eq 0)
+    }
+    if ($reachable) {
         Write-Host "reachable" -ForegroundColor Green
     } else {
         Write-Host "UNREACHABLE" -ForegroundColor Red
@@ -63,7 +80,7 @@ if (-not $OnRobot) {
     # control app) can leave this one with no audio. Asking for them back is
     # harmless when they're already free.
     try {
-        Invoke-RestMethod -Method Post -Uri "http://${RobotIp}:8000/api/media/acquire" -TimeoutSec 5 | Out-Null
+        Invoke-RestMethod -Method Post -Uri "http://${RobotIp}:${daemonPort}/api/media/acquire" -TimeoutSec 5 | Out-Null
         Write-Host "Media acquired from daemon." -ForegroundColor Green
     } catch {
         Write-Host "Could not reacquire media (continuing anyway): $_" -ForegroundColor Yellow
@@ -130,7 +147,7 @@ while ($true) {
     Write-Host "Lost the connection to the robot. Restarting..." -ForegroundColor Yellow
     Start-Sleep -Seconds 5
     try {
-        Invoke-RestMethod -Method Post -Uri "http://${RobotIp}:8000/api/media/acquire" -TimeoutSec 5 | Out-Null
+        Invoke-RestMethod -Method Post -Uri "http://${RobotIp}:${daemonPort}/api/media/acquire" -TimeoutSec 5 | Out-Null
     } catch { }
 }
 

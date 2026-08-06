@@ -64,10 +64,17 @@ class HardwareTarget:
     mic_agc: bool = False
 
 
+# The daemon's FastAPI port, which has to match what the daemon on the robot
+# was actually started with (`reachy-mini-daemon --fastapi-port ...`); the
+# stock daemon uses 8000. Overridable per run with REACHY_DAEMON_PORT so a
+# robot running the default can be talked to without editing this.
+DAEMON_PORT = 8888
+
+
 SIMULATION = HardwareTarget(
     mode="simulation",
     daemon_host="localhost",
-    daemon_port=8000,
+    daemon_port=DAEMON_PORT,
     audio_input_device=None,
     audio_output_device=None,
     camera_source=None,
@@ -79,7 +86,7 @@ ROBOT = HardwareTarget(
     # not "reachy-mini.local" (that hostname is for a remote client controlling
     # the robot over the network -- see ROBOT_REMOTE below).
     daemon_host="localhost",
-    daemon_port=8000,
+    daemon_port=DAEMON_PORT,
     camera_source="default",
     # "default", not "webrtc" or the deprecated "gstreamer" name: with
     # daemon_host="localhost", connection_mode resolves to "localhost_only",
@@ -116,7 +123,7 @@ ROBOT = HardwareTarget(
 ROBOT_REMOTE = HardwareTarget(
     mode="robot",
     daemon_host="172.20.10.3",
-    daemon_port=8000,
+    daemon_port=DAEMON_PORT,
     camera_source=None,
     media_backend="webrtc",
     # Same physical mic and daemon pipeline as ROBOT -- see mic_gain above.
@@ -152,15 +159,16 @@ def default_target() -> HardwareTarget:
     import dataclasses
     import os
 
+    port = int(os.getenv("REACHY_DAEMON_PORT") or DAEMON_PORT)
     target = os.getenv("REACHY_TARGET", "simulation")
     if target == "robot":
-        return ROBOT
+        return dataclasses.replace(ROBOT, daemon_port=port)
     if target == "robot_remote":
         # Override at use time rather than editing the constant, so the
         # committed fallback stays a record of a known-good address.
         host = os.getenv("REACHY_HOST") or resolve_robot_host(ROBOT_REMOTE.daemon_host)
-        return dataclasses.replace(ROBOT_REMOTE, daemon_host=host)
-    return SIMULATION
+        return dataclasses.replace(ROBOT_REMOTE, daemon_host=host, daemon_port=port)
+    return dataclasses.replace(SIMULATION, daemon_port=port)
 
 
 @dataclass(frozen=True)

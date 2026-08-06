@@ -1,6 +1,9 @@
 __pycache__/
 *.pyc
 
+# The virtualenv install.ps1 creates inside the repo (~1GB of wheels).
+.venv/
+
 # Runtime logs from start_reachy.ps1 / main.py (per-run diagnostics, and they
 # contain transcripts of whatever was said to the robot).
 *.log
