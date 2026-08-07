@@ -10,6 +10,13 @@ from .prompts import build_messages
 
 _SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?])\s+")
 
+#: Token budget for a story. The word limit in the storyteller prompt is a
+#: nudge, not a control -- asked for eighty words it writes closer to two
+#: hundred whatever the phrasing -- so this is what actually bounds the
+#: length, sized above what it really produces plus the emotion tag. Erring
+#: high on purpose: a story that stops mid-sentence is worse than a long one.
+_STORY_MAX_TOKENS = 280
+
 
 def get_reply(person_id: int, message: str) -> tuple[str, str]:
     """Return (reply_text, emotion_tag) for a message from the given person."""
@@ -22,7 +29,9 @@ def get_reply(person_id: int, message: str) -> tuple[str, str]:
     return reply_text, emotion_tag
 
 
-def stream_reply(person_id: int, message: str) -> Iterator[tuple[str, str]]:
+def stream_reply(
+    person_id: int, message: str, style: str | None = None
+) -> Iterator[tuple[str, str]]:
     """Yield (sentence_text, emotion_tag) pairs as the reply streams in, so the
     caller can start speaking sentence 1 while the model is still generating
     sentence 2+ -- the point is reducing time-to-first-words on hardware too
@@ -45,12 +54,13 @@ def stream_reply(person_id: int, message: str) -> Iterator[tuple[str, str]]:
     """
     history = memory.get_history(person_id)
     context = long_term_memory.get_context(person_id)
-    messages = build_messages(context, history, message)
+    messages = build_messages(context, history, message, style=style)
 
     buffer = ""
     raw_parts: list[str] = []
 
-    for piece in stream_response(messages):
+    max_tokens = _STORY_MAX_TOKENS if style == "story" else None
+    for piece in stream_response(messages, max_tokens=max_tokens):
         raw_parts.append(piece)
         buffer += piece
         match = _SENTENCE_BOUNDARY_RE.search(buffer)

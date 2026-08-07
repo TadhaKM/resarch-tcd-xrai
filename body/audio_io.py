@@ -26,7 +26,7 @@ from typing import Any, Iterator, Optional
 import numpy as np
 import sherpa_onnx
 import sounddevice as sd
-from piper import PiperVoice
+from piper import PiperVoice, SynthesisConfig
 from scipy.signal import resample
 
 from brain.modes import STATE
@@ -41,13 +41,25 @@ FRAME_SAMPLES = int(MODELS.asr_sample_rate * 0.1)  # 100ms chunks
 # body/motion.py's _send_pose), since the same congestion gaps the audio.
 _PLAYBACK_LEAD_S = 1.0
 
-# Headroom applied to synthesized speech before it goes to the robot. Piper's
-# output is normalised right up to full scale (measured: every test sentence
-# peaks at exactly 1.0000), and the robot's own speaker volume ships at 100%,
-# so the amplifier is asked for full-scale audio at maximum gain and crackles
-# on the peaks. Backing the digital level off is the fix that survives someone
-# moving the dashboard volume slider back up.
-_OUTPUT_HEADROOM = 0.8
+# Piper normalises every utterance to full scale by default, which does two
+# unwanted things: it hands the robot's amplifier a peak of exactly 1.0000
+# (measured on every test sentence) which crackles at the speaker's stock 100%
+# volume, and it flattens each sentence to the same loudness, so a hushed line
+# and an exclamation come out level. Turning normalisation off fixes both --
+# measured peak drops to ~0.62, leaving natural headroom and the dynamics the
+# model actually produced.
+_CHAT_SYNTHESIS = SynthesisConfig(normalize_audio=False)
+
+# Storytelling delivery. Slower (measured 10.4s -> 11.0s on the same passage)
+# so lines land instead of rattling past, with more prosody and rhythm
+# variation than the conversational default (noise_scale 0.667, noise_w 0.8)
+# so successive sentences aren't delivered on the same contour.
+_STORY_SYNTHESIS = SynthesisConfig(
+    length_scale=1.08,
+    noise_scale=0.85,
+    noise_w_scale=1.0,
+    normalize_audio=False,
+)
 
 # Audio discarded right after a wake-word match, to clear the tail of the wake
 # phrase out of the buffer before the request is transcribed.
@@ -562,15 +574,22 @@ class AudioIO:
                         return better
                 return text
 
-    def speak(self, text: str, emotion_tag: str, motion: Optional[Any] = None) -> None:
-        """Synthesize text with piper and play it."""
+    def speak(
+        self,
+        text: str,
+        emotion_tag: str,
+        motion: Optional[Any] = None,
+        expressive: bool = False,
+    ) -> None:
+        """Synthesize text with piper and play it. `expressive` performs it as a story."""
+        syn_config = _STORY_SYNTHESIS if expressive else _CHAT_SYNTHESIS
         if motion is not None:
             motion.begin_speech()
         try:
             if self.target.mode == "robot":
-                self._speak_robot(text, motion)
+                self._speak_robot(text, motion, syn_config)
             else:
-                self._speak_local(text, motion)
+                self._speak_local(text, motion, syn_config)
         finally:
             if motion is not None:
                 motion.end_speech()
@@ -579,8 +598,10 @@ class AudioIO:
             # wait_for_wake_word flush that before it starts matching.
             self._kws_stream = None
 
-    def _speak_local(self, text: str, motion: Optional[Any]) -> None:
-        for chunk in self._voice.synthesize(text):
+    def _speak_local(
+        self, text: str, motion: Optional[Any], syn_config: SynthesisConfig
+    ) -> None:
+        for chunk in self._voice.synthesize(text, syn_config=syn_config):
             if motion is not None:
                 motion.feed_speech_audio(chunk.audio_float_array)
             sd.play(
@@ -590,7 +611,9 @@ class AudioIO:
             )
             sd.wait()
 
-    def _speak_robot(self, text: str, motion: Optional[Any]) -> None:
+    def _speak_robot(
+        self, text: str, motion: Optional[Any], syn_config: SynthesisConfig
+    ) -> None:
         """Stream synthesized audio to the robot, keeping its buffer ahead.
 
         Pushing a chunk and then sleeping for exactly that chunk's duration
@@ -605,11 +628,11 @@ class AudioIO:
         started = time.monotonic()
         pushed_s = 0.0
 
-        for chunk in self._voice.synthesize(text):
+        for chunk in self._voice.synthesize(text, syn_config=syn_config):
             if motion is not None:
                 motion.feed_speech_audio(chunk.audio_float_array)
             audio = _resample(chunk.audio_float_array, chunk.sample_rate, output_rate)
-            self._robot.media.push_audio_sample(audio * _OUTPUT_HEADROOM)
+            self._robot.media.push_audio_sample(audio)
             pushed_s += len(audio) / output_rate
             ahead = pushed_s - (time.monotonic() - started)
             if ahead > _PLAYBACK_LEAD_S:

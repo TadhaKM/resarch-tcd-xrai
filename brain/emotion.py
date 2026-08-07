@@ -23,6 +23,14 @@ _TRAILING_TAG_RE = re.compile(r"\[\s*" + _TAG_BODY + r"\s*\][.!?]?\s*$", re.IGNO
 # saying "How can I help today? [thinking]" verbatim.
 _ANY_TAG_RE = re.compile(r"\[\s*" + _TAG_BODY + r"\s*\]", re.IGNORECASE)
 
+# Stage directions the model invents despite being told not to -- "[Pause]",
+# "[Narrator]" -- which are not part of what should be said out loud; the cost
+# of one reaching the speaker is the robot solemnly announcing "Pause"
+# mid-story. Deliberately only a single bracketed word: real bracketed prose
+# runs to several ("He said [see below] to me.") and must survive, which is
+# what stops this from swallowing anything the model actually meant to say.
+_STAGE_DIRECTION_RE = re.compile(r"\[\s*[a-z]+\s*\]", re.IGNORECASE)
+
 
 def extract_emotion_tag(raw_output: str) -> tuple[str, str]:
     """Split raw LLM output into (reply_text, emotion_tag).
@@ -49,6 +57,7 @@ def extract_emotion_tag(raw_output: str) -> tuple[str, str]:
     if strays and tag is None:
         tag = strays[-1].lower()
     text = _ANY_TAG_RE.sub(" ", text)
+    text = _STAGE_DIRECTION_RE.sub(" ", text)
 
     # Collapse whitespace opened up by removing tags, and drop punctuation left
     # stranded before one (". ." from "sentence. [tag] .").

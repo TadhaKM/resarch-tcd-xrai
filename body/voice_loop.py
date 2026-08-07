@@ -90,13 +90,19 @@ _STORY_PHRASES = (
     "tell a story",
 )
 
-#: What the LLM is asked for when a story is due. Words are capped in the
-#: instruction rather than trusting num_predict, which truncates mid-sentence.
+#: What the LLM is asked for when a story is due. How to tell it lives in the
+#: storyteller system prompt (brain/prompts.py); this only sets the brief.
+#: Length is capped in words here rather than trusting num_predict, which
+#: truncates mid-sentence.
 _STORY_REQUEST = (
-    "Tell me a brand new, very short story for all ages: three to five short "
-    "sentences, vivid and warm, with a clear little ending. Under 70 words. "
+    "Tell me a brand new story, sixty to eighty words, for all ages. "
     "Pick a different topic than last time."
 )
+
+#: Poses cycled through while telling a story, so the robot performs rather
+#: than holding one "thinking" pose for the whole thing. The reply's real
+#: emotion still drives the closing gesture (see _respond).
+_STORY_POSES = ("curious", "happy", "surprised", "thinking")
 
 #: How long storyteller mode waits before volunteering another story.
 _STORY_INTERVAL_S = 240.0
@@ -205,7 +211,7 @@ def _tell_story(audio: AudioIO, motion: MotionController) -> None:
     _last_story_at = time.monotonic()
     logger.info("Telling a story.")
     STATE.add("status", "Telling a story")
-    _respond(audio, motion, 0, _STORY_REQUEST)
+    _respond(audio, motion, 0, _STORY_REQUEST, style="story")
 
 
 def _wait_for_wake_word_in_mode(
@@ -435,8 +441,18 @@ def run_once(
     logger.info("Turn finished -- waiting for the wake word again.")
 
 
-def _respond(audio: AudioIO, motion: MotionController, person_id: int, message: str) -> None:
-    """Generate and speak one reply, with matching expression and gesture."""
+def _respond(
+    audio: AudioIO,
+    motion: MotionController,
+    person_id: int,
+    message: str,
+    style: Optional[str] = None,
+) -> None:
+    """Generate and speak one reply, with matching expression and gesture.
+
+    style="story" swaps in the storyteller persona, a performed delivery, and
+    a changing pose per sentence.
+    """
     # No spoken filler while thinking. It was there to cover slow generation on
     # the robot's own CPU, but the first sentence now arrives in a few seconds
     # and a canned "let me think" only delays the answer it was meant to hide.
@@ -448,7 +464,7 @@ def _respond(audio: AudioIO, motion: MotionController, person_id: int, message: 
 
     final_tag = "neutral"
     spoken = 0
-    for sentence, emotion_tag in stream_reply(person_id, message):
+    for sentence, emotion_tag in stream_reply(person_id, message, style=style):
         # The reply's real emotion arrives on a final pair that is usually just
         # the tag, with no text left to say (see stream_reply).
         final_tag = emotion_tag
@@ -456,12 +472,13 @@ def _respond(audio: AudioIO, motion: MotionController, person_id: int, message: 
             continue
         if spoken == 0:
             logger.info("First sentence after %.1fs", time.monotonic() - started)
+        pose = _STORY_POSES[spoken % len(_STORY_POSES)] if style == "story" else emotion_tag
         spoken += 1
-        logger.info("Saying [%s]: %r", emotion_tag, sentence)
+        logger.info("Saying [%s]: %r", pose, sentence)
         STATE.add("said", sentence)
         STATE.set_flags(speaking=True)
-        motion.express(emotion_tag)
-        audio.speak(sentence, emotion_tag, motion=motion)
+        motion.express(pose)
+        audio.speak(sentence, pose, motion=motion, expressive=style == "story")
     logger.info("Turn complete in %.1fs", time.monotonic() - started)
 
     # Recorded-move flourish, once per turn with the real (final) tag -- not

@@ -125,12 +125,18 @@ def check_speech() -> "object":
         if line.strip()
     ]
     for phrase in phrases:
-        # Best of three: KWS decoding is nondeterministic near the threshold
-        # (thread scheduling jitters borderline scores), and a single decode
-        # once failed "HEY REACHY" -- a phrase proven live all day. Zero of
-        # three is a dead phrase and fails; one of three is flagged as shaky.
-        samples = _synthesize(audio._voice, phrase.lower())
-        hits = sum(audio.detect_wake_word_offline(samples) for _ in range(3))
+        # Best of three, re-synthesizing each time. The variance that matters
+        # is piper's, not the decoder's: measured over ten independent takes,
+        # detection runs 8-10 out of 10 per phrase, but decoding one fixed
+        # take three times just gives the same answer three times. Synthesizing
+        # once outside the loop therefore turned a ~15% chance of an unlucky
+        # take into a hard 0/3 failure, which is what made this check fail a
+        # different phrase on almost every run while the wake word worked
+        # fine live. Zero of three is a dead phrase; one of three is shaky.
+        hits = sum(
+            audio.detect_wake_word_offline(_synthesize(audio._voice, phrase.lower()))
+            for _ in range(3)
+        )
         status = PASS if hits >= 2 else WARN if hits == 1 else FAIL
         report(status, phrase, f"{hits}/3")
 

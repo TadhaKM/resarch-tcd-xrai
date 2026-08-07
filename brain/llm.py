@@ -28,10 +28,19 @@ def generate_response(messages: list[dict[str, str]]) -> str:
     return response["message"]["content"]
 
 
-def stream_response(messages: list[dict[str, str]]) -> Iterator[str]:
-    """Yield raw model output incrementally, piece by piece, as it's generated."""
+def stream_response(
+    messages: list[dict[str, str]], max_tokens: int | None = None
+) -> Iterator[str]:
+    """Yield raw model output incrementally, piece by piece, as it's generated.
+
+    max_tokens raises the default cap for a single call. A story needs it: the
+    cap is sized for one- or two-sentence replies, and asked for a story the
+    model reliably overruns whatever word limit it is given, so the reply was
+    being cut off mid-sentence ("...and that night," then silence).
+    """
+    options = _OPTIONS if max_tokens is None else {"num_predict": max_tokens}
     for chunk in _client.chat(
-        model=MODELS.ollama_model, messages=messages, options=_OPTIONS, stream=True, keep_alive=_KEEP_ALIVE
+        model=MODELS.ollama_model, messages=messages, options=options, stream=True, keep_alive=_KEEP_ALIVE
     ):
         piece = chunk["message"]["content"]
         if piece:
