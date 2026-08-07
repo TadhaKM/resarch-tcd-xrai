@@ -5,6 +5,16 @@ brain/long_term_memory.py is what carries facts *across* conversations.
 
 from collections import defaultdict
 
+#: Turns kept per person. Every unrecognised visitor is person_id 0 (see
+#: voice_loop.run_once), so on an open day this one bucket accumulates the
+#: whole day's conversations from everybody. Unbounded, that grows the prompt
+#: on every turn until it overruns the model's context, at which point the
+#: oldest tokens -- the system prompt -- are dropped, and the robot goes back
+#: to offering to play music (prompts.py) and reading "[emotion: happy]" out
+#: loud (emotion.py). Trimming here rather than at the prompt also means the
+#: turns being discarded are other visitors', which is what you want anyway.
+MAX_TURNS = 12
+
 _HISTORY: dict[int, list[tuple[str, str]]] = defaultdict(list)
 
 
@@ -14,8 +24,11 @@ def get_history(person_id: int) -> list[tuple[str, str]]:
 
 
 def remember_turn(person_id: int, message: str, reply: str) -> None:
-    """Record one conversation turn for this person."""
-    _HISTORY[person_id].append((message, reply))
+    """Record one conversation turn for this person, keeping the last MAX_TURNS."""
+    turns = _HISTORY[person_id]
+    turns.append((message, reply))
+    if len(turns) > MAX_TURNS:
+        del turns[: len(turns) - MAX_TURNS]
 
 
 def clear_history(person_id: int) -> None:

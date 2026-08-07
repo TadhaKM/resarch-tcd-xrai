@@ -1,35 +1,48 @@
-"""LLM wrapper: calls a locally-served Ollama model, configured via config.MODELS.
+"""LLM wrapper. Which model actually answers is decided in brain/llm_backends.py.
 
-Model choice lives entirely in config.py (MODELS.ollama_model / ollama_host) --
-switching to the documented fallback (OLLAMA_MODEL_FALLBACK) or a different
-Ollama host never touches this file.
+Model choice still lives entirely in config.py (MODELS.ollama_model /
+MODELS.cloud_model / MODELS.llm_backend) -- switching between the local model
+and a cloud one, or to the documented Ollama fallback, never touches this file
+or any caller.
 """
 
-from typing import Iterator
+import logging
+from typing import Iterator, Optional
 
-from ollama import Client
+from .llm_backends import FALLBACK, PREFERRED, Backend
 
-from config import MODELS
+logger = logging.getLogger(__name__)
 
-_client = Client(host=MODELS.ollama_host)
-_OPTIONS = {"num_predict": MODELS.llm_max_tokens}
-# Ollama unloads an idle model after 5 minutes by default; a cold reload on
-# this hardware costs ~30+ seconds on top of generation time (measured: 53s
-# cold vs 21s warm for a similar reply). -1 keeps it resident indefinitely --
-# worth it since this process's whole job is serving this one model.
-_KEEP_ALIVE = -1
+
+def active_backend_name() -> str:
+    """Which backend is answering, for the dashboard and the About demo."""
+    return PREFERRED.name
+
+
+def streaming_backends() -> tuple[Backend, ...]:
+    """The backends to try, in order, for one streamed reply.
+
+    Handed out rather than wrapped because the caller that streams
+    (interface.stream_reply) is the only one that knows whether a complete
+    sentence has reached the speaker yet, and that -- not whether a token
+    arrived -- is what decides if switching models is still safe.
+    """
+    return (PREFERRED,) if PREFERRED is FALLBACK else (PREFERRED, FALLBACK)
 
 
 def generate_response(messages: list[dict[str, str]]) -> str:
     """Return raw model output. Expected to embed a trailing '[emotion: tag]' (see emotion.py)."""
-    response = _client.chat(
-        model=MODELS.ollama_model, messages=messages, options=_OPTIONS, keep_alive=_KEEP_ALIVE
-    )
-    return response["message"]["content"]
+    if PREFERRED is FALLBACK:
+        return PREFERRED.generate(messages)
+    try:
+        return PREFERRED.generate(messages)
+    except Exception as exc:
+        logger.warning("%s failed (%s); answering with the local model", PREFERRED.name, exc)
+        return FALLBACK.generate(messages)
 
 
 def stream_response(
-    messages: list[dict[str, str]], max_tokens: int | None = None
+    messages: list[dict[str, str]], max_tokens: Optional[int] = None
 ) -> Iterator[str]:
     """Yield raw model output incrementally, piece by piece, as it's generated.
 
@@ -37,11 +50,28 @@ def stream_response(
     cap is sized for one- or two-sentence replies, and asked for a story the
     model reliably overruns whatever word limit it is given, so the reply was
     being cut off mid-sentence ("...and that night," then silence).
+
+    A cloud failure falls back to the local model, but only while nothing has
+    been said yet. Once the first piece is out the robot is already speaking,
+    and starting a second, different answer over the top of it would have it
+    talk over itself and repeat the opening -- so a stream that dies mid-reply
+    ends the turn early instead. Half an answer is recoverable; two answers at
+    once in front of a room is not.
     """
-    options = _OPTIONS if max_tokens is None else {"num_predict": max_tokens}
-    for chunk in _client.chat(
-        model=MODELS.ollama_model, messages=messages, options=options, stream=True, keep_alive=_KEEP_ALIVE
-    ):
-        piece = chunk["message"]["content"]
-        if piece:
+    if PREFERRED is FALLBACK:
+        yield from FALLBACK.stream(messages, max_tokens)
+        return
+
+    spoken_something = False
+    try:
+        for piece in PREFERRED.stream(messages, max_tokens):
+            spoken_something = True
             yield piece
+        return
+    except Exception as exc:
+        if spoken_something:
+            logger.warning("%s stream failed mid-reply: %s", PREFERRED.name, exc)
+            return
+        logger.warning("%s failed (%s); answering with the local model", PREFERRED.name, exc)
+
+    yield from FALLBACK.stream(messages, max_tokens)

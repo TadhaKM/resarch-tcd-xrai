@@ -244,6 +244,9 @@ class MotionController:
         #: back by itself and cannot be rebuilt here. run_forever watches this.
         self.link_lost = threading.Event()
         self._paused = False
+        #: Set while a dance thread is alive, so a second request is dropped
+        #: rather than overlapping with the first. See dance().
+        self._dancing = threading.Event()
         self._daemon_tracking = False
         self._moves = self._load_recorded_moves()
 
@@ -376,6 +379,21 @@ class MotionController:
             logger.info("Dance skipped: no robot connection.")
             return
 
+        # One dancer at a time. Nothing enforced this before: it happened to
+        # hold only because the caller waited _DANCE_BEAT_S = 5.0s between
+        # calls and the choreography lasts 8 * 60/108 = 4.44s. A caller that
+        # asks any faster gets overlapping threads, and they corrupt each
+        # other: each sets _paused on entry and clears it in its finally, so
+        # the second one's teardown un-pauses the procedural loop while the
+        # first is still choreographing -- exactly the breathing-fights-the-
+        # dance failure the pause exists to prevent. Worse, each streams poses
+        # at 50Hz down a link deliberately throttled to 20Hz for remote
+        # targets, and two at once is the documented way to starve the SDK's
+        # 1s liveness check into link_lost and restart the process mid-demo.
+        if self._dancing.is_set():
+            logger.debug("Dance already in progress; ignoring request.")
+            return
+
         def _perform() -> None:
             # Face tracking steers the head too, so it has to stand down for
             # the duration or the choreography and the tracker pull against
@@ -394,7 +412,11 @@ class MotionController:
                     self._paused = False
                 if was_tracking:
                     self.set_face_tracking(True)
+                self._dancing.clear()
 
+        # Claimed before the thread starts, not inside it: setting it in
+        # _perform leaves a window where a second call gets through.
+        self._dancing.set()
         threading.Thread(target=_perform, name="motion-dance", daemon=True).start()
 
     def _run_dance(self, beats: int, bpm: float) -> None:

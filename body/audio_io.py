@@ -68,6 +68,12 @@ _WAKE_DRAIN_S = 0.35
 # How often to report mic level while listening.
 _LEVEL_LOG_INTERVAL_S = 3.0
 
+# How long the daemon can deliver no audio at all before saying so. Silence
+# from a working mic still produces frames; nothing at all means the media
+# session is gone, which otherwise presents only as a robot that stopped
+# responding for no visible reason.
+_MIC_STALL_WARN_S = 2.0
+
 # Automatic gain control (see AudioIO._apply_gain). Target sits below full
 # scale so normal variation between words doesn't clip; the envelope decays
 # slowly (~1.5s to halve at this chunk rate) so gain doesn't ramp up during
@@ -403,15 +409,40 @@ class AudioIO:
         self._agc_gain = gain
         return np.clip(samples * gain, -1.0, 1.0)
 
-    def _mic_frames(self) -> Iterator[np.ndarray]:
-        """Yield mono float32 chunks at MODELS.asr_sample_rate, forever."""
+    def _mic_frames(self, deadline: Optional[float] = None) -> Iterator[np.ndarray]:
+        """Yield mono float32 chunks at MODELS.asr_sample_rate.
+
+        `deadline` (a time.monotonic() value) stops the generator even when no
+        audio is arriving at all. Callers used to time out by checking the
+        clock once per yielded frame, which silently assumes frames keep
+        coming: in robot mode this loop spins on `sample is None` whenever the
+        daemon's media pipeline stalls, so it yielded nothing, the caller's
+        deadline check was never reached, and wait_for_wake_word(timeout=2.0)
+        blocked forever -- taking the mode switch and the whole voice loop with
+        it, while the dashboard kept answering from its own thread and made it
+        look alive. A stalled pipeline is not hypothetical; it is what a
+        dropped WebRTC media session looks like from this side.
+        """
         if self.target.mode == "robot":
             input_rate = self._robot.media.get_input_audio_samplerate()
+            stalled_since: Optional[float] = None
             while True:
+                if deadline is not None and time.monotonic() >= deadline:
+                    return
                 sample = self._robot.media.get_audio_sample()
                 if sample is None:
+                    now = time.monotonic()
+                    if stalled_since is None:
+                        stalled_since = now
+                    elif now - stalled_since > _MIC_STALL_WARN_S:
+                        logger.warning(
+                            "No mic audio from the daemon for %.0fs -- media session may be gone.",
+                            now - stalled_since,
+                        )
+                        stalled_since = now
                     time.sleep(0.01)
                     continue
+                stalled_since = None
                 # robot.media returns interleaved-channel frames (stereo on this
                 # hardware); sherpa-onnx expects a flat mono sequence.
                 mono = sample[:, 0] if sample.ndim == 2 else sample
@@ -427,6 +458,8 @@ class AudioIO:
                 blocksize=FRAME_SAMPLES,
             ) as mic:
                 while True:
+                    if deadline is not None and time.monotonic() >= deadline:
+                        return
                     samples, _ = mic.read(FRAME_SAMPLES)
                     yield samples[:, 0]
 
@@ -461,7 +494,10 @@ class AudioIO:
             self._kws_stream = self._spotter.create_stream()
             self._kws_recycle_at = now + _KWS_STREAM_RECYCLE_S
         deadline = None if timeout is None else now + timeout
-        for frame in self._mic_frames():
+        # The deadline goes to the frame source as well as being checked here:
+        # a stalled mic yields nothing, and a check that only runs per frame
+        # never fires. See _mic_frames.
+        for frame in self._mic_frames(deadline=deadline):
             now = time.monotonic()
             if deadline is not None and now >= deadline:
                 # Caller wants to do something else and ask again; audio keeps
@@ -491,7 +527,7 @@ class AudioIO:
     def _drain_mic(self, seconds: float) -> None:
         """Discard incoming mic audio for a short window."""
         deadline = time.monotonic() + seconds
-        for _ in self._mic_frames():
+        for _ in self._mic_frames(deadline=deadline):
             if time.monotonic() >= deadline:
                 return
 

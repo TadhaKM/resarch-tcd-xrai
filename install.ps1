@@ -44,10 +44,14 @@ if (Test-Path $venvPython) {
 }
 
 Step "Python packages"
+# anthropic and openai are optional at runtime -- the robot falls back to the
+# local Ollama model when neither is installed or no API key is set -- but both
+# are installed here so that setting a key is the only step needed to move the
+# brain to the cloud, whichever provider the Hub's credits are with.
 & $python -m pip install -q --disable-pip-version-check `
     sherpa-onnx piper-tts sounddevice sentencepiece ollama `
     mediapipe opencv-python onnxruntime fastapi uvicorn requests `
-    reachy-mini numpy scipy
+    reachy-mini numpy scipy anthropic openai
 if ($LASTEXITCODE -ne 0) { Write-Host "   pip failed" -ForegroundColor Red; exit 1 }
 
 # --- Ollama -----------------------------------------------------------------

@@ -246,6 +246,41 @@ class ModelConfig:
     whisper_dir: Optional[Path] = None
     whisper_threads: int = 6
 
+    # Cloud LLM, used when a key is present and reachable (see
+    # brain/llm_backends.py). The local model above stays the fallback, so the
+    # robot still works on a dead network -- which is not hypothetical: the
+    # venue wifi is exactly what fails on the day.
+    #
+    # "auto" picks whichever provider has a key set, preferring Anthropic when
+    # both do, and falls back to local when neither does. Pin it to "ollama" to
+    # force offline behaviour (useful for demonstrating that it needs no
+    # internet), or to a provider name to make a missing key loud rather than
+    # silently local.
+    llm_backend: str = "auto"
+
+    #: Sonnet over Opus deliberately: a spoken turn is judged on latency as much
+    #: as on wording, and the whole laptop-as-brain design exists to get replies
+    #: from ~12s down to ~2s. Same reasoning for the smaller OpenAI model.
+    anthropic_model: str = "claude-sonnet-5"
+    anthropic_key_env: str = "ANTHROPIC_API_KEY"
+    openai_model: str = "gpt-4o-mini"
+    openai_key_env: str = "OPENAI_API_KEY"
+    #: Optional base URL for anything speaking the OpenAI API (Azure OpenAI,
+    #: OpenRouter, Groq, a self-hosted vLLM). Empty means api.openai.com, so
+    #: pointing the robot at a different provider is a config change, not code.
+    openai_base_url: str = ""
+
+    #: Higher than llm_max_tokens: the cap that protects a slow local model from
+    #: a runaway reply is not needed when generation is fast, and a cloud model
+    #: is mostly used for the demos that want a fuller answer.
+    cloud_max_tokens: int = 400
+
+    def api_key(self, env_name: str) -> str:
+        """Read an API key from the environment, or "" when unset."""
+        import os
+
+        return os.getenv(env_name, "").strip()
+
 
 OLLAMA_MODEL_PRIMARY = "qwen2.5:1.5b-instruct-q4_K_M"
 OLLAMA_MODEL_FALLBACK = "llama3.2:1b-instruct-q4_K_M"

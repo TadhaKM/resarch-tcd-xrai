@@ -45,6 +45,11 @@ _EXIT_LINK_LOST = 3
 # restarts it. Measured at roughly a minute on this hardware.
 _DAEMON_RESTART_TIMEOUT_S = 90.0
 
+#: Pause after a failed turn. Long enough that a fault repeating every cycle
+#: cannot spin the CPU and starve the motion thread, short enough that a
+#: one-off blip is invisible to whoever is standing there.
+_TURN_ERROR_BACKOFF_S = 0.5
+
 
 class ShutdownRequested(Exception):
     """Raised when the user asks the robot to stop listening."""
@@ -612,7 +617,21 @@ def run_forever(target: HardwareTarget) -> None:
 
     try:
         while True:
-            run_once(audio, camera, face, motion, tracker)
+            try:
+                run_once(audio, camera, face, motion, tracker)
+            except (KeyboardInterrupt, ShutdownRequested):
+                raise
+            except Exception:
+                # One bad turn must not end the session. Before this, anything
+                # unhandled anywhere in a turn -- a decode error, a transient
+                # SDK fault, later a demo module's own bug -- propagated out of
+                # run_forever and exited the process with code 1, which the
+                # launcher treats as a deliberate stop and does not relaunch.
+                # The robot simply went dark, mid-visit, with the traceback
+                # only in a log file nobody was watching.
+                logger.exception("Turn failed; continuing with the next one.")
+                STATE.add("error", "Something went wrong on that one -- still here.")
+                time.sleep(_TURN_ERROR_BACKOFF_S)
     except (KeyboardInterrupt, ShutdownRequested):
         # Both are ordinary ways to end a session, not failures -- fall through
         # to the same cleanup as a normal exit.

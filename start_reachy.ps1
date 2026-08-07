@@ -134,18 +134,40 @@ $env:PYTHONIOENCODING = "utf-8"   # replies contain curly quotes; cp1252 mangles
 # Exit code 3 means the robot connection died in a way the app cannot repair
 # in-process (see body/voice_loop.py). Relaunching is the fix, and doing it
 # here beats leaving a frozen robot that still listens and answers.
+#
+# Any other non-zero code is relaunched too. Only an allow-list of two was
+# restarted before, so anything unexpected -- an unhandled exception exiting
+# with code 1, a crash in a native library -- left the robot dead in front of
+# whoever was standing there, which is the one outcome this loop exists to
+# prevent. Exit code 0 is a deliberate stop (Ctrl+C, "go to sleep") and is the
+# only thing that ends the loop.
 $LINK_LOST = 3
+$restarts = 0
 
 while ($true) {
     $py = Start-Process -FilePath $python -ArgumentList "-u", "main.py" `
         -NoNewWindow -PassThru -Wait `
         -RedirectStandardOutput $logPath -RedirectStandardError $errPath
 
-    if ($py.ExitCode -ne $LINK_LOST) { break }
+    if ($py.ExitCode -eq 0) { break }
 
-    Write-Host ""
-    Write-Host "Lost the connection to the robot. Restarting..." -ForegroundColor Yellow
-    Start-Sleep -Seconds 5
+    if ($py.ExitCode -eq $LINK_LOST) {
+        Write-Host ""
+        Write-Host "Lost the connection to the robot. Restarting..." -ForegroundColor Yellow
+    } else {
+        Write-Host ""
+        Write-Host "Reachy stopped unexpectedly (exit $($py.ExitCode)). Restarting..." -ForegroundColor Yellow
+        if ((Test-Path $errPath) -and (Get-Item $errPath).Length -gt 0) {
+            Get-Content $errPath -Tail 12
+        }
+    }
+
+    # Back off as failures repeat, so a fault that recurs immediately doesn't
+    # become a relaunch loop hammering the daemon. Capped so a robot that
+    # recovers later still comes back without someone re-running the script.
+    $restarts += 1
+    $delay = [Math]::Min(5 * $restarts, 30)
+    Start-Sleep -Seconds $delay
     try {
         Invoke-RestMethod -Method Post -Uri "http://${RobotIp}:${daemonPort}/api/media/acquire" -TimeoutSec 5 | Out-Null
     } catch { }
