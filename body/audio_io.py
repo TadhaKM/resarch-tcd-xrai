@@ -74,6 +74,11 @@ _LEVEL_LOG_INTERVAL_S = 3.0
 # responding for no visible reason.
 _MIC_STALL_WARN_S = 2.0
 
+# Ceiling on one visitor utterance. Not a conversational limit -- it is well
+# past any real answer -- but a guarantee that listen() returns even when the
+# microphone has stopped producing audio entirely and no endpoint can fire.
+_MAX_UTTERANCE_S = 25.0
+
 # Automatic gain control (see AudioIO._apply_gain). Target sits below full
 # scale so normal variation between words doesn't clip; the envelope decays
 # slowly (~1.5s to halve at this chunk rate) so gain doesn't ramp up during
@@ -575,7 +580,17 @@ class AudioIO:
         partial = ""
         captured: list[np.ndarray] = []
         started = time.monotonic()
-        for frame in self._mic_frames():
+        # Bounded for the same reason wait_for_wake_word is: this returns only
+        # when the recognizer declares an endpoint, and an endpoint needs
+        # frames. If the daemon's media session drops, _mic_frames yields
+        # nothing, no endpoint ever fires, and this blocks the voice loop
+        # forever -- with the dashboard still answering from its own thread, so
+        # the robot looks alive while being permanently deaf. The ceiling is
+        # far longer than any real answer, so it never truncates a visitor; it
+        # exists purely so a dead microphone ends the turn instead of the
+        # session.
+        deadline = started + _MAX_UTTERANCE_S
+        for frame in self._mic_frames(deadline=deadline):
             stream.accept_waveform(MODELS.asr_sample_rate, frame)
             while self._recognizer.is_ready(stream):
                 self._recognizer.decode_stream(stream)
@@ -609,6 +624,17 @@ class AudioIO:
                         logger.info("  whisper: %s", better)
                         return better
                 return text
+
+        # Fell out of the loop: the deadline passed without an endpoint. Return
+        # the best transcript so far rather than nothing -- a long answer that
+        # ran past the ceiling is still worth answering, and an empty string
+        # here would look to the caller like silence.
+        logger.warning("Listening hit the %.0fs ceiling without an endpoint.", _MAX_UTTERANCE_S)
+        if self._whisper is not None and captured:
+            better = self._transcribe_whisper(np.concatenate(captured))
+            if better:
+                return better
+        return self._recognizer.get_result(stream).strip()
 
     def speak(
         self,

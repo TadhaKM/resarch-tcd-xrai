@@ -1,0 +1,236 @@
+"""Exercise the demo framework with fake hardware.
+
+Everything the runner does -- entering demos, dispatching what a visitor said,
+switching on a trigger phrase, absorbing a demo that throws -- is logic, and
+logic is testable without a robot. The parts that genuinely need hardware
+(does the wake word fire, does the speaker crackle) are covered by
+tools/selftest.py and by standing in front of the thing.
+
+    python test_demokit.py
+"""
+
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from brain.modes import RobotState  # noqa: E402
+from demokit.base import Demo, DemoContext, IdleResult  # noqa: E402
+from demokit.registry import Registry  # noqa: E402
+from demokit.runner import DemoRunner  # noqa: E402
+
+failures = 0
+
+
+def check(label: str, got, want) -> None:
+    global failures
+    ok = got == want
+    failures += not ok
+    print(f"  {'ok  ' if ok else 'FAIL'} {label}")
+    if not ok:
+        print(f"       got  {got!r}\n       want {want!r}")
+
+
+class FakeAudio:
+    """Stands in for AudioIO. Wake words and transcripts are scripted."""
+
+    def __init__(self, wake_at=(), transcripts=()):
+        self.said = []
+        self._wake_at = list(wake_at)
+        self._transcripts = list(transcripts)
+        self.calls = 0
+
+    def wait_for_wake_word(self, timeout=None):
+        self.calls += 1
+        if self._wake_at and self._wake_at[0] == self.calls:
+            self._wake_at.pop(0)
+            return True
+        return False
+
+    def listen(self):
+        return self._transcripts.pop(0) if self._transcripts else ""
+
+    def speak(self, text, emotion, motion=None, expressive=False):
+        self.said.append(text)
+
+
+class FakeMotion:
+    def __init__(self):
+        self.expressions = []
+
+    def express(self, tag):
+        self.expressions.append(tag)
+
+    def express_move(self, tag):
+        pass
+
+    def acknowledge(self):
+        pass
+
+    def dance(self, **kw):
+        pass
+
+
+def build(demos, *, wake_at=(), transcripts=()):
+    """A runner wired to fake hardware and a registry holding `demos`."""
+    registry = Registry()
+    registry._publish({d.id: d for d in demos})
+    state = RobotState()
+    state.set_demos(
+        [{"id": d.id, "label": d.label, "help": d.help, "available": True, "note": ""} for d in demos]
+    )
+    audio, motion = FakeAudio(wake_at, transcripts), FakeMotion()
+
+    import demokit.runner as runner_mod
+
+    runner_mod.REGISTRY = registry
+    import demokit.base  # noqa: F401
+
+    runner = DemoRunner(
+        audio=audio, motion=motion, tracker=None, state=state, capabilities=frozenset()
+    )
+    return runner, state, audio, registry
+
+
+# --- demos used by the tests -------------------------------------------
+
+class Chatty(Demo):
+    id, label, help = "chatty", "Chatty", "h"
+
+    def __init__(self):
+        self.entered = self.exited = 0
+        self.heard = []
+
+    def on_enter(self, ctx):
+        self.entered += 1
+
+    def on_idle(self, ctx):
+        return IdleResult(listen_for=1.0)
+
+    def on_utterance(self, ctx, text):
+        self.heard.append(text)
+        ctx.say("noted")
+        return True
+
+    def on_exit(self, ctx):
+        self.exited += 1
+
+
+class Dancer(Demo):
+    id, label, help = "dancer", "Dancer", "h"
+    triggers = ("let's dance",)
+
+    def on_idle(self, ctx):
+        return IdleResult(listen_for=1.0)
+
+
+class Broken(Demo):
+    id, label, help = "broken", "Broken", "h"
+
+    def on_idle(self, ctx):
+        raise ValueError("student bug")
+
+
+class Forgetful(Demo):
+    """The classic first-demo mistake: no return statement."""
+
+    id, label, help = "forgetful", "Forgetful", "h"
+
+    def on_idle(self, ctx):
+        pass
+
+
+print("[1] entering and leaving a demo")
+chatty, dancer = Chatty(), Dancer()
+runner, state, audio, _ = build([chatty, dancer])
+state.set_mode("chatty")
+runner.cycle()
+check("on_enter ran once", chatty.entered, 1)
+runner.cycle()
+check("on_enter not repeated while selected", chatty.entered, 1)
+state.set_mode("dancer")
+runner.cycle()
+check("on_exit ran when switched away", chatty.exited, 1)
+
+print()
+print("[2] a wake word turns into an utterance the demo handles")
+chatty = Chatty()
+runner, state, audio, _ = build([chatty], wake_at=(1,), transcripts=["what is xr"])
+state.set_mode("chatty")
+runner.cycle()
+check("demo received the utterance", chatty.heard, ["what is xr"])
+check("and spoke", audio.said, ["noted"])
+
+print()
+print("[3] a trigger phrase switches demos mid-sentence")
+chatty, dancer = Chatty(), Dancer()
+runner, state, audio, _ = build([chatty, dancer], wake_at=(1,), transcripts=["let's dance please"])
+state.set_mode("chatty")
+runner.cycle()
+check("switched to the triggered demo", state.mode, "dancer")
+
+print()
+print("[4] sleep phrases always win, whatever is selected")
+chatty = Chatty()
+runner, state, audio, _ = build([chatty], wake_at=(1,), transcripts=["ok go to sleep now"])
+state.set_mode("chatty")
+runner.cycle()
+check("robot is asleep", state.sleeping, True)
+check("demo never saw it", chatty.heard, [])
+
+print()
+print("[5] a demo that throws is contained, then set aside")
+broken, chatty = Broken(), Chatty()
+runner, state, audio, registry = build([broken, chatty])
+state.set_mode("broken")
+for _ in range(3):
+    runner.cycle()
+available, reason = registry.is_available("broken", frozenset())
+check("set aside after 3 consecutive failures", available, False)
+check("with a reason for the operator", "failed" in reason, True)
+check("and the robot moved to a working demo", state.mode, "chatty")
+
+print()
+print("[6] re-enabling a set-aside demo")
+registry.enable("broken")
+check("available again", registry.is_available("broken", frozenset())[0], True)
+
+print()
+print("[7] the missing-return mistake does not spin the CPU")
+forgetful = Forgetful()
+runner, state, audio, _ = build([forgetful])
+state.set_mode("forgetful")
+started = time.monotonic()
+for _ in range(5):
+    runner.cycle()
+check("cycles are cheap, not a busy loop", time.monotonic() - started < 1.0, True)
+check("no listening was attempted", audio.calls, 0)
+
+print()
+print("[8] audio from the wrong thread is refused, not silently interleaved")
+import threading  # noqa: E402
+
+ctx = DemoContext(
+    audio=FakeAudio(), motion=FakeMotion(), tracker=None,
+    state=RobotState(), demo_id="t", store={},
+)
+error = []
+
+
+def from_other_thread():
+    try:
+        ctx.say("hello from the web thread")
+    except RuntimeError as exc:
+        error.append(str(exc))
+
+
+t = threading.Thread(target=from_other_thread)
+t.start()
+t.join()
+check("RuntimeError raised off-thread", bool(error), True)
+check("and it explains why", "one thread owns the microphone" in (error[0] if error else "").lower(), True)
+
+print()
+print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")
+sys.exit(1 if failures else 0)

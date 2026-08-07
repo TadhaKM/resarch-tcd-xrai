@@ -34,3 +34,8 @@ def remember_turn(person_id: int, message: str, reply: str) -> None:
 def clear_history(person_id: int) -> None:
     """Clear this person's in-session turn buffer. Call once a conversation ends."""
     _HISTORY.pop(person_id, None)
+
+
+def known_people() -> list[int]:
+    """Everyone with turns recorded this session, so they can be closed out."""
+    return [person_id for person_id, turns in _HISTORY.items() if turns]

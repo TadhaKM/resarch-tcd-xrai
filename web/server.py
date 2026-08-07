@@ -22,10 +22,10 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 
-from body.voice_loop import _DANCE_PHRASES as DANCE_PHRASES
-from body.voice_loop import _SHUTDOWN_PHRASES as SLEEP_PHRASES
 from brain.modes import STATE
 from config import MODELS, default_target
+from demokit.registry import REGISTRY
+from demokit.runner import SLEEP_PHRASES
 
 logger = logging.getLogger(__name__)
 
@@ -77,9 +77,26 @@ def phrases() -> JSONResponse:
         {
             "wake": read_wake_phrases(),
             "sleep": list(SLEEP_PHRASES),
-            "dance": list(DANCE_PHRASES),
+            "demos": _demo_triggers(),
         }
     )
+
+
+def _demo_triggers() -> list[dict]:
+    """Phrases that switch demos, collected from the demos themselves.
+
+    Built from the registry rather than listed here, for the same reason the
+    wake phrases are read from the keyword file: a panel that visitors read off
+    the screen must not be able to disagree with what the robot actually
+    matches. A demo added tomorrow shows its own phrases with no edit here.
+    """
+    out = []
+    for demo_id in REGISTRY.ids():
+        demo = REGISTRY.get(demo_id)
+        if demo is None or not demo.triggers:
+            continue
+        out.append({"label": demo.label, "phrases": list(demo.triggers)})
+    return out
 
 
 @app.get("/api/events")
@@ -176,6 +193,21 @@ def set_mode(req: ModeRequest) -> JSONResponse:
     if not STATE.set_mode(req.mode):  # type: ignore[arg-type]
         return JSONResponse({"ok": False, "error": f"unknown mode {req.mode!r}"}, status_code=400)
     return JSONResponse({"ok": True, "mode": STATE.mode})
+
+
+@app.post("/api/demos/{demo_id}/enable")
+def enable_demo(demo_id: str) -> JSONResponse:
+    """Put a demo back in service after it was set aside for repeated failures.
+
+    Without this the only way back is restarting the robot, which during an
+    open day means the operator loses the session to a demo a student is still
+    fixing. The dashboard shows the greyed button and its reason; this is the
+    button that clears it.
+    """
+    if REGISTRY.get(demo_id) is None:
+        return JSONResponse({"ok": False, "error": f"unknown demo {demo_id!r}"}, status_code=404)
+    reinstated = REGISTRY.enable(demo_id)
+    return JSONResponse({"ok": True, "reinstated": reinstated})
 
 
 def serve(host: str = "0.0.0.0", port: int = 8080) -> threading.Thread:

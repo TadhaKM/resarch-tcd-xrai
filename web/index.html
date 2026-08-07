@@ -184,28 +184,36 @@
 <script>
 (() => {
   const $ = id => document.getElementById(id);
-  let seq = 0, modesRendered = false, failures = 0, currentMode = null;
+  let seq = 0, modesSignature = null, failures = 0, currentMode = null;
 
   const clock = ts => new Date(ts * 1000).toLocaleTimeString([], {hour12: false});
 
   function renderModes(modes, active) {
-    if (!modesRendered) {
+    // Re-render whenever the demo list OR any demo's availability changes,
+    // rather than latching after the first paint. Two things depend on it: the
+    // list is empty on the very first poll (the robot discovers demos while
+    // the dashboard is already up), and a demo set aside for repeated failures
+    // has to grey out with its reason while the session is running -- which is
+    // the entire point of setting it aside. Comparing a signature keeps the
+    // buttons stable between polls so clicks are not lost to a re-render.
+    const signature = JSON.stringify(modes.map(m => [m.id, m.label, m.available, m.note]));
+    if (modes.length && signature !== modesSignature) {
       $("modes").innerHTML = "";
       for (const m of modes) {
         const b = document.createElement("button");
         b.className = "mode";
         b.dataset.mode = m.id;
         b.type = "button";
-        // Greeter depends on face detection, which is not yet working. Say so
-        // here rather than letting it look broken when nothing happens.
-        const flag = m.id === "greeter"
-          ? '<div class="flag">Face detection not working yet &mdash; will not trigger</div>' : "";
+        b.disabled = m.available === false;
+        const flag = m.available === false && m.note
+          ? `<div class="flag">Unavailable &mdash; ${m.note}</div>` : "";
         b.innerHTML = `<div class="name">${m.label}</div>
-                       <div class="help">${m.help}</div>${flag}`;
+                       <div class="help">${m.help || ""}</div>${flag}`;
         b.onclick = () => setMode(m.id);
         $("modes").appendChild(b);
       }
-      modesRendered = true;
+      modesSignature = signature;
+      currentMode = null;  // force the pressed state to be reapplied below
     }
     if (active !== currentMode) {
       currentMode = active;
@@ -344,10 +352,17 @@
         ? `<div class="phrase-group"><div class="lead">${lead}</div><div class="chips">` +
           items.map(t => `<span class="chip ${cls}">${t}</span>`).join("") + `</div></div>`
         : "";
+      // Capitalise the first letter only. .title()-style capitalisation would
+      // render "tell me a story" as "Tell Me A Story", and this panel is read
+      // aloud off the screen by visitors.
+      const cap = t => t[0].toUpperCase() + t.slice(1);
+      const demoGroups = (p.demos || [])
+        .map(d => group(`To switch to ${d.label}`, d.phrases.map(cap), ""))
+        .join("");
       const html =
         group("To wake it or start a question", p.wake, "wake") +
-        group("To make it dance", p.dance.map(t => t[0].toUpperCase() + t.slice(1)), "") +
-        group("To send it to sleep", p.sleep.map(t => t[0].toUpperCase() + t.slice(1)), "");
+        demoGroups +
+        group("To send it to sleep", p.sleep.map(cap), "");
       $("phrases").innerHTML = html ||
         '<span class="dim">Phrase list unavailable.</span>';
     } catch (e) {

@@ -33,7 +33,10 @@ def get_reply(person_id: int, message: str) -> tuple[str, str]:
 
 
 def stream_reply(
-    person_id: int, message: str, style: str | None = None
+    person_id: int,
+    message: str,
+    style: str | None = None,
+    extra_system: str | None = None,
 ) -> Iterator[tuple[str, str]]:
     """Yield (sentence_text, emotion_tag) pairs as the reply streams in, so the
     caller can start speaking sentence 1 while the model is still generating
@@ -68,7 +71,7 @@ def stream_reply(
     """
     history = memory.get_history(person_id)
     context = long_term_memory.get_context(person_id)
-    messages = build_messages(context, history, message, style=style)
+    messages = build_messages(context, history, message, style=style, extra_system=extra_system)
 
     max_tokens = _STORY_MAX_TOKENS if style == "story" else None
     backends = llm.streaming_backends()

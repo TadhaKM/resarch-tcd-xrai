@@ -9,28 +9,21 @@ small, infrequent operations, so there's nothing to gain from anything finer.
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Literal, Optional
+from typing import Optional
 
-Mode = Literal["conversation", "greeter", "dance", "story", "idle"]
-
-#: Order here is the order shown in the dashboard.
-MODES: tuple[Mode, ...] = ("conversation", "greeter", "dance", "story", "idle")
-
-MODE_LABELS: dict[Mode, str] = {
-    "conversation": "Conversation",
-    "greeter": "Greeter",
-    "dance": "Dance",
-    "story": "Storyteller",
-    "idle": "Idle",
-}
-
-MODE_HELP: dict[Mode, str] = {
-    "conversation": "Say a wake phrase, then talk. One wake phrase per question.",
-    "greeter": "Greets people it sees, then chats. Needs face detection.",
-    "dance": "Dances on a loop. Say a wake phrase to talk instead.",
-    "story": "Tells a short story now and then. Ask for another one anytime.",
-    "idle": "Awake and listening for the wake word, but starts nothing itself.",
-}
+#: What the robot is doing is now whichever demo is selected, and the demos are
+#: whatever files exist in demos/ (see demokit/registry.py). So the list cannot
+#: live here as a Literal and a set of dicts, the way it did when there were
+#: five fixed modes -- adding a demonstration would mean editing this file, and
+#: the whole point of the framework is that it means adding one file and
+#: nothing else.
+#:
+#: The list is pushed in by the app at startup (set_demos) rather than pulled
+#: from the registry here. That is deliberate: body/audio_io.py imports this
+#: module, so anything this module imports from the demo side would close an
+#: import cycle. Inverting it keeps RobotState a plain state container that
+#: knows nothing about demos beyond the ids it has been handed.
+DEFAULT_MODE = "conversation"
 
 #: How many events the dashboard can show. Old ones are dropped rather than
 #: kept forever -- this is a live view, not a transcript archive.
@@ -60,9 +53,13 @@ class Event:
 class RobotState:
     """Current mode, recent events, and whether anything is actually working."""
 
-    def __init__(self, mode: Mode = "conversation") -> None:
+    def __init__(self, mode: str = DEFAULT_MODE) -> None:
         self._lock = threading.Lock()
         self._mode = mode
+        #: Dashboard entries for the demos that exist, in display order. Empty
+        #: until the app calls set_demos, which is why the dashboard tolerates
+        #: an empty list on its first poll rather than latching it.
+        self._demos: list[dict] = []
         self._events: list[Event] = []
         self._seq = 0
         self._listening = False
@@ -85,20 +82,56 @@ class RobotState:
 
     # --- mode ---
 
+    def set_demos(self, entries: list[dict]) -> None:
+        """Tell the dashboard which demos exist. Called once at startup.
+
+        Entries are the dicts demokit.registry.dashboard_entries produces:
+        id, label, help, available, note.
+        """
+        with self._lock:
+            self._demos = list(entries)
+            known = {e["id"] for e in self._demos}
+            current_missing = self._mode not in known
+            first = self._demos[0]["id"] if self._demos else self._mode
+        if current_missing and self._demos:
+            # The saved-or-default mode does not exist in this build. Better to
+            # start in something real than to sit in a mode nothing implements.
+            with self._lock:
+                self._mode = first
+            self.add("status", f"Starting in {first}")
+
+    def demos(self) -> list[dict]:
+        with self._lock:
+            return list(self._demos)
+
+    def refresh_demo_availability(self, entries: list[dict]) -> None:
+        """Update availability/notes without changing the selection.
+
+        Called when a demo is set aside or re-enabled, so the dashboard greys
+        the button and shows why while the session is still running.
+        """
+        with self._lock:
+            self._demos = list(entries)
+
     @property
-    def mode(self) -> Mode:
+    def mode(self) -> str:
         with self._lock:
             return self._mode
 
-    def set_mode(self, mode: Mode) -> bool:
-        if mode not in MODES:
-            return False
+    def set_mode(self, mode: str) -> bool:
         with self._lock:
+            known = {e["id"] for e in self._demos}
+            label = next((e["label"] for e in self._demos if e["id"] == mode), mode)
+            # Before any demo list arrives, accept anything: the voice loop
+            # sets a mode during startup, and rejecting it would leave the
+            # robot in whatever it booted with.
+            if known and mode not in known:
+                return False
             if mode == self._mode:
                 return True
             self._mode = mode
             self._mode_dirty = True
-        self.add("status", f"Mode set to {MODE_LABELS[mode]}")
+        self.add("status", f"Mode set to {label}")
         return True
 
     def pop_mode_changed(self) -> bool:
@@ -222,9 +255,7 @@ class RobotState:
                 "last_heard_s_ago": (
                     None if self._last_heard_at is None else time.time() - self._last_heard_at
                 ),
-                "modes": [
-                    {"id": m, "label": MODE_LABELS[m], "help": MODE_HELP[m]} for m in MODES
-                ],
+                "modes": list(self._demos),
             }
 
 

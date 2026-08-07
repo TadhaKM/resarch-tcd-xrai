@@ -67,6 +67,7 @@ def build_messages(
     history: list[tuple[str, str]],
     message: str,
     style: str | None = None,
+    extra_system: str | None = None,
 ) -> list[dict[str, str]]:
     """Build the chat message list sent to the LLM for this person's next turn.
 
@@ -74,24 +75,35 @@ def build_messages(
     conversations (brain/long_term_memory.py); history is this session's
     turns so far (brain/memory.py). style="story" swaps the terse
     conversational persona for the storyteller one.
+
+    extra_system is how a demo layers something on for one turn -- the Hub
+    facts, a persona's instructions -- without it becoming part of the
+    conversation. It goes in the system prompt, which is the only place that
+    works: put into the user message instead, it is what the visitor appears
+    to have said, so stream_reply persists it into memory and it is replayed
+    as a prior turn on every subsequent request for the rest of the session.
+    Three demos independently reached for that workaround because this
+    parameter did not exist, and it cost roughly 900 tokens of prompt per turn
+    and put a block of instructions into the transcript.
     """
     if style == "story":
         # History still goes in, so it doesn't retell the one it just told.
         # Long-term context deliberately doesn't: asked for a story, it should
         # tell a story, not work the listener's life into one.
-        messages = [{"role": "system", "content": _STORYTELLER_SYSTEM_PROMPT}]
-        for user_message, reply in history:
-            messages.append({"role": "user", "content": user_message})
-            messages.append({"role": "assistant", "content": reply})
-        messages.append({"role": "user", "content": message})
-        return messages
+        system_prompt = _STORYTELLER_SYSTEM_PROMPT
+    else:
+        system_prompt = _BASE_SYSTEM_PROMPT
+        if long_term_context:
+            system_prompt += (
+                "\n\nWhat you remember about this person from previous conversations:\n"
+                f"{long_term_context}"
+            )
 
-    system_prompt = _BASE_SYSTEM_PROMPT
-    if long_term_context:
-        system_prompt += (
-            "\n\nWhat you remember about this person from previous conversations:\n"
-            f"{long_term_context}"
-        )
+    if extra_system:
+        # Appended rather than sent as a second system message: Ollama's chat
+        # API is only reliable with one, and the cloud backends take a single
+        # system string anyway (see llm_backends._split_system).
+        system_prompt = f"{system_prompt}\n\n{extra_system.strip()}"
 
     messages = [{"role": "system", "content": system_prompt}]
     for user_message, reply in history:

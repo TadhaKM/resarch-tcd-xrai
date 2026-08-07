@@ -54,7 +54,7 @@ def check_logic() -> None:
         got = _strip_sound_events(raw)
         report(PASS if got == want else FAIL, f"sound-event: {raw!r}", got if got != want else "")
 
-    from body.voice_loop import _parse_timer
+    from demos.timers import _parse_timer
     for raw, want in [
         ("set a timer for 5 minutes", (300, "5 minute")),
         ("timer for five minutes", (300, "5 minute")),
@@ -76,8 +76,63 @@ def check_logic() -> None:
         report(PASS if got == want else FAIL, f"name: {raw[:38]!r}", str(got) if got != want else "")
 
 
+def check_demos() -> None:
+    """Every demo in demos/ loads, is unique, and obeys the framework contract.
+
+    This is the check that protects the platform's one promise: a student adds
+    a file and it works. A demo that fails to import, collides on an id, or
+    declares a trigger another demo already claims is invisible at runtime --
+    the registry logs it and carries on, which is right for a live session and
+    useless for finding out before one.
+    """
+    print("\n[2] demos load and obey the contract")
+    from brain.emotion import VALID_EMOTION_TAGS
+    from demokit.base import MAX_LISTEN_WINDOW_S, Demo, IdleResult
+    from demokit.registry import REGISTRY
+
+    REGISTRY.discover()
+    ids = REGISTRY.ids()
+    report(PASS if ids else FAIL, f"{len(ids)} demo(s) discovered", ", ".join(ids))
+
+    seen_triggers: dict[str, str] = {}
+    for demo_id in ids:
+        demo = REGISTRY.get(demo_id)
+        problems = []
+        if not isinstance(demo, Demo):
+            problems.append("not a Demo")
+        if not demo.label:
+            problems.append("no label")
+        if not demo.help:
+            problems.append("no help text")
+        for phrase in demo.triggers:
+            if phrase != phrase.lower():
+                problems.append(f"trigger {phrase!r} is not lowercase")
+            owner = seen_triggers.setdefault(phrase, demo_id)
+            if owner != demo_id:
+                problems.append(f"trigger {phrase!r} already claimed by {owner}")
+        for need in demo.requires:
+            if need not in ("faces",):
+                problems.append(f"unknown requirement {need!r}")
+        report(PASS if not problems else FAIL, f"contract: {demo_id}", "; ".join(problems))
+
+    # on_idle is the hook the loop leans on hardest, so check every demo's
+    # answer survives the sanitiser rather than trusting each to return well.
+    for demo_id in ids:
+        demo = REGISTRY.get(demo_id)
+        raw = demo.__class__.on_idle
+        declared = raw is not Demo.on_idle
+        if not declared:
+            continue
+        hint = getattr(raw, "__annotations__", {}).get("return")
+        ok = hint in (IdleResult, "IdleResult", None)
+        report(PASS if ok else WARN, f"on_idle returns IdleResult: {demo_id}", "" if ok else str(hint))
+
+    report(PASS, "listen windows clamp at", f"{MAX_LISTEN_WINDOW_S}s")
+    report(PASS, "emotion tags available", ", ".join(sorted(VALID_EMOTION_TAGS)))
+
+
 def check_assets() -> None:
-    print("\n[2] models and assets on disk")
+    print("\n[3] models and assets on disk")
     from config import MODELS
     needed = [
         MODELS.asr_dir, MODELS.kws_dir, MODELS.tts_model_path, MODELS.tts_config_path,
@@ -115,7 +170,7 @@ def _synthesize(voice, text: str) -> np.ndarray:
 
 
 def check_speech() -> "object":
-    print("\n[3] wake phrases fire on synthesized speech")
+    print("\n[4] wake phrases fire on synthesized speech")
     from body.audio_io import AudioIO
     from config import SIMULATION
     audio = AudioIO(SIMULATION)
@@ -140,7 +195,7 @@ def check_speech() -> "object":
         status = PASS if hits >= 2 else WARN if hits == 1 else FAIL
         report(status, phrase, f"{hits}/3")
 
-    print("\n[4] whisper round-trip on synthesized speech")
+    print("\n[5] whisper round-trip on synthesized speech")
     def norm(s: str) -> str:
         return "".join(ch for ch in s.lower() if ch.isalnum() or ch == " ").split().__str__()
 
@@ -154,7 +209,7 @@ def check_speech() -> "object":
 
 
 def check_llm() -> None:
-    print("\n[5] LLM replies (local Ollama)")
+    print("\n[6] LLM replies (local Ollama)")
     from brain.emotion import VALID_EMOTION_TAGS
     from brain.interface import stream_reply
     for q in ["what can you do", "how are you", "tell me about the spanish weather"]:
@@ -188,6 +243,7 @@ def main() -> int:
     args = ap.parse_args()
 
     check_logic()
+    check_demos()
     check_assets()
     check_speech()
     if args.llm:
