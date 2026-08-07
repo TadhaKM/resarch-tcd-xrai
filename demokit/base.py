@@ -216,6 +216,7 @@ class DemoContext:
         person_id: int = 0,
         style: Optional[str] = None,
         system: Optional[str] = None,
+        cache: bool = True,
     ) -> str:
         """Ask the language model and speak the answer, sentence by sentence.
 
@@ -235,7 +236,9 @@ class DemoContext:
         spoken: list[str] = []
         final_tag = "neutral"
         self.motion.express("thinking")
-        for sentence, tag in stream_reply(person_id, message, style=style, extra_system=system):
+        for sentence, tag in stream_reply(
+            person_id, message, style=style, extra_system=system, cache=cache
+        ):
             final_tag = tag
             if not sentence:
                 continue

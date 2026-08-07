@@ -343,7 +343,14 @@ class Personality(Demo):
         # _another_take re-sends the remembered question in full every time.
         memory.clear_history(bucket)
         try:
-            ctx.reply(question, person_id=bucket, system=_system_for(persona))
+            # cache=False for the same reason the history is cleared either
+            # side of this call: the demonstration is that the same question
+            # produces a different answer, and a cached reply would replay the
+            # first take word for word -- turning the one demo whose subject is
+            # variation into the one demo that provably has none.
+            ctx.reply(
+                question, person_id=bucket, system=_system_for(persona), cache=False
+            )
         finally:
             # Left populated, these buckets are summarised into long-term
             # memory when a visitor says goodbye (DemoRunner.end_conversations

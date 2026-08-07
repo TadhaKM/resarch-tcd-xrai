@@ -160,6 +160,8 @@
              placeholder="Type something for Reachy to say&hellip;">
       <button id="btn-say" class="act" type="button">Say it</button>
       <button id="btn-listen" class="act" type="button">&#127908; Listen now</button>
+      <button id="btn-clear-cache" class="act" type="button"
+              title="Forget every cached answer, so the next question reaches the model again">Clear answers</button>
     </div>
   </div>
 
@@ -321,6 +323,16 @@
     listenBtn.disabled = true;
     try { await fetch("/api/listen", {method: "POST"}); } catch (e) {}
     setTimeout(() => { listenBtn.disabled = false; }, 1500);
+  };
+
+  // A cached answer is served instantly and forever, so one that turns out to
+  // be wrong outlives the mistake unless an operator can drop it. The result
+  // arrives as a status line in the log rather than an alert.
+  const cacheBtn = $("btn-clear-cache");
+  if (cacheBtn) cacheBtn.onclick = async () => {
+    cacheBtn.disabled = true;
+    try { await fetch("/api/cache/clear", {method: "POST"}); } catch (e) {}
+    setTimeout(() => { cacheBtn.disabled = false; }, 1500);
   };
 
   // Volume: read once at load, write on release (not every tick of the drag,

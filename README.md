@@ -162,9 +162,18 @@ Learned on the real robot; each is documented at the relevant code site.
 ## People
 
 Face *detection/tracking* aims the head at whoever is in view (with a slow
-search sweep when nobody is). Face *identification* exists but enrollment by
-voice was removed -- noisy-room transcripts became permanent names bound to
-face embeddings ("Have Come", person 9). Enroll deliberately instead:
+search sweep when nobody is), under every demo, all the time.
+
+Face *identification* is offered by the Vision demo: when it settles on a face
+it does not recognise, it asks once whether they would like to give their name,
+and enrols them if they say yes. Voice enrolment was removed from this project
+once before, because noisy-room transcripts became permanent names bound to
+face embeddings ("Have Come", person 9) -- so every answer now goes through
+`body.face.clean_spoken_name`, and anything it rejects is dropped rather than
+stored. Someone who declines or says nothing is not asked again for ten
+minutes, and someone already known is greeted rather than asked.
+
+For deliberate enrolment, or to undo a bad one:
 
 ```powershell
 python manage_people.py list

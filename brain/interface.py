@@ -37,6 +37,7 @@ def stream_reply(
     message: str,
     style: str | None = None,
     extra_system: str | None = None,
+    cache: bool = True,
 ) -> Iterator[tuple[str, str]]:
     """Yield (sentence_text, emotion_tag) pairs as the reply streams in, so the
     caller can start speaking sentence 1 while the model is still generating
@@ -83,7 +84,7 @@ def stream_reply(
     ignoring it would answer as the wrong persona.
     """
     if style is None:
-        cached = qa_cache.lookup(message, extra_system)
+        cached = qa_cache.lookup(message, extra_system) if cache else None
         if cached is not None:
             # Reconstructed with the tag the model originally ended on, so the
             # loop below is the same text-shape the live path splits: N
@@ -150,7 +151,15 @@ def stream_reply(
 
     memory.remember_turn(person_id, message, reply_text)
     if style is None:
-        qa_cache.remember(message, reply_text, emotion_tag, extra_system)
+        # Cached only when nothing in this session could have shaped the
+        # answer. The live prompt is built from this person's history and their
+        # long-term notes, so an answer given three turns into one group's
+        # conversation is partly about that conversation -- stored globally, it
+        # would be replayed verbatim to the next group who asked the same words.
+        # Every unrecognised visitor shares person_id 0, so that is not a corner
+        # case; it is the open-day default.
+        if cache and not history and not context:
+            qa_cache.remember(message, reply_text, emotion_tag, extra_system)
 
 
 def end_conversation(person_id: int) -> None:

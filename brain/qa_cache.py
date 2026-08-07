@@ -106,6 +106,18 @@ _LEADING_FILLER = tuple(
 #: Hub" is a general question, and its "tell me" is stripped as filler above.
 _PERSONAL_MARKERS = frozenset({"i", "im", "me", "my", "mine", "myself", "we", "our", "ours"})
 
+#: Words that point at something only the conversation they were said in can
+#: resolve. "Say that again", "what about the other one", "tell me more about
+#: it" all normalise to short, stable keys and would otherwise be answered
+#: forever with whatever the first group happened to be discussing -- a
+#: plausible answer to a question nobody in the room asked. A minimum word
+#: count does not catch these: "the other one" is three words and thirteen
+#: characters, comfortably over both floors.
+_DEICTIC_MARKERS = frozenset({
+    "it", "its", "that", "this", "those", "these", "them", "they",
+    "one", "ones", "again", "else", "other", "another", "there",
+})
+
 #: An answer that is a failure being read out rather than an answer. Caching
 #: one turns a bad minute -- Ollama restarting, the network dropping -- into a
 #: permanent wrong answer to a question that will be asked again all day.
@@ -154,7 +166,9 @@ def _is_cacheable_question(normalized: str) -> bool:
     words = normalized.split()
     if len(words) < MIN_QUESTION_WORDS or len(normalized) < MIN_QUESTION_CHARS:
         return False
-    return not _PERSONAL_MARKERS.intersection(words)
+    if _PERSONAL_MARKERS.intersection(words):
+        return False
+    return not _DEICTIC_MARKERS.intersection(words)
 
 
 def _is_cacheable_answer(answer: str) -> bool:
@@ -168,6 +182,14 @@ def _is_cacheable_answer(answer: str) -> bool:
     if text[-1] not in ".!?":
         return False
     return not _ERROR_ANSWER_RE.search(text)
+
+
+#: False when the table could not be created, which turns lookup and remember
+#: into no-ops. Every other function here already degrades rather than raising;
+#: without this the module-scope call below would be the one place a database
+#: problem could take the whole robot down, because brain.interface imports
+#: this at import time and a failed CREATE TABLE would propagate out of it.
+_available = True
 
 
 def _init_cache() -> None:
@@ -193,6 +215,8 @@ def _init_cache() -> None:
 
 def lookup(question: str, extra_system: str | None = None) -> CachedAnswer | None:
     """Return the answer already given to this question, or None to ask the model."""
+    if not _available:
+        return None
     key = normalize_question(question)
     if not _is_cacheable_question(key):
         return None
@@ -230,6 +254,8 @@ def remember(
     extra_system: str | None = None,
 ) -> None:
     """Store one answer, evicting the least recently used once past MAX_ENTRIES."""
+    if not _available:
+        return
     key = normalize_question(question)
     if not _is_cacheable_question(key) or not _is_cacheable_answer(answer):
         return
@@ -277,4 +303,8 @@ def forget_all() -> int:
         return 0
 
 
-_init_cache()
+try:
+    _init_cache()
+except sqlite3.Error:
+    _available = False
+    logger.exception("Answer cache unavailable; every question will reach the model")

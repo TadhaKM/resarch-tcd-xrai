@@ -65,6 +65,12 @@ _YES_WORDS = frozenset({"yes", "yeah", "yep", "yup", "sure", "ok", "okay", "plea
 _NO_WORDS = frozenset({"no", "nope", "nah", "not", "never", "rather"})
 _WORD_RE = re.compile(r"[a-z]+")
 
+#: What the robot is waiting to hear. The exchange is spread across turns
+#: rather than held open inside a hook, so each stage is one short question and
+#: the answer arrives through on_utterance like anything else a visitor says.
+_AWAITING_CONSENT = "consent"
+_AWAITING_NAME = "name"
+
 #: Questions about the camera itself, which is what this demo's own trigger
 #: phrase is, so it is the first thing many visitors say on arriving here.
 _SEEING_PHRASES = ("see me", "seeing me", "see anyone", "can you see")
@@ -73,13 +79,22 @@ _SEEING_PHRASES = ("see me", "seeing me", "see anyone", "can you see")
 def _is_yes(answer: str) -> bool:
     """Whether an answer to a yes/no question was a yes.
 
-    Anything that is not clearly a yes is treated as a no: silence, a shrug,
-    or the recognizer picking up the conversation happening behind the visitor.
-    Being wrong that way costs nothing but the offer; being wrong the other way
-    presses a stranger for their name.
+    Decided by whichever of yes and no comes FIRST, not by a no anywhere
+    overriding: "ok, no thanks" leads with a no and is one, but "sure, why not"
+    leads with a yes and is plainly agreement -- read the other way it declines
+    on the visitor's behalf and, because the offer is stamped before it is
+    made, does not ask again for ten minutes.
+
+    Anything with neither is treated as a no: silence, a shrug, or the
+    recognizer picking up the conversation behind the visitor. Wrong that way
+    costs an offer; wrong the other way presses a stranger for their name.
     """
-    words = set(_WORD_RE.findall(answer.lower()))
-    return bool(words & _YES_WORDS) and not words & _NO_WORDS
+    for word in _WORD_RE.findall(answer.lower()):
+        if word in _YES_WORDS:
+            return True
+        if word in _NO_WORDS:
+            return False
+    return False
 
 
 class Vision(Demo):
@@ -126,25 +141,37 @@ class Vision(Demo):
 
         if person_id:
             self._greet(ctx, person_id)
-        elif store.pop("wants_to_be_known", False):
-            # A slice later, not straight after the yes: two questions and two
-            # answers in one hook is ten seconds in which nothing consumes the
-            # microphone and the operator cannot switch away. Split, a mode
-            # switch lands between them.
-            self._take_name(ctx, tracker)
-        else:
+        elif store.get("stage") is None:
             self._offer(ctx)
+        # A stage in progress means the robot has asked something and is
+        # waiting for on_utterance to bring the answer. Nothing to do here but
+        # keep listening.
         return IdleResult(listen_for=_LISTEN_S)
 
     def on_utterance(self, ctx: DemoContext, text: str) -> bool:
-        """Answer "can you see me" from the tracker; leave everything else alone.
+        """Take the answer to whatever this demo last asked, or the camera question.
 
-        Answered here rather than by the language model, which has no camera
-        and will make something up, and in one sentence rather than a
-        description of how detection works -- the answer is checkable by
-        stepping sideways, which is the whole demonstration. Every other
-        question falls through to conversation.
+        The two-step exchange lives here rather than in on_idle because
+        listening inside a hook holds the voice loop for as long as the
+        recogniser takes -- up to 25 seconds -- during which the robot cannot
+        be switched away from or interrupted. Speaking the question and
+        collecting the answer on a later turn keeps every hook short.
         """
+        stage = ctx.store.get("stage")
+        if stage == _AWAITING_CONSENT:
+            ctx.store["stage"] = None
+            if _is_yes(text):
+                self._ask_name(ctx)
+            else:
+                ctx.status("Name declined; not asking again for a while.")
+            return True
+        if stage == _AWAITING_NAME:
+            ctx.store["stage"] = None
+            tracker = ctx.tracker
+            if tracker is not None and tracker.enabled:
+                self._take_name(ctx, tracker, text)
+            return True
+
         lowered = text.lower()
         if not any(phrase in lowered for phrase in _SEEING_PHRASES):
             return False
@@ -161,7 +188,12 @@ class Vision(Demo):
         belongs to the robot rather than to this demo, and from the outside
         that looks like this demo failing to stop.
         """
-        ctx.store["wants_to_be_known"] = False
+        # Presence is cleared too, not just the pending question: the store
+        # survives being switched away from, so a stale present_since would let
+        # somebody who walked up while another demo was showing skip the settle
+        # window and be spoken to the instant Vision is selected.
+        ctx.store["stage"] = None
+        ctx.store["present_since"] = None
         ctx.status("Vision: off. Face tracking itself keeps running.")
 
     # --- meeting somebody ------------------------------------------------
@@ -180,23 +212,38 @@ class Vision(Demo):
             ctx.say(f"Hello again, {name}.", "happy")
 
     def _offer(self, ctx: DemoContext) -> None:
-        """Ask an unrecognised visitor, at most once per cooldown, to be known."""
+        """Ask an unrecognised visitor, at most once per cooldown, to be known.
+
+        Speaks and returns. The answer arrives through on_utterance on a later
+        slice, because ctx.ask would listen inside this hook: AudioIO.listen
+        returns only on a recogniser endpoint and is bounded at 25s, so one
+        offer could hold the voice loop -- and the microphone, and the
+        operator's ability to switch demo -- for the better part of half a
+        minute. Speaking and handing the turn back costs a wake word from the
+        visitor and keeps the robot answerable throughout.
+        """
         store = ctx.store
         offered_at = store.get("offered_at")
         if offered_at is not None and time.monotonic() - offered_at < _ASK_COOLDOWN_S:
             return
-        # Stamped before the question, not after it, so a demo switched away
-        # mid-question -- ctx.ask raises DemoStopped -- still counts as having
-        # asked, and the visitor is not asked again on the way back.
+        # Stamped before the question, not after: a demo switched away
+        # mid-sentence still counts as having asked, so the visitor is not
+        # asked again on the way back.
         store["offered_at"] = time.monotonic()
-        answer = ctx.ask("Would you like to tell me your name, so I know you next time?", "curious")
-        store["wants_to_be_known"] = _is_yes(answer)
-        if not store["wants_to_be_known"]:
-            ctx.status("Name declined or unanswered; not asking again for a while.")
+        store["stage"] = _AWAITING_CONSENT
+        ctx.say(
+            "Would you like to tell me your name, so I know you next time? "
+            "Say hey Reachy, then yes or no.",
+            "curious",
+        )
 
-    def _take_name(self, ctx: DemoContext, tracker: "FaceTracker") -> None:
-        """Ask for the name and enrol it against the face in view right now."""
-        heard = ctx.ask("What is your name?", "curious")
+    def _ask_name(self, ctx: DemoContext) -> None:
+        """Invite the name. Answered through on_utterance, for the same reason."""
+        ctx.store["stage"] = _AWAITING_NAME
+        ctx.say("Say hey Reachy, then your name.", "curious")
+
+    def _take_name(self, ctx: DemoContext, tracker: "FaceTracker", heard: str) -> None:
+        """Enrol the name just heard against the face in view right now."""
         name = clean_spoken_name(heard)
         if name is None:
             # Nothing unvalidated is ever stored. A mis-decode here is not a

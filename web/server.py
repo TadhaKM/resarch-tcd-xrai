@@ -220,6 +220,23 @@ def set_voice(req: VoiceRequest) -> JSONResponse:
     return JSONResponse({"ok": True})
 
 
+@app.post("/api/cache/clear")
+def clear_cache() -> JSONResponse:
+    """Drop every cached answer.
+
+    An operator needs this reachable: a cached answer is served instantly and
+    forever, so one that turns out to be wrong -- said before a fact was
+    corrected in brain/hub.py, or produced on a day the model was misbehaving --
+    outlives the mistake unless there is a button. Safe at any time; the next
+    question simply reaches the model again.
+    """
+    from brain import qa_cache
+
+    dropped = qa_cache.forget_all()
+    STATE.add("status", f"Answer cache cleared ({dropped} entr{'y' if dropped == 1 else 'ies'})")
+    return JSONResponse({"ok": True, "dropped": dropped})
+
+
 @app.post("/api/demos/{demo_id}/enable")
 def enable_demo(demo_id: str) -> JSONResponse:
     """Put a demo back in service after it was set aside for repeated failures.
