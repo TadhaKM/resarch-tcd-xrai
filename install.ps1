@@ -98,12 +98,24 @@ if (Fetch "models\kws\sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01" `
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01.tar.bz2" `
     "models\kws\kws-gigaspeech.tar.bz2") { tar xjf models\kws\kws-gigaspeech.tar.bz2 -C models\kws }
 
-Fetch "models\tts\en_US-amy-medium.onnx" `
-    "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx" `
-    "models\tts\en_US-amy-medium.onnx" | Out-Null
-Fetch "models\tts\en_US-amy-medium.onnx.json" `
-    "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx.json" `
-    "models\tts\en_US-amy-medium.onnx.json" | Out-Null
+# Speaking voices. The first is the default; the rest are offered in the
+# dashboard's voice selector, which lists whatever is present in models\tts
+# rather than a hardcoded set -- so adding a fifth is dropping the pair of
+# files in beside these, with no code change anywhere.
+foreach ($voice in @(
+    @("en_US-amy-medium",    "en/en_US/amy/medium"),
+    @("en_US-ryan-medium",   "en/en_US/ryan/medium"),
+    @("en_US-lessac-medium", "en/en_US/lessac/medium"),
+    @("en_GB-alba-medium",   "en/en_GB/alba/medium")
+)) {
+    $name, $path = $voice
+    Fetch "models\tts\$name.onnx" `
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/$path/$name.onnx" `
+        "models\tts\$name.onnx" | Out-Null
+    Fetch "models\tts\$name.onnx.json" `
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/$path/$name.onnx.json" `
+        "models\tts\$name.onnx.json" | Out-Null
+}
 Fetch "models\face\blaze_face_short_range.tflite" `
     "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/latest/blaze_face_short_range.tflite" `
     "models\face\blaze_face_short_range.tflite" | Out-Null

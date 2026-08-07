@@ -93,6 +93,22 @@ class DemoStopped(Exception):
     """
 
 
+class Interrupted(Exception):
+    """Raised when a visitor said the wake word while the robot was talking.
+
+    Like DemoStopped this is not a failure: it unwinds whatever was being said
+    so the runner can listen to whatever the person actually wants. It is what
+    makes a thirty-second answer escapable by voice instead of only from the
+    dashboard, which nobody standing in front of the robot has open.
+    """
+
+
+#: The wake phrase, as the robot might say it itself. A reply containing it
+#: would be found in the robot's own recorded voice and interrupt itself, so
+#: lines like "say hey Reachy if you want me to stop" skip the check.
+_WAKE_WORDS = ("reachy",)
+
+
 class DemoContext:
     """Everything a demo is allowed to do, and the only way it should do it.
 
@@ -148,6 +164,23 @@ class DemoContext:
         if self.mode_changed():
             raise DemoStopped(self._entered_mode)
 
+    def _stop_if_interrupted(self, just_said: str) -> None:
+        """Give up the floor if someone said the wake word while we spoke.
+
+        Checked between spoken lines rather than during one: the interruption
+        lands at the end of the current sentence, not mid-word, which is both
+        easier to implement honestly and closer to how a person yields a turn.
+
+        Skipped when the robot has just said the wake word itself -- its own
+        voice is in the same buffer being searched, so a line inviting someone
+        to "say hey Reachy" would otherwise interrupt itself immediately.
+        """
+        lowered = just_said.lower()
+        if any(word in lowered for word in _WAKE_WORDS):
+            return
+        if self.audio.wake_word_in_backlog():
+            raise Interrupted()
+
     # --- speaking --------------------------------------------------------
 
     def say(self, text: str, emotion: str = "neutral", expressive: bool = False) -> None:
@@ -174,6 +207,7 @@ class DemoContext:
         for line in lines:
             self._stop_if_switched()
             self.say(line, emotion)
+            self._stop_if_interrupted(line)
 
     def reply(
         self,
@@ -210,6 +244,10 @@ class DemoContext:
             self._stop_if_switched()
             spoken.append(sentence)
             self.say(sentence, tag, expressive=style == "story")
+            # A visitor can take the floor back here without waiting for a
+            # thirty-second story to finish. Their words were captured while
+            # this sentence played; this is where they get looked at.
+            self._stop_if_interrupted(sentence)
         self.motion.express_move(final_tag)
         return " ".join(spoken)
 

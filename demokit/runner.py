@@ -25,7 +25,7 @@ import re
 import time
 from typing import Any, Optional
 
-from .base import Demo, DemoContext, DemoStopped, IdleResult
+from .base import Demo, DemoContext, DemoStopped, IdleResult, Interrupted
 from .registry import FALLBACK_ID, REGISTRY
 
 
@@ -80,6 +80,12 @@ def contains_phrase(word_stream: str, phrase: str) -> bool:
 #: gives up and goes back to waiting.
 _EMPTY_TRANSCRIPT_RETRIES = 1
 
+#: How many times a visitor may talk over the robot before the turn ends and
+#: they have to say the wake word again. Each interruption resumes inside the
+#: turn it interrupted, so this bounds the stack rather than their patience;
+#: nobody reaches it in conversation.
+_MAX_INTERRUPT_DEPTH = 5
+
 
 class DemoRunner:
     """Runs whichever demo is selected, and survives whatever it does."""
@@ -120,8 +126,17 @@ class DemoRunner:
 
     # --- turn handling ---------------------------------------------------
 
-    def _take_turn(self, demo: Demo, ctx: DemoContext) -> None:
-        """Wake word heard: transcribe, then decide who handles it."""
+    def _take_turn(self, demo: Demo, ctx: DemoContext, depth: int = 0) -> None:
+        """Wake word heard: transcribe, then decide who handles it.
+
+        `depth` counts interruptions chained without returning to the idle
+        loop. Someone can talk over the robot repeatedly -- which is fine, and
+        the whole point -- but each interruption resumes inside the previous
+        turn, so without a bound a determined visitor grows the stack until it
+        breaks. Past the limit the turn simply ends and the next wake word is
+        picked up by the idle loop as usual, which costs one repetition and
+        nothing else.
+        """
         self._motion.acknowledge()
         heard = ""
         for _ in range(1 + _EMPTY_TRANSCRIPT_RETRIES):
@@ -159,16 +174,25 @@ class DemoRunner:
         if not offered and not demo.claims_utterances and self._offer(demo, ctx, heard):
             return
 
-        self._converse(ctx, heard)
+        self._converse(ctx, heard, depth)
 
     def _offer(self, demo: Demo, ctx: DemoContext, heard: str) -> bool:
         handled = self._guarded(demo, ctx, "on_utterance", lambda: demo.on_utterance(ctx, heard))
         return bool(handled)
 
-    def _converse(self, ctx: DemoContext, heard: str) -> None:
+    def _converse(self, ctx: DemoContext, heard: str, depth: int = 0) -> None:
         """What the robot does when no demo claimed the utterance."""
         try:
             ctx.reply(heard, person_id=ctx.person_id())
+        except Interrupted:
+            # The visitor talked over the answer. Their new question is already
+            # waiting, so take it now rather than making them repeat it.
+            if depth >= _MAX_INTERRUPT_DEPTH:
+                logger.info("Interruption limit reached; back to the idle loop.")
+                return
+            demo_now = self._active_demo
+            if demo_now is not None:
+                self._take_turn(demo_now, ctx, depth + 1)
         except DemoStopped:
             logger.info("Reply cut short: demo switched.")
         except Exception:
@@ -291,6 +315,17 @@ class DemoRunner:
             if demo is not None and ctx is not None:
                 self._take_turn(demo, ctx)
             return True
+        if kind == "voice":
+            # Applied here rather than in the web handler because loading a
+            # voice swaps the object every utterance goes through, and doing
+            # that from another thread mid-sentence is the same class of fault
+            # as speaking from it.
+            if self._audio.set_voice(text):
+                self._state.add("status", f"Voice set to {text}")
+                self._audio.speak("This is my voice now.", "happy", motion=self._motion)
+            else:
+                self._state.add("error", f"Could not switch to voice {text}")
+            return True
         return False
 
     def _wait_while_asleep(self) -> None:
@@ -346,6 +381,17 @@ class DemoRunner:
         except DemoStopped:
             # Not an error: the operator switched away mid-hook and the demo
             # unwound promptly, which is exactly what it should do.
+            return None
+        except Interrupted:
+            # Also not an error: a visitor said the wake word over the top of
+            # whatever was being said. Take their turn straight away rather
+            # than returning to the idle loop, which would make them say it
+            # twice -- once to stop the robot and once to be heard.
+            logger.info("Interrupted by the wake word; listening.")
+            self._state.note("listen", "Interrupted -- listening")
+            demo_now, ctx_now = self._active_demo, self._ctx
+            if demo_now is not None and ctx_now is not None:
+                self._take_turn(demo_now, ctx_now)
             return None
         except Exception:
             logger.exception("%s.%s failed", demo.id, hook)

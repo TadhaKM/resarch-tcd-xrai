@@ -195,6 +195,31 @@ def set_mode(req: ModeRequest) -> JSONResponse:
     return JSONResponse({"ok": True, "mode": STATE.mode})
 
 
+class VoiceRequest(BaseModel):
+    voice: str
+
+
+@app.get("/api/voices")
+def voices() -> JSONResponse:
+    """Installed voices and the one in use.
+
+    Read off disk by the voice loop rather than listed here, so dropping a
+    piper voice into models/tts/ offers it with no code change.
+    """
+    return JSONResponse(STATE.voices())
+
+
+@app.post("/api/voice")
+def set_voice(req: VoiceRequest) -> JSONResponse:
+    """Queue a voice change for the voice loop to apply between turns."""
+    name = req.voice.strip()
+    if not name:
+        return JSONResponse({"ok": False, "error": "empty"}, status_code=400)
+    if not STATE.request("voice", name):
+        return JSONResponse({"ok": False, "error": "queue full"}, status_code=429)
+    return JSONResponse({"ok": True})
+
+
 @app.post("/api/demos/{demo_id}/enable")
 def enable_demo(demo_id: str) -> JSONResponse:
     """Put a demo back in service after it was set aside for repeated failures.

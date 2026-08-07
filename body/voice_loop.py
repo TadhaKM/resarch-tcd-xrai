@@ -174,6 +174,7 @@ def run_forever(target: HardwareTarget) -> None:
     capabilities = _capabilities(tracker)
     REGISTRY.discover()
     STATE.set_demos(REGISTRY.dashboard_entries(capabilities))
+    STATE.set_voices(audio.available_voices(), audio.voice_name)
 
     runner = DemoRunner(
         audio=audio,
@@ -212,6 +213,7 @@ def run_forever(target: HardwareTarget) -> None:
                 # Availability changes when a demo is set aside or re-enabled,
                 # and the operator needs to see that while the session runs.
                 STATE.refresh_demo_availability(REGISTRY.dashboard_entries(capabilities))
+                STATE.set_voices(audio.available_voices(), audio.voice_name)
             except (KeyboardInterrupt, ShutdownRequested):
                 raise
             except Exception:

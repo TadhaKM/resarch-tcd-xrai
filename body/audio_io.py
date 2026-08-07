@@ -236,6 +236,7 @@ class AudioIO:
             "Transcription: %s", "Whisper" if self._whisper is not None else "streaming zipformer"
         )
         self._voice = PiperVoice.load(str(MODELS.tts_model_path), str(MODELS.tts_config_path))
+        self._voice_name = MODELS.tts_model_path.stem
 
         self._robot: Optional[Any] = robot
         self._owns_robot = robot is None
@@ -535,6 +536,104 @@ class AudioIO:
         for _ in self._mic_frames(deadline=deadline):
             if time.monotonic() >= deadline:
                 return
+
+    def available_voices(self) -> list[str]:
+        """Voice names installed alongside the configured one.
+
+        Read from disk rather than listed in config, so dropping a piper voice
+        into models/tts/ is all it takes to offer it -- the same rule the demos
+        follow. A voice is a matching .onnx and .onnx.json pair; anything else
+        is a half-finished download and is skipped rather than offered and then
+        failing when selected.
+        """
+        folder = MODELS.tts_model_path.parent
+        names = []
+        for model in sorted(folder.glob("*.onnx")):
+            if model.with_suffix(".onnx.json").exists():
+                names.append(model.stem)
+        return names
+
+    @property
+    def voice_name(self) -> str:
+        return self._voice_name
+
+    def set_voice(self, name: str) -> bool:
+        """Switch the speaking voice. Voice-loop thread only.
+
+        Loading a piper voice takes a moment and replaces the object every
+        utterance goes through, so it must not happen while another thread is
+        mid-sentence. The dashboard therefore queues the change and the runner
+        applies it between turns, the same way the Say button works.
+        """
+        folder = MODELS.tts_model_path.parent
+        model = folder / f"{name}.onnx"
+        config = folder / f"{name}.onnx.json"
+        if not model.exists() or not config.exists():
+            logger.warning("Voice %r is not installed in %s", name, folder)
+            return False
+        try:
+            self._voice = PiperVoice.load(str(model), str(config))
+        except Exception:
+            logger.exception("Could not load voice %r; keeping %s", name, self._voice_name)
+            return False
+        self._voice_name = name
+        logger.info("Voice set to %s", name)
+        return True
+
+    def wake_word_in_backlog(self) -> bool:
+        """Was the wake word spoken while the robot was talking?
+
+        Nothing consumes the microphone while the robot speaks, so a visitor
+        who interrupts is not ignored so much as unheard -- but the daemon has
+        been buffering the whole time, and that buffer is exactly the audio of
+        them interrupting. flush_mic throws it away, which is right before a
+        fresh question and wrong here.
+
+        So this drains the same backlog and runs the spotter over it instead:
+        a "hey Reachy" said three seconds into a long answer is found after the
+        sentence ends, and the robot can stop and listen. No second thread and
+        no listening during playback -- one thread owns the microphone, and
+        that stays true.
+
+        The backlog also contains the robot's own voice, so a reply that itself
+        contained the wake phrase would interrupt itself. Callers pass what was
+        just said and it is checked (see DemoContext).
+        """
+        if self.target.mode != "robot" or self._robot is None:
+            return False
+
+        chunks: list[np.ndarray] = []
+        collected = 0
+        while collected < _MAX_FLUSH_CHUNKS:
+            sample = self._robot.media.get_audio_sample()
+            if sample is None:
+                break
+            collected += 1
+            mono = sample[:, 0] if sample.ndim == 2 else sample
+            chunks.append(mono)
+        if not chunks:
+            return False
+
+        audio = np.concatenate(chunks)
+        # Gained the same way live frames are, since the spotter's threshold is
+        # tuned against gained audio; the gate stays off, as it is for the wake
+        # word everywhere else.
+        was_gated, self._gate_enabled = self._gate_enabled, False
+        try:
+            audio = self._apply_gain(audio)
+        finally:
+            self._gate_enabled = was_gated
+        input_rate = self._robot.media.get_input_audio_samplerate()
+        audio = _resample(audio, input_rate, MODELS.asr_sample_rate)
+
+        # The spotter's own stream is stale after speaking anyway; this is a
+        # one-shot decode over a finished clip, which is what the offline
+        # detector is for.
+        heard = self.detect_wake_word_offline(audio)
+        if heard:
+            logger.info("Wake word heard while speaking -- interrupting.")
+            self._kws_stream = None
+        return heard
 
     def flush_mic(self) -> None:
         """Drop mic audio captured while the robot was busy.

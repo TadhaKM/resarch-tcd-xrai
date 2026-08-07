@@ -60,6 +60,9 @@ class RobotState:
         #: until the app calls set_demos, which is why the dashboard tolerates
         #: an empty list on its first poll rather than latching it.
         self._demos: list[dict] = []
+        #: Installed speaking voices and the one in use, published by the voice
+        #: loop (which is the only thread allowed to read them off disk).
+        self._voices: dict = {"available": [], "current": ""}
         self._events: list[Event] = []
         self._seq = 0
         self._listening = False
@@ -103,6 +106,15 @@ class RobotState:
     def demos(self) -> list[dict]:
         with self._lock:
             return list(self._demos)
+
+    def set_voices(self, available: list[str], current: str) -> None:
+        """Publish the installed voices for the dashboard. Called by the loop."""
+        with self._lock:
+            self._voices = {"available": list(available), "current": current}
+
+    def voices(self) -> dict:
+        with self._lock:
+            return dict(self._voices)
 
     def refresh_demo_availability(self, entries: list[dict]) -> None:
         """Update availability/notes without changing the selection.

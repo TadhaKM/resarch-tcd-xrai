@@ -4,7 +4,7 @@ import logging
 import re
 from typing import Iterator
 
-from . import llm, long_term_memory, memory
+from . import llm, long_term_memory, memory, qa_cache
 from .emotion import extract_emotion_tag
 from .llm import generate_response
 from .prompts import build_messages
@@ -68,7 +68,40 @@ def stream_reply(
     model managed ("The answer is probably") instead of a real answer. Once a
     complete sentence has gone out, though, the robot is genuinely mid-utterance
     and a second model must not start a different answer over the top of it.
+
+    A question already answered is replayed from brain/qa_cache.py instead of
+    being asked again, which is worth 4-9 seconds on the local model every time
+    a new group asks the same thing. The replay is fed through the same
+    sentence splitting as a live stream so the caller cannot tell the two
+    apart, and it still records the turn in memory. Two things are never
+    cached: anything with a `style`, because the storyteller prompt exists to
+    produce a different story every time and serving yesterday's would be an
+    obvious regression; and, inside qa_cache, anything about the person asking.
+    `extra_system` is part of the cache key rather than a reason to skip the
+    cache -- the Hub briefing is on every turn of the conversation demo, so
+    skipping would leave the cache dead exactly where it earns its keep, while
+    ignoring it would answer as the wrong persona.
     """
+    if style is None:
+        cached = qa_cache.lookup(message, extra_system)
+        if cached is not None:
+            # Reconstructed with the tag the model originally ended on, so the
+            # loop below is the same text-shape the live path splits: N
+            # sentences tagged "thinking", then the real tag on a final pair
+            # whose text is whatever the last boundary left over.
+            replay = f"{cached.text} [emotion: {cached.emotion}]"
+            match = _SENTENCE_BOUNDARY_RE.search(replay)
+            while match:
+                candidate, _ = extract_emotion_tag(replay[: match.end()])
+                replay = replay[match.end() :]
+                if candidate:
+                    yield candidate, "thinking"
+                match = _SENTENCE_BOUNDARY_RE.search(replay)
+            tail, _ = extract_emotion_tag(replay)
+            yield tail, cached.emotion
+            memory.remember_turn(person_id, message, cached.text)
+            return
+
     history = memory.get_history(person_id)
     context = long_term_memory.get_context(person_id)
     messages = build_messages(context, history, message, style=style, extra_system=extra_system)
@@ -116,6 +149,8 @@ def stream_reply(
     yield tail, emotion_tag
 
     memory.remember_turn(person_id, message, reply_text)
+    if style is None:
+        qa_cache.remember(message, reply_text, emotion_tag, extra_system)
 
 
 def end_conversation(person_id: int) -> None:

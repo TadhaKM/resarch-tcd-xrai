@@ -144,6 +144,7 @@
       <span title="Speaker volume">&#128266;</span>
       <input id="vol" type="range" min="0" max="100" step="5" aria-label="Speaker volume">
       <span id="vol-val">&mdash;</span>
+      <select id="voice" aria-label="Speaking voice" title="Speaking voice"></select>
     </span>
   </header>
 
@@ -341,6 +342,33 @@
         const v = await r.json();
         label.textContent = v.volume != null ? v.volume : "!";
       } catch (e) { label.textContent = "!"; }
+    };
+  })();
+
+  // Speaking voice. The change is queued for the voice loop rather than applied
+  // here -- loading a piper voice swaps the object every utterance goes
+  // through, and doing that from the browser's request thread while the robot
+  // is mid-sentence is the same fault as speaking from it.
+  (async () => {
+    const sel = document.getElementById("voice");
+    if (!sel) return;
+    const pretty = n => n.replace(/^en_(US|GB)-/, "").replace(/-medium$/, "")
+                         .replace(/^./, c => c.toUpperCase());
+    try {
+      const v = await (await fetch("/api/voices")).json();
+      if (!v.available || !v.available.length) { sel.style.display = "none"; return; }
+      sel.innerHTML = v.available
+        .map(n => `<option value="${n}"${n === v.current ? " selected" : ""}>${pretty(n)}</option>`)
+        .join("");
+    } catch (e) { sel.style.display = "none"; return; }
+    sel.onchange = async () => {
+      try {
+        await fetch("/api/voice", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({voice: sel.value})
+        });
+      } catch (e) { /* the next poll shows whether it took */ }
     };
   })();
 
