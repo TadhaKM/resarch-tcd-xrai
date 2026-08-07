@@ -84,11 +84,17 @@ PEOPLE = (
             "academia, including with IDA Ireland and KBC Bank."
         ),
     },
-    {
-        "name": "Professor Laurent Muzellec",
-        "role": "Dean of Trinity Business School",
-        "detail": "Championed the public launch of TechConnect.",
-    },
+)
+
+#: Asked "who runs the Hub?", a small model picks a plausible name from
+#: whatever it was given, and given three it picked the Dean -- true of the
+#: Business School, wrong about the Hub, and said to the people who do run it.
+#: The two names below are the answer to that question; anyone else belongs in
+#: the prose, not in the list the model reaches into.
+_WHO_RUNS_IT = (
+    "The Hub is directed by Professor Na Fu and managed by Professor Laura "
+    "Berry. If you are asked who runs the AI XR Hub, those are the two names -- "
+    "no one else."
 )
 
 PROJECTS = (
@@ -165,6 +171,8 @@ recycled rainwater. The Hub's own space is used for VR leadership-scenario
 simulations and hands-on AI, XR and robotics build work.
 
 PEOPLE
+{_WHO_RUNS_IT}
+
 {_people_block()}
 
 PROJECTS

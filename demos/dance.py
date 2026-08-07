@@ -36,19 +36,24 @@ _LISTEN_SLICE_S = 2.5
 #: front of a group is often enough to hold attention and rare enough that the
 #: robot is mostly moving rather than mostly talking. Every remark is also a
 #: window during which nothing is consuming the microphone, so more is worse.
-_PASSES_BETWEEN_REMARKS = (4, 7)
+#: Passes between asides. Deliberately long: dancing is the demonstration, and
+#: a robot narrating its own dance is a robot talking over the thing people
+#: came to watch. Every remark is also a few seconds of deafness. Heard live,
+#: the earlier cadence read as chatter, so this is roughly one aside a minute
+#: rather than one every twenty seconds.
+_PASSES_BETWEEN_REMARKS = (12, 20)
 
 #: Asides. Written for the ear and kept to a couple of seconds each, because
 #: the robot is deaf for the length of every one. Each says something true
 #: about what the audience is watching -- the point of an embodied demo is
 #: that the explanation and the thing being explained are in the same room.
 _REMARKS = (
-    "All of this is neck, by the way. I don't have legs.",
-    "Nobody choreographed this. It's a few sine waves layered on top of each other.",
-    "The antennas flick on the offbeat. That part took the longest to get right.",
-    "There's no music. I'm keeping time on my own.",
-    "Say hey Reachy if you want me to stop, or to go again.",
-    "Join in whenever. I have no way of judging you.",
+    "All neck. No legs.",
+    "Nobody choreographed this.",
+    "No music. Keeping time myself.",
+    "Join in. I'm not judging.",
+    "Still going.",
+    "This is my best move.",
 )
 
 #: Whole words, not substrings: see _mentions. "stop" alone covers "stop

@@ -87,17 +87,43 @@ if (-not $OnRobot) {
     }
 }
 
-# Only one client can hold the robot's mic. A second instance doesn't fail
-# loudly -- both connect and split the audio, so the robot simply stops
-# responding, which looks like a microphone problem rather than a duplicate
-# process. Stopping a launcher shell does not stop the Python child, so these
-# accumulate easily across restarts.
+# Only one client can hold the robot's mic and speaker. A second instance does
+# not fail loudly -- both connect, and the robot talks over itself while
+# hearing half of what is said.
+#
+# The SUPERVISING SHELL has to go first, and this is not tidiness. Each
+# launcher relaunches its child on any non-zero exit, so killing the Python
+# while its launcher is alive is indistinguishable from a crash: the old
+# launcher immediately starts a replacement. Killing children first therefore
+# multiplies instances rather than reducing them -- observed live, four robots
+# talking over each other after a few restarts, each with its own supervisor
+# faithfully keeping it alive. Stop the supervisors, then the children.
+$launchers = @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" |
+    Where-Object { $_.CommandLine -like '*start_reachy*' -and $_.ProcessId -ne $PID })
+if ($launchers.Count -gt 0) {
+    Write-Host "Stopping $($launchers.Count) other launcher(s) first." -ForegroundColor Yellow
+    $launchers | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Seconds 2
+}
+
 $running = @(Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
     Where-Object { $_.CommandLine -like '*main.py*' })
 if ($running.Count -gt 0) {
-    Write-Host "Already running (PID $($running.ProcessId -join ', ')) -- stopping it first." -ForegroundColor Yellow
+    Write-Host "Already running (PID $($running.ProcessId -join ', ')) -- stopping it." -ForegroundColor Yellow
     $running | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     Start-Sleep -Seconds 2
+}
+
+# Whatever is left is unsupervised and should be gone. If it is not, something
+# is restarting it that this script does not know about, and starting anyway
+# would put a second voice in the room -- so say so and stop.
+$stillRunning = @(Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+    Where-Object { $_.CommandLine -like '*main.py*' })
+if ($stillRunning.Count -gt 0) {
+    Write-Host ""
+    Write-Host "Could not stop $($stillRunning.Count) running instance(s): PID $($stillRunning.ProcessId -join ', ')." -ForegroundColor Red
+    Write-Host "Starting now would make the robot talk over itself. Close them and retry." -ForegroundColor Red
+    exit 1
 }
 
 # Every address a phone on the same network could use -- printed because

@@ -32,6 +32,34 @@ _ANY_TAG_RE = re.compile(r"\[\s*" + _TAG_BODY + r"\s*\]", re.IGNORECASE)
 _STAGE_DIRECTION_RE = re.compile(r"\[\s*[a-z]+\s*\]", re.IGNORECASE)
 
 
+#: Parenthetical asides and asterisk actions. Everything the model produces is
+#: spoken immediately, and the synthesiser reads brackets as words: a reply
+#: ending "(If asked directly about which headsets are used, Professor Laura
+#: Berry might help)" was delivered to a visitor complete with "if asked
+#: directly". The prompt forbids these, but a 1.5B model forgets, and the cost
+#: of forgetting is paid out loud in front of people -- so they are stripped
+#: here as well. Speech has no parentheses; nothing is lost by removing them.
+_ASIDE_RE = re.compile(r"\([^)]*\)|\*[^*]+\*")
+
+#: Meta-narration the model puts before an answer when it is restating its own
+#: instructions -- "First: Start a brainstorming session about..." -- which is
+#: the model talking to itself, out loud, at a visitor.
+_PREAMBLE_RE = re.compile(
+    r"^\s*(?:first|next|then|step\s*\d+|let me start by|to begin|okay so)\s*[:,-]\s*",
+    re.IGNORECASE,
+)
+
+
+def clean_for_speech(text: str) -> str:
+    """Strip anything the model wrote that was never meant to be said aloud."""
+    text = _ASIDE_RE.sub(" ", text)
+    text = _PREAMBLE_RE.sub("", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    # Punctuation stranded by a removed aside ("Berry .", "help , if").
+    text = re.sub(r"\s+([.,!?])", r"\1", text)
+    return text.strip()
+
+
 def extract_emotion_tag(raw_output: str) -> tuple[str, str]:
     """Split raw LLM output into (reply_text, emotion_tag).
 
@@ -58,6 +86,9 @@ def extract_emotion_tag(raw_output: str) -> tuple[str, str]:
         tag = strays[-1].lower()
     text = _ANY_TAG_RE.sub(" ", text)
     text = _STAGE_DIRECTION_RE.sub(" ", text)
+    # Parenthetical asides, asterisk actions and "First:"-style preambles go
+    # the same way as the tags: everything here is about to be spoken.
+    text = clean_for_speech(text)
 
     # Collapse whitespace opened up by removing tags, and drop punctuation left
     # stranded before one (". ." from "sentence. [tag] .").

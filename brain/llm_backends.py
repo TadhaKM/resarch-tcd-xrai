@@ -39,6 +39,14 @@ Messages = list[dict[str, str]]
 #: still answer.
 _REQUEST_TIMEOUT_S = 20.0
 _CONNECT_TIMEOUT_S = 5.0
+
+#: The local model gets longer. The cloud ceiling exists to catch a network
+#: that has stopped answering, where waiting achieves nothing; local generation
+#: is CPU-bound and simply slow -- a long system prompt on a 1.5B model can take
+#: most of a minute to prefill the first time, and cutting that off would fail a
+#: turn that was about to succeed. There is no fallback behind the local model
+#: either, so a timeout here is a lost answer rather than a slower one.
+_LOCAL_TIMEOUT_S = 90.0
 #: One retry, not the SDK default of two: retries are serial, so the effective
 #: wait is a multiple of the timeout above.
 _MAX_RETRIES = 1
@@ -64,7 +72,7 @@ class OllamaBackend(Backend):
     name = "ollama"
 
     def __init__(self) -> None:
-        self._client = Client(host=MODELS.ollama_host, timeout=_REQUEST_TIMEOUT_S)
+        self._client = Client(host=MODELS.ollama_host, timeout=_LOCAL_TIMEOUT_S)
         self._default_options = {"num_predict": MODELS.llm_max_tokens}
         # Ollama unloads an idle model after 5 minutes by default; a cold
         # reload on this hardware costs ~30+ seconds on top of generation

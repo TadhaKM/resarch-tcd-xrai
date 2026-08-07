@@ -388,14 +388,18 @@ class Personality(Demo):
         Without this a visitor hears two different answers and concludes the
         robot is inconsistent, which is the opposite of the point.
         """
+        # Names the persona and stops. It used to add persona.blurb -- "Friendly.
+        # Warm and conversational. Explains with everyday comparisons." -- which
+        # is dashboard copy describing the persona to an operator, not something
+        # a person says about themselves. Reading it aloud both broke character
+        # and told the visitor the punchline before the demonstration: the point
+        # is that they HEAR the difference, not that they are briefed on it.
         introduced = ctx.store.setdefault(_INTRODUCED, set())
-        if persona.id not in introduced:
-            introduced.add(persona.id)
-            line = f"{persona.label}. {persona.blurb}"
-        elif same_question:
+        introduced.add(persona.id)
+        if same_question:
             line = f"The same question again, {persona.label.lower()} this time."
         else:
-            line = f"Still {persona.label.lower()}."
+            line = f"{persona.label} version."
         ctx.say(line, persona.pose)
 
     # --- helpers ---------------------------------------------------------
