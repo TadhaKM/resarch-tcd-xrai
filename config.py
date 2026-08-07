@@ -31,6 +31,25 @@ Mode = Literal["simulation", "robot"]
 
 MODELS_DIR = Path(__file__).parent / "models"
 
+# Load .env before anything reads the environment. Done here rather than in
+# main.py because this module is imported by everything and read at import time
+# by brain/llm_backends.py, which decides there and then whether a cloud model
+# is available -- a key loaded any later would arrive after that decision and
+# silently do nothing. Missing python-dotenv is not an error: the robot runs on
+# the local model, which is the whole point of it.
+def _load_env_file() -> None:
+    env_path = Path(__file__).parent / ".env"
+    if not env_path.exists():
+        return
+    try:
+        from dotenv import load_dotenv
+    except ImportError:  # pragma: no cover - optional dependency
+        return
+    load_dotenv(env_path, override=False)
+
+
+_load_env_file()
+
 
 @dataclass(frozen=True)
 class HardwareTarget:

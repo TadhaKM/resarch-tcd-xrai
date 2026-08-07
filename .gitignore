@@ -4,6 +4,12 @@ __pycache__/
 # The virtualenv install.ps1 creates inside the repo (~1GB of wheels).
 .venv/
 
+# API keys. .env.example is tracked and holds no secrets; .env is the real one
+# and must never be committed -- a key in git history is a key you have to
+# rotate, not one you can delete.
+.env
+.env.local
+
 # Runtime logs from start_reachy.ps1 / main.py (per-run diagnostics, and they
 # contain transcripts of whatever was said to the robot).
 *.log

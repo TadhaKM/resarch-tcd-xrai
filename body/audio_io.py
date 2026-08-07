@@ -602,38 +602,56 @@ class AudioIO:
         if self.target.mode != "robot" or self._robot is None:
             return False
 
-        chunks: list[np.ndarray] = []
-        collected = 0
-        while collected < _MAX_FLUSH_CHUNKS:
-            sample = self._robot.media.get_audio_sample()
-            if sample is None:
-                break
-            collected += 1
-            mono = sample[:, 0] if sample.ndim == 2 else sample
-            chunks.append(mono)
-        if not chunks:
-            return False
-
-        audio = np.concatenate(chunks)
-        # Gained the same way live frames are, since the spotter's threshold is
-        # tuned against gained audio; the gate stays off, as it is for the wake
-        # word everywhere else.
+        input_rate = self._robot.media.get_input_audio_samplerate()
+        # Decoded frame by frame through a streaming spotter, exactly as the
+        # live path does, rather than handed to detect_wake_word_offline as one
+        # clip. That was the first attempt and it did not work: the offline
+        # detector is documented as needing the keyword near the start, because
+        # audio before it suppresses detection almost entirely -- and this
+        # buffer begins with several seconds of the robot's own voice, with the
+        # visitor's "hey Reachy" somewhere in the middle. Feeding it in order,
+        # checking after each frame, finds the phrase wherever it falls.
+        #
+        # The gain is applied per frame for the same reason: _apply_gain tracks
+        # a decaying envelope, so running it over the whole buffer at once lets
+        # the robot's much louder voice set the level and scales the visitor's
+        # speech down to nothing.
+        stream = self._spotter.create_stream()
         was_gated, self._gate_enabled = self._gate_enabled, False
         try:
-            audio = self._apply_gain(audio)
+            for _ in range(_MAX_FLUSH_CHUNKS):
+                sample = self._robot.media.get_audio_sample()
+                if sample is None:
+                    break
+                mono = sample[:, 0] if sample.ndim == 2 else sample
+                frame = _resample(self._apply_gain(mono), input_rate, MODELS.asr_sample_rate)
+                stream.accept_waveform(MODELS.asr_sample_rate, frame)
+                while self._spotter.is_ready(stream):
+                    self._spotter.decode_stream(stream)
+                if self._spotter.get_result(stream):
+                    logger.info("Wake word heard while speaking -- interrupting.")
+                    # Dropped so the turn that follows starts from a clean
+                    # stream rather than resuming this one mid-phrase.
+                    self._kws_stream = None
+                    return True
+
+            # Flush the tail. A phrase landing at the very end of the buffer --
+            # somebody interrupting just as a sentence finishes, which is the
+            # most natural moment to interrupt -- sits in the encoder
+            # undecoded until more audio arrives, and there is none. Measured:
+            # without this, an interruption buried mid-buffer is found and one
+            # at the end is missed entirely.
+            stream.accept_waveform(MODELS.asr_sample_rate, _TAIL_PADDING)
+            stream.input_finished()
+            while self._spotter.is_ready(stream):
+                self._spotter.decode_stream(stream)
+            if self._spotter.get_result(stream):
+                logger.info("Wake word heard while speaking -- interrupting.")
+                self._kws_stream = None
+                return True
         finally:
             self._gate_enabled = was_gated
-        input_rate = self._robot.media.get_input_audio_samplerate()
-        audio = _resample(audio, input_rate, MODELS.asr_sample_rate)
-
-        # The spotter's own stream is stale after speaking anyway; this is a
-        # one-shot decode over a finished clip, which is what the offline
-        # detector is for.
-        heard = self.detect_wake_word_offline(audio)
-        if heard:
-            logger.info("Wake word heard while speaking -- interrupting.")
-            self._kws_stream = None
-        return heard
+        return False
 
     def flush_mic(self) -> None:
         """Drop mic audio captured while the robot was busy.
