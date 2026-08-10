@@ -42,7 +42,19 @@ _STATS_INTERVAL_S = 5.0
 _SEARCH_AFTER_S = 4.0
 _SEARCH_PERIOD_S = 12.0
 _SEARCH_YAW_DEG = 20.0
-_SEARCH_PITCH_DEG = 16.0
+
+#: Pitch the sweep centres on, as an offset from the resting pose -- NOT as an
+#: absolute aim. That distinction was the bug: motion.py already holds a
+#: permanent upward camera bias, and this was written as though it did not, so
+#: the two added up and the head sat at its upper limit staring at the ceiling
+#: for the whole time nobody was detected. Zero means "sweep around wherever
+#: the camera already rests", which is where faces already are.
+_SEARCH_PITCH_DEG = 0.0
+
+#: How far the sweep rocks above and below that centre. Wider than the 6 it
+#: was, to cover both a seated visitor and a standing one now that the sweep is
+#: no longer starting halfway up.
+_SEARCH_PITCH_SWING_DEG = 9.0
 
 
 class FaceTracker:
@@ -110,8 +122,7 @@ class FaceTracker:
 
         phase = (elapsed - _SEARCH_AFTER_S) / _SEARCH_PERIOD_S
         yaw = _SEARCH_YAW_DEG * math.sin(2.0 * math.pi * phase)
-        # Bias upward: people are above the lens far more often than below it.
-        pitch = _SEARCH_PITCH_DEG + 6.0 * math.sin(4.0 * math.pi * phase)
+        pitch = _SEARCH_PITCH_DEG + _SEARCH_PITCH_SWING_DEG * math.sin(4.0 * math.pi * phase)
         self._motion.look(yaw=yaw, pitch=pitch, ttl=_TRACK_TTL_S)
 
     def _run(self) -> None:

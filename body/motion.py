@@ -168,7 +168,15 @@ class _TrackingTarget:
 #: standing or sitting near the robot: a captured frame showed a chest and
 #: hands with the head cropped off the top, which is why face detection
 #: reported "no faces" while working perfectly.
-_CAMERA_PITCH_BIAS = 15.0
+#:
+#: 8, not the 15 this was set to originally. Fifteen was chosen to fix that
+#: cropping and did, but it also reads as the robot studying the ceiling rather
+#: than looking at you -- and it was compounding with the search sweep, which
+#: added its own 16 on top and pinned the head at the 34-degree limit whenever
+#: nobody was in view, which is exactly the state a robot is in when someone
+#: walks up to it. Eight still lifts the lens off people's chests while resting
+#: close enough to level that it reads as facing forward.
+_CAMERA_PITCH_BIAS = 8.0
 
 #: The head's usable range, named because both _clamp_pose and _room_for have
 #: to agree on it -- the second exists to keep a composed pose inside what the
