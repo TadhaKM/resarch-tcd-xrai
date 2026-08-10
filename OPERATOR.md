@@ -75,6 +75,7 @@ Along the top:
 | 🧠 with a model name | Which AI is answering, and whether it's on the laptop or online |
 | 🌐 **Web search** | Off by default. Tick it to let Reachy look things up — see below |
 | 🎤 **Open mic** | Off by default. Tick it and follow-up questions don't need "Hey Reachy" — see below |
+| 🎭 dropdown | Which character the **AI Personality** demo answers as. Greyed out in the other demos |
 | 🔊 slider | Speaker volume |
 | A dropdown | Which voice it speaks in — four to choose from |
 | **Clear answers** | Makes it forget answers it has memorised. Only needed if it keeps repeating something wrong |
@@ -97,14 +98,20 @@ and the robot.
 > Try: *"Hey Reachy, who runs the AI XR Hub?"* — it knows the real answer.
 > Then: *"Hey Reachy, what is extended reality?"*
 
-**AI Personality** — say *"switch personality"*. It answers the **same
-question** again as a different character: Professional, Friendly, then
-Consultant. They differ in wording, in tone of voice, and in how the robot
-holds its head.
+**AI Personality** — it answers the **same question** again as a different
+character: Professional, Friendly, or Consultant. They differ in wording, in
+tone of voice, and in how the robot holds its head.
+
+**Use the 🎭 dropdown at the top of the screen.** Pick a character and it
+re-answers the last question in that style straight away — no phrase to
+remember, and you can jump to any of the three rather than cycling through.
+Saying *"switch personality"* still works if your hands are full.
 > Ask a question with no single right answer — *"Should a business student
-> learn to code?"* — then say *"Hey Reachy, switch personality"* two or three
-> times. Factual questions make all three sound the same; arguable ones make
-> the difference obvious.
+> learn to code?"* — then change the dropdown twice. Factual questions make all
+> three sound the same; arguable ones make the difference obvious.
+>
+> It won't explain itself first. That's deliberate: the point is that visitors
+> *hear* the difference, and being told what to expect gives away the ending.
 
 **Business Brainstorming** — say *"let's brainstorm"*. It interviews the
 visitor about an idea, then offers three directions and recaps it. Genuinely
@@ -127,7 +134,11 @@ good with business-school groups because they participate rather than watch.
 
 In **Vision & Face Tracking**, it offers to learn the name of a face it doesn't
 know. Say **"Hey Reachy, yes"**, then **"Hey Reachy,"** and your name. It
-greets you by name next time it sees you.
+greets you by name next time it sees you, in every demo.
+
+**If it hears the name wrong** — and it often will, names are the hardest thing
+for speech recognition — just tell it: *"Hey Reachy, that's not my name, it's
+Sarah."* It corrects itself and remembers the new spelling.
 
 It only asks once, and won't ask again for ten minutes, so it doesn't pester a
 room full of people.
