@@ -177,7 +177,7 @@ def _recap_lines(answers: dict[str, str], directions: list[str]) -> list[tuple[s
 
 class Brainstorm(Demo):
     label = "Business Brainstorming"
-    help = "Interviews a visitor about an idea, offers three directions, then recaps it."
+    help = "Interviews a visitor about an idea, then offers three directions back."
     order = 60
     #: Request-shaped, not topic-shaped. A bare "brainstorm" or "business idea"
     #: is ordinary vocabulary at a business school -- "we ran a brainstorm this

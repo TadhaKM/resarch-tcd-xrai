@@ -113,10 +113,14 @@ Saying *"switch personality"* still works if your hands are full.
 > It won't explain itself first. That's deliberate: the point is that visitors
 > *hear* the difference, and being told what to expect gives away the ending.
 
-**Business Brainstorming** — say *"let's brainstorm"*. It interviews the
-visitor about an idea, then offers three directions and recaps it. Genuinely
-good with business-school groups because they participate rather than watch.
+**Business Brainstorming** — say *"let's brainstorm"*. It asks the visitor three
+questions about their idea, then gives three directions they could take it, and
+ends by asking which they'd test first. Genuinely good with business-school
+groups because they participate rather than watch.
 > Let a visitor drive this one. It asks the questions.
+>
+> If you want their answers read back, say *"summarise that"* — it won't do it
+> unprompted.
 
 ### The rest
 
