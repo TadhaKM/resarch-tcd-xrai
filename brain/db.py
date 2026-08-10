@@ -110,6 +110,27 @@ def create_person(name: Optional[str] = None) -> int:
         raise
 
 
+def rename_person(person_id: int, name: str) -> None:
+    """Correct the name on an existing person, keeping their face and notes.
+
+    Names arrive by speech-to-text, and speech-to-text is worst at exactly the
+    proper nouns this stores -- one visitor was enrolled as "Telaget". Until
+    this existed the only cure was editing the database by hand, which is not
+    something the person standing in front of the robot can do, so a misheard
+    name was permanent and the robot greeted them by it forever.
+
+    Deliberately an UPDATE rather than delete-and-re-enrol: the embedding and
+    any notes belong to the same visitor and should survive the spelling being
+    fixed.
+    """
+    try:
+        with _write_lock, _connection() as conn:
+            conn.execute("UPDATE people SET name = ? WHERE id = ?", (name, person_id))
+    except sqlite3.Error:
+        logger.exception("Failed to rename person %s", person_id)
+        raise
+
+
 def get_person_name(person_id: int) -> Optional[str]:
     """Return a person's name, or None if unknown or never named."""
     try:

@@ -37,6 +37,12 @@ _NAME_PREFIXES = (
 _MAX_NAME_WORDS = 4
 _MAX_NAME_CHARS = 40
 
+#: No name begins with an article, but plenty of sentences that survive every
+#: other check here do: "call me a taxi" reaches this as "a taxi", which is the
+#: right length, the right word count and entirely plausible-looking, and would
+#: be stored as somebody's name.
+_NOT_NAME_FIRST_WORDS = frozenset({"a", "an", "the"})
+
 
 def clean_spoken_name(text: str) -> Optional[str]:
     """Return a plausible name from a speech transcript, or None.
@@ -62,6 +68,8 @@ def clean_spoken_name(text: str) -> Optional[str]:
         return None
     words = cleaned.split()
     if not (1 <= len(words) <= _MAX_NAME_WORDS):
+        return None
+    if words[0].lower() in _NOT_NAME_FIRST_WORDS:
         return None
     # A single letter or two is far more often a mis-decode of noise than a
     # real answer, and it would bind a face embedding permanently.

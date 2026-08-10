@@ -247,7 +247,38 @@ for _ in range(4):
 check("and does not greet again", len([line for line in audio.said if "Ada" in line]), 1)
 
 print()
-print("[9] audio from the wrong thread is refused, not silently interleaved")
+print("[9] a misheard name can be corrected out loud")
+
+_stored = {7: "Telaget"}
+_db.get_person_name = lambda person_id: _stored.get(person_id)
+_db.rename_person = lambda person_id, name: _stored.__setitem__(person_id, name)
+
+
+def correct(said: str):
+    """Run one utterance through a runner that can see a known, named face."""
+    _stored[7] = "Telaget"
+    runner, state, audio, _ = build([Quiet()], wake_at=(1,), transcripts=[said])
+    runner._tracker = KnownTracker()
+    state.set_mode("quiet")
+    runner.cycle()
+    return _stored[7]
+
+
+check("takes the name offered", correct("my name is Tadhagath"), "Tadhagath")
+check(
+    "reads past the rejected name",
+    correct("no my name is not Telaget its Tadhagath"),
+    "Tadhagath",
+)
+# The sentence that made this necessary: cut at the first cue instead of the
+# last and the robot renames the visitor to the very name they just rejected.
+check("a denial alone changes nothing", correct("thats not my name"), "Telaget")
+check("nor does one naming only what is wrong", correct("my name is not Telaget"), "Telaget")
+check("ordinary talk is left alone", correct("what does my name mean"), "Telaget")
+check("and an article is not a name", correct("can you call me a taxi"), "Telaget")
+
+print()
+print("[10] audio from the wrong thread is refused, not silently interleaved")
 import threading  # noqa: E402
 
 ctx = DemoContext(

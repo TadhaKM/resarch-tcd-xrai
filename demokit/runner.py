@@ -25,6 +25,9 @@ import re
 import time
 from typing import Any, Optional
 
+from body.face import clean_spoken_name
+from brain import db
+
 from .base import Demo, DemoContext, DemoStopped, IdleResult, Interrupted
 from .registry import FALLBACK_ID, REGISTRY
 
@@ -48,6 +51,36 @@ SLEEP_PHRASES = (
     "shut down",
     "stop listening",
 )
+
+#: Spoken ways of saying "you have my name wrong". Also in the core, because
+#: the robot now greets people by name from any demo, so the correction has to
+#: work from any demo too -- being misnamed in three demos and able to fix it
+#: in only one is worse than not being greeted at all.
+#:
+#: Written without apostrophes because _word_stream strips them, and matched on
+#: whole words like everything else here. Only ever consulted for a visitor the
+#: robot already has a name for, which is what keeps "call me" from being a
+#: hazard: for a stranger these do nothing.
+NAME_CORRECTION_CUES = (
+    "not my name",
+    "wrong name",
+    "my name is not",
+    "my name is",
+    "my names",
+    "call me",
+)
+
+#: The cues above that deny a name rather than supply one. What follows these
+#: is the name being rejected -- "my name is not Telaget" -- so reading the
+#: trailing words as the new name sets it to precisely the thing the visitor
+#: just said was wrong. Found once by testing that exact sentence.
+NEGATIVE_NAME_CUES = frozenset({"not my name", "wrong name", "my name is not"})
+
+#: Words that introduce the replacement, after the denial: "that's not my name,
+#: it's Tadhagath". Not correction cues in their own right -- "it is" opens far
+#: too many ordinary sentences -- they only decide where the name starts once a
+#: cue above has already established that a correction is happening.
+NAME_HANDOFF_CUES = ("its", "it is", "im", "i am", "actually")
 
 
 def _word_stream(text: str) -> str:
@@ -154,6 +187,59 @@ class DemoRunner:
         self._motion.express("happy")
         ctx.say(f"Oh, hello again {name}.", "happy")
 
+    def _correct_name_if_asked(self, ctx: DemoContext, words: str, heard: str) -> bool:
+        """Let somebody the robot already knows fix the name it knows them by.
+
+        Speech-to-text is at its worst on proper nouns, which is precisely what
+        enrolment stores: a visitor here was recorded as "Telaget". Before this,
+        the robot then greeted them by that name at every future visit and the
+        only remedy was an UPDATE against the database by hand -- which the
+        person being misnamed is in no position to run.
+
+        Only for visitors who already have a name. A stranger saying "my name
+        is..." is a first enrolment and belongs to the vision demo, which asks
+        consent first; catching it here would bind a name to a face without
+        ever asking. That restriction is also what makes the looser cues safe
+        to accept, since the worst case is overwriting a name that can itself
+        be corrected the same way a moment later.
+        """
+        person_id = ctx.person_id()
+        if not person_id or not ctx.person_name():
+            return False
+        if not any(contains_phrase(words, cue) for cue in NAME_CORRECTION_CUES):
+            return False
+
+        # Cut at the LAST marker, and read `words` rather than the raw
+        # transcript so apostrophes and punctuation are already gone. Both
+        # matter for the sentence people actually say when correcting a robot,
+        # which states the wrong name before the right one: "my name is not
+        # Telaget, it's Tadhagath" cut at the first cue gives "Telaget Its
+        # Tadhagath", and cut at the last gives the name.
+        last_cue, at = "", -1
+        for cue in NAME_CORRECTION_CUES + NAME_HANDOFF_CUES:
+            found = words.rfind(f" {cue} ")
+            if found > at:
+                last_cue, at = cue, found
+
+        # A denial with nothing after it names only what is wrong, so there is
+        # no new name to take -- and taking those words anyway would set the
+        # name to the one the visitor just rejected.
+        tail = "" if last_cue in NEGATIVE_NAME_CUES else words[at + len(last_cue) + 2 :]
+        name = clean_spoken_name(tail)
+        if name is None:
+            ctx.say("Sorry about that. Say hey Reachy, then my name is, and your name.", "sad")
+            return True
+
+        was = ctx.person_name()
+        if name == was:
+            return False
+        db.rename_person(person_id, name)
+        self._greeted.discard(was)
+        self._greeted.add(name)
+        logger.info("Renamed person %s from %r to %r.", person_id, was, name)
+        ctx.say(f"Sorry about that. {name}. I have it right now.", "happy")
+        return True
+
     # --- turn handling ---------------------------------------------------
 
     def _take_turn(self, demo: Demo, ctx: DemoContext, depth: int = 0) -> None:
@@ -182,6 +268,12 @@ class DemoRunner:
 
         if any(contains_phrase(words, phrase) for phrase in SLEEP_PHRASES):
             self._go_to_sleep()
+            return
+
+        # Ahead of the demos, for the same reason sleep is: the robot spoke the
+        # wrong name, so the correction is about the robot rather than about
+        # whatever demo is running, and it has to land whichever one that is.
+        if self._correct_name_if_asked(ctx, words, heard):
             return
 
         if demo.claims_utterances and self._offer(demo, ctx, heard):
