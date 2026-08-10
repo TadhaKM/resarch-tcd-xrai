@@ -146,4 +146,29 @@ URL=http://localhost:8080
 "@
 Write-Host "   'Start Reachy' and 'Reachy Dashboard' created"
 
+# --- Start on sign-in -------------------------------------------------------
+# So a visitor meets a working robot rather than a desktop icon. The Startup
+# folder rather than a scheduled task or a service, deliberately: it needs no
+# admin rights, it runs as the logged-in user (which matters, because the app
+# uses that user's audio devices and .env), and an operator can see and delete
+# it without knowing what a scheduled task is.
+#
+# It is also the honest limit of "zero-touch" on Windows without a service: the
+# machine still has to be signed in. A robot on a stand at an open day is
+# normally left signed in anyway, and the alternative -- a service running as
+# SYSTEM -- cannot reach the user's audio session at all.
+Step "Start on sign-in"
+$startup = [Environment]::GetFolderPath("Startup")
+$autoLnk = $shell.CreateShortcut((Join-Path $startup "Reachy Autostart.lnk"))
+$autoLnk.TargetPath = "powershell.exe"
+# -WindowStyle Minimized, not Hidden: hidden means nobody can tell whether it
+# is running, and the first thing an operator does when the robot is silent is
+# look for a window.
+$autoLnk.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Minimized -File `"$PSScriptRoot\start_reachy.ps1`" -NoBrowser"
+$autoLnk.WorkingDirectory = $PSScriptRoot
+$autoLnk.Save()
+Write-Host "   the robot will now start by itself when this user signs in"
+Write-Host "   (delete '$startup\Reachy Autostart.lnk' to stop that)"
+
 Write-Host "`nDone. Next: read OPERATOR.md, then double-click 'Start Reachy'." -ForegroundColor Green
+Write-Host "From now on it also starts by itself when you sign in." -ForegroundColor Green

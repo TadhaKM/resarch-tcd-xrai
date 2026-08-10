@@ -26,3 +26,7 @@ data/
 # people's photos (a placeholder-avatar service, not scraped) -- reproducible
 # via the URLs in test_multi_session_simulation.py's docstring, not committed.
 test_photos/
+
+# The last address the robot answered on, cached by find_robot.ps1 so a
+# restart does not re-scan the subnet. Machine-local runtime state.
+.robot_ip

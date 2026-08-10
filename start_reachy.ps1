@@ -10,10 +10,12 @@
 param(
     [switch]$OnRobot,
     [switch]$NoBrowser,
-    # mDNS name, not a fixed IP: the address is assigned by whatever network
-    # the robot joins and changed three times in one session, each time
-    # leaving this script's reachability check pointing at a dead address.
-    [string]$RobotIp = "reachy-mini.local"
+    # Empty means "go and find it" (find_robot.ps1). Pass an address to skip
+    # the search. Neither a fixed IP nor the mDNS name works as a default: the
+    # address is assigned by whatever network the robot joined and has changed
+    # three times in one session, and mDNS is filtered on the Hub's own IoT
+    # network, so the name resolves at home and not at work.
+    [string]$RobotIp = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -47,6 +49,39 @@ Write-Host "  log    : $logPath"
 Write-Host ""
 
 if (-not $OnRobot) {
+    # Find the robot before anything else. An operator should not have to know
+    # the robot's IP address, and on the Hub's network they cannot look it up
+    # by name -- mDNS is filtered there. find_robot.ps1 tries the last known
+    # address, mDNS, the ARP table and finally a sweep of this machine's own
+    # subnet, and confirms a Reachy daemon is answering rather than merely that
+    # something is at that address.
+    if (-not $RobotIp) {
+        Write-Host "Looking for the robot ... " -NoNewline
+        # Returns "<ip>:<port>". The port matters as much as the address: the
+        # daemon's default is 8000 and this project's config asks for 8888,
+        # and guessing wrong presents as an unexplained media timeout rather
+        # than as a wrong port.
+        $found = & (Join-Path $PSScriptRoot "find_robot.ps1")
+        if ($found) {
+            $parts = $found -split ":"
+            $RobotIp = $parts[0]
+            if ($parts.Count -gt 1) { $daemonPort = $parts[1] }
+        }
+        if ($LASTEXITCODE -ne 0 -or -not $RobotIp) {
+            Write-Host "NOT FOUND" -ForegroundColor Red
+            Write-Host ""
+            Write-Host "No Reachy daemon answered anywhere on this network." -ForegroundColor Yellow
+            Write-Host "Check that:" -ForegroundColor Yellow
+            Write-Host "  - the robot is powered on (the antennas move when it boots)" -ForegroundColor Yellow
+            Write-Host "  - it has joined the same WiFi as this laptop" -ForegroundColor Yellow
+            Write-Host "  - this laptop is on that WiFi too, not a different one" -ForegroundColor Yellow
+            Write-Host ""
+            Write-Host "If you know the address, pass it: .\start_reachy.ps1 -RobotIp <ip>" -ForegroundColor Yellow
+            exit 1
+        }
+        Write-Host "found at ${RobotIp}:$daemonPort" -ForegroundColor Green
+    }
+
     # Fail loudly here rather than 20s later inside model loading: nothing in
     # remote mode works if the robot isn't reachable.
     Write-Host "Checking robot at $RobotIp ... " -NoNewline
@@ -69,8 +104,9 @@ if (-not $OnRobot) {
     } else {
         Write-Host "UNREACHABLE" -ForegroundColor Red
         Write-Host ""
-        Write-Host "The robot isn't answering. Check that it's powered on and joined" -ForegroundColor Yellow
-        Write-Host "to the same network/hotspot. If its IP changed, pass the new one:" -ForegroundColor Yellow
+        Write-Host "The robot answered a moment ago but is not responding now." -ForegroundColor Yellow
+        Write-Host "Check that it's powered on and joined to the same network." -ForegroundColor Yellow
+        Write-Host "If its IP changed, pass the new one:" -ForegroundColor Yellow
         Write-Host "  .\start_reachy.ps1 -RobotIp <new-ip>" -ForegroundColor Yellow
         exit 1
     }
@@ -150,6 +186,15 @@ if (-not $NoBrowser) {
 }
 
 $env:REACHY_TARGET = $target
+# The address this script just found, handed to the app so it connects to the
+# same robot the checks above passed against. Without this the app falls back
+# to the address committed in config.py, which is a record of a robot on a
+# different network on a different day -- exactly the failure that presents as
+# a bare "TimeoutError" from inside the media stack with nothing to explain it.
+if (-not $OnRobot -and $RobotIp) { $env:REACHY_HOST = $RobotIp }
+# Likewise the port that was actually found answering, so the app and this
+# script agree about which daemon they are talking to.
+if (-not $OnRobot -and $daemonPort) { $env:REACHY_DAEMON_PORT = "$daemonPort" }
 $env:PYTHONIOENCODING = "utf-8"   # replies contain curly quotes; cp1252 mangles them
 
 # Deliberately NOT `python ... 2>&1 | Tee-Object`: redirecting a native

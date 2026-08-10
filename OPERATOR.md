@@ -19,13 +19,16 @@ matters. Nothing needs the internet — everything runs on the laptop.
 
 ## Every time you use it
 
-1. Turn the laptop on. Check **Mobile hotspot** is on.
+1. Turn the laptop on and sign in. Check **Mobile hotspot** is on.
 2. Plug in / power on the robot. Give it about a minute.
-3. Double-click **Start Reachy** on the desktop.
-4. Wait. A black window shows progress, and your browser opens the
-   dashboard by itself.
-5. **The robot wiggles (looks left, right, nods) when it is ready.**
-6. Say **"Hey Reachy"** — its antennas perk up — then ask your question.
+3. **Nothing else.** The robot starts by itself when you sign in, finds itself
+   on the network, and is ready in a minute or two.
+4. **The robot wiggles (looks left, right, nods) when it is ready.**
+5. Say **"Hey Reachy"** — its antennas perk up — then ask your question.
+
+If it did not start by itself, or you closed it, double-click **Start Reachy**
+on the desktop. You never have to type the robot's address: it searches for it,
+and says which address it found.
 
 One "Hey Reachy" per question. The dashboard lists every phrase it responds
 to, shows everything it hears and says, has a volume slider, and lets you
@@ -53,5 +56,6 @@ the black window (it looks like `http://192.168.137.1:8080`).
 | Black window closed / no window | Double-click **Start Reachy** again. |
 | "UNREACHABLE" in the window | The robot isn't on the hotspot. Check hotspot is on, restart the robot, try again. |
 | Nothing works after 3 minutes | Power the robot off and on, close the window, **Start Reachy** again. |
+| "NOT FOUND — no Reachy daemon answered" | The laptop and the robot are on different networks. Check the hotspot is on and that the robot has joined it, then **Start Reachy** again. |
 
 Still stuck? Restart the laptop. Truly stuck? Call the person who set it up.
