@@ -61,6 +61,35 @@ _STORY_SYNTHESIS = SynthesisConfig(
     normalize_audio=False,
 )
 
+#: The synthesiser's own defaults for the two knobs a caller can vary, so a
+#: voice character is expressed as a multiplier of "normal" rather than as raw
+#: model parameters that mean nothing to a demo author.
+_BASE_NOISE_SCALE = 0.667
+
+
+def _voice_config(pace: float, variation: float) -> SynthesisConfig:
+    """Build a synthesis config from an abstract voice character.
+
+    `pace` is a speaking-rate multiplier (higher is slower) and `variation`
+    scales how much the prosody moves. Both are named for what a demo author
+    can reason about, because the alternative -- brain/personas.py holding
+    piper's length_scale and noise_scale directly -- would put a synthesiser's
+    parameter names in the hardware-independent half of the codebase.
+
+    This exists because personas previously carried pace and variation that
+    nothing read: speak() offered a single boolean picking between two fixed
+    configs, and the storyteller one is both slower AND more varied, so it
+    could not express "friendly" (quicker, warmer) without lying about the
+    pace. The personality demo's whole premise is that the same question sounds
+    different, and a third of that difference was unimplemented.
+    """
+    return SynthesisConfig(
+        length_scale=max(0.8, min(1.4, pace)),
+        noise_scale=max(0.3, min(1.2, _BASE_NOISE_SCALE * variation / 0.667)),
+        noise_w_scale=max(0.4, min(1.4, variation)),
+        normalize_audio=False,
+    )
+
 # Audio discarded right after a wake-word match, to clear the tail of the wake
 # phrase out of the buffer before the request is transcribed.
 _WAKE_DRAIN_S = 0.35
@@ -759,9 +788,20 @@ class AudioIO:
         emotion_tag: str,
         motion: Optional[Any] = None,
         expressive: bool = False,
+        pace: Optional[float] = None,
+        variation: Optional[float] = None,
     ) -> None:
-        """Synthesize text with piper and play it. `expressive` performs it as a story."""
-        syn_config = _STORY_SYNTHESIS if expressive else _CHAT_SYNTHESIS
+        """Synthesize text with piper and play it.
+
+        `expressive` performs it as a story. `pace` and `variation` give a
+        voice a character of its own -- see _voice_config -- and take
+        precedence, since a caller that named both meant them.
+        """
+        if pace is not None or variation is not None:
+            syn_config = _voice_config(pace if pace is not None else 1.0,
+                                       variation if variation is not None else 0.667)
+        else:
+            syn_config = _STORY_SYNTHESIS if expressive else _CHAT_SYNTHESIS
         if motion is not None:
             motion.begin_speech()
         try:

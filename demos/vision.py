@@ -49,6 +49,13 @@ _SETTLE_S = 3.0
 #: everybody. Enrolling inside that window is manage_people.py's job.
 _ASK_COOLDOWN_S = 600.0
 
+#: Silence between presence remarks of the same kind. A minute: often enough
+#: that a visitor deliberately stepping out of frame and back sees the robot
+#: notice, rare enough that a group standing around chatting is not narrated
+#: at. The previous version of this demo had no limit and was unbearable; the
+#: one after it removed the remarks entirely and demonstrated nothing.
+_REMARK_COOLDOWN_S = 60.0
+
 #: Wake-word window returned by every idle slice; the core clamps it to
 #: MAX_LISTEN_WINDOW_S. Never zero: DemoRunner.cycle opens no microphone at
 #: all for a zero, and nothing here is worth being deaf for.
@@ -113,8 +120,19 @@ class Vision(Demo):
     # standing in front of it should get the dance.
 
     def on_enter(self, ctx: DemoContext) -> None:
-        """Selected. Says nothing: the demonstration is the head, not a sentence."""
-        ctx.status("Vision: following faces, quiet unless it meets someone new.")
+        """Selected. One line naming what to watch for, then quiet.
+
+        The demonstration is the head, and for a while this demo said nothing
+        at all on the theory that a head following you is self-evident. Watched
+        with visitors it is not: people do not know to look, and a robot that
+        silently tracks somebody reads as a robot doing nothing. One sentence
+        telling them what to try converts it into something they can test --
+        and testing it is the demonstration, which is why the line asks them to
+        move rather than explaining how detection works.
+        """
+        ctx.store["stage"] = None
+        ctx.status("Vision: following faces.")
+        ctx.say("Watch my head. Move around, and I'll follow you.", "curious")
 
     def on_idle(self, ctx: DemoContext) -> IdleResult:
         tracker = ctx.tracker
@@ -127,6 +145,8 @@ class Vision(Demo):
         store = ctx.store
         person_id, face = tracker.current(max_age_s=_PRESENT_AGE_S)
         if face is None:
+            if store.get("present_since") is not None:
+                self._on_leaving(ctx)
             store["present_since"] = None
             # A pending yes belongs to the person who said it, and they have
             # gone. Whoever appears next is not answering their question.
@@ -136,6 +156,7 @@ class Vision(Demo):
         present_since = store.get("present_since")
         if present_since is None:
             present_since = store["present_since"] = time.monotonic()
+            self._on_arriving(ctx)
         if time.monotonic() - present_since < _SETTLE_S:
             return IdleResult(listen_for=_LISTEN_S)
 
@@ -197,6 +218,39 @@ class Vision(Demo):
         ctx.status("Vision: off. Face tracking itself keeps running.")
 
     # --- meeting somebody ------------------------------------------------
+
+    def _on_arriving(self, ctx: DemoContext) -> None:
+        """Acknowledge somebody stepping into view, at most occasionally.
+
+        This is the "reacts to presence" half of the demonstration, and it is
+        rate-limited rather than absent because both extremes have been seen:
+        narrating every arrival and departure made the robot exhausting to
+        stand near, and saying nothing at all made a working tracker look
+        broken. Once a minute is often enough that a visitor stepping in and
+        out sees it happen, and rare enough that a group milling about in front
+        of it is not talked at.
+        """
+        self._remark(ctx, "arrive", ("There you are.", "I see you.", "Got you."), "happy")
+
+    def _on_leaving(self, ctx: DemoContext) -> None:
+        """Notice somebody stepping out of frame. Same rate limit, same reason."""
+        self._remark(ctx, "leave", ("And you're gone.", "Lost you.", "Where did you go?"), "curious")
+
+    def _remark(self, ctx: DemoContext, key: str, lines: tuple[str, ...], emotion: str) -> None:
+        """Say one of `lines`, no more than once per _REMARK_COOLDOWN_S per key.
+
+        Rotated rather than random so a visitor never hears the same line twice
+        running, and cooled down per kind so an arrival and a departure do not
+        compete for the same budget.
+        """
+        now = time.monotonic()
+        last = ctx.store.get(f"said:{key}")
+        if last is not None and now - last < _REMARK_COOLDOWN_S:
+            return
+        ctx.store[f"said:{key}"] = now
+        index = ctx.store.get(f"line:{key}", 0)
+        ctx.store[f"line:{key}"] = index + 1
+        ctx.say(lines[index % len(lines)], emotion)
 
     def _greet(self, ctx: DemoContext, person_id: int) -> None:
         """Say hello by name, once per person for as long as the robot is up."""

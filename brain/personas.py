@@ -9,8 +9,9 @@ prompt. Each one carries three things that a listener can actually perceive:
   hedge it, warm it up, turn it into a question -- not merely what tone to
   affect, because "be professional" alone produces the same reply with longer
   words.
-- `pace` and `variation`: abstract voice character, mapped to the synthesiser
-  in body/audio_io.py. Kept abstract here on purpose: brain/ stays
+- `pace` and `variation`: abstract voice character, mapped to a synthesis
+  config by body/audio_io.py::_voice_config and reaching it through
+  ctx.say/ctx.reply. Kept abstract here on purpose: brain/ stays
   hardware-independent, so nothing in this file imports piper.
 - `pose`: the resting expression, so the body language shifts with the voice.
 
@@ -30,7 +31,10 @@ class Persona:
     prompt: str
     #: Speaking rate multiplier. 1.0 is the synthesiser's own pace; higher is
     #: slower. Kept inside 0.95-1.15 -- past that it stops reading as character
-    #: and starts reading as a fault.
+    #: and starts reading as a fault. Spread across most of that range on
+    #: purpose: an earlier set sat between 0.98 and 1.06, which measured as a
+    #: 3% difference in the length of the same sentence and is not something
+    #: anyone can hear.
     pace: float
     #: How much prosody varies. The synthesiser's default is ~0.667; more
     #: sounds animated, less sounds level.
@@ -50,7 +54,7 @@ PROFESSIONAL = Persona(
         "you know rather than smoothing over them, and do not use exclamation marks "
         "or say how interesting the question is."
     ),
-    pace=1.06,
+    pace=1.10,
     variation=0.55,
     pose="neutral",
 )
@@ -65,8 +69,8 @@ FRIENDLY = Persona(
         "the person as 'you', and let some enthusiasm through. Keep it short enough "
         "that it still feels like conversation rather than a lecture."
     ),
-    pace=0.98,
-    variation=0.85,
+    pace=0.95,
+    variation=0.90,
     pose="happy",
 )
 
@@ -80,8 +84,8 @@ CONSULTANT = Persona(
         "which one you would take and why. Finish by asking the one question whose "
         "answer would most change your recommendation."
     ),
-    pace=1.02,
-    variation=0.70,
+    pace=1.03,
+    variation=0.68,
     pose="thinking",
 )
 

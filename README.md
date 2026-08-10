@@ -183,7 +183,25 @@ python manage_people.py delete 3
 
 ## Testing without hardware
 
-`test_stt_reliability.py` and `test_full_loop.py` synthesize speech with
-piper and exercise the recognizers offline. The emotion-tag parser and AGC
-have inline verification snippets in their commit history; the voice loop
-itself needs the robot.
+```powershell
+python tools/selftest.py     # logic, demos, models, wake phrases, whisper
+python test_demokit.py       # the demo framework, with fake hardware
+```
+
+`tools/selftest.py` checks the parsers, loads every demo and validates it
+against the framework contract (unique ids, no two demos claiming the same
+trigger phrase), confirms the model files are on disk, then synthesizes speech
+with piper and feeds it back through the real recognizers. That last part
+proves the wiring and the models, not performance against a live human in a
+noisy room -- but failing it is definitive, since a wake phrase that cannot be
+spotted from clean synthesized audio will never work live. Add `--llm` to
+exercise replies through the local model as well.
+
+`test_demokit.py` drives the runner with a fake microphone, speaker and clock:
+entering and leaving demos, trigger phrases, sleep phrases, a demo that throws
+being contained and set aside, the missing-`return` mistake, and audio called
+from the wrong thread being refused.
+
+What neither can tell you is how it sounds or feels in a room. Speech
+recognition against a real voice, whether interrupting works, whether the head
+follows you convincingly -- those need the robot and a person.

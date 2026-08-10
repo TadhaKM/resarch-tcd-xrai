@@ -35,12 +35,14 @@ show. A visitor who asks a Hub question here gets "I don't know, ask your host"
 rather than a confident invention, which is the honest answer from a demo whose
 own introduction asks for something arguable.
 
-Persona.pace and Persona.variation cannot be honoured at all: audio.speak takes
-a boolean `expressive` that picks between two fixed synthesis configs, and the
-storyteller one is both slower and more varied, so it cannot express "friendly"
-(faster AND more varied) without lying about the pace. The audible contrast is
-therefore wording plus pose, and the voice parameters wait on a synthesis hook
-in body/audio_io.py.
+The contrast is meant to be heard three ways at once, and all three are wired:
+the wording (persona.prompt, via system=), the resting pose (persona.pose), and
+the voice itself (persona.pace and persona.variation, passed to ctx.say and
+ctx.reply). The voice was the one that used to be missing -- speak() offered a
+single boolean choosing between two fixed configs, and the storyteller one is
+both slower AND more varied, so it could not express "friendly", which is
+quicker and warmer. Three personas then sounded like one person reading three
+scripts, which is a demonstration of nothing.
 """
 
 import re
@@ -349,7 +351,10 @@ class Personality(Demo):
             # first take word for word -- turning the one demo whose subject is
             # variation into the one demo that provably has none.
             ctx.reply(
-                question, person_id=bucket, system=_system_for(persona), cache=False
+                question, person_id=bucket, system=_system_for(persona), cache=False,
+                # The audible half of the contrast. Wording alone leaves three
+                # personas sounding like one person reading three scripts.
+                pace=persona.pace, variation=persona.variation,
             )
         finally:
             # Left populated, these buckets are summarised into long-term
@@ -407,7 +412,7 @@ class Personality(Demo):
             line = f"The same question again, {persona.label.lower()} this time."
         else:
             line = f"{persona.label} version."
-        ctx.say(line, persona.pose)
+        ctx.say(line, persona.pose, pace=persona.pace, variation=persona.variation)
 
     # --- helpers ---------------------------------------------------------
 

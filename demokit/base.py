@@ -183,8 +183,21 @@ class DemoContext:
 
     # --- speaking --------------------------------------------------------
 
-    def say(self, text: str, emotion: str = "neutral", expressive: bool = False) -> None:
-        """Speak one line, with a matching expression."""
+    def say(
+        self,
+        text: str,
+        emotion: str = "neutral",
+        expressive: bool = False,
+        pace: Optional[float] = None,
+        variation: Optional[float] = None,
+    ) -> None:
+        """Speak one line, with a matching expression.
+
+        `pace` and `variation` give this line a voice character: pace is a
+        speaking-rate multiplier (higher is slower), variation is how much the
+        prosody moves. Used by demos where the voice itself is the point --
+        see brain/personas.py -- and ignored by everything else.
+        """
         self._require_loop_thread("say")
         text = (text or "").strip()
         if not text:
@@ -193,7 +206,10 @@ class DemoContext:
         self.state.add("said", text)
         self.state.set_flags(speaking=True)
         self.motion.express(emotion)
-        self.audio.speak(text, emotion, motion=self.motion, expressive=expressive)
+        self.audio.speak(
+            text, emotion, motion=self.motion, expressive=expressive,
+            pace=pace, variation=variation,
+        )
         self.state.set_flags(speaking=False)
 
     def say_lines(self, lines: Iterator[str] | list[str], emotion: str = "neutral") -> None:
@@ -218,6 +234,8 @@ class DemoContext:
         system: Optional[str] = None,
         cache: bool = True,
         web: Optional[bool] = None,
+        pace: Optional[float] = None,
+        variation: Optional[float] = None,
     ) -> str:
         """Ask the language model and speak the answer, sentence by sentence.
 
@@ -250,7 +268,10 @@ class DemoContext:
             # mid-word reads as a fault, mid-sentence reads as responsive.
             self._stop_if_switched()
             spoken.append(sentence)
-            self.say(sentence, tag, expressive=style == "story")
+            self.say(
+                sentence, tag, expressive=style == "story",
+                pace=pace, variation=variation,
+            )
             # A visitor can take the floor back here without waiting for a
             # thirty-second story to finish. Their words were captured while
             # this sentence played; this is where they get looked at.

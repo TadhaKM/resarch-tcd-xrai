@@ -51,7 +51,11 @@ class FakeAudio:
     def listen(self):
         return self._transcripts.pop(0) if self._transcripts else ""
 
-    def speak(self, text, emotion, motion=None, expressive=False):
+    def speak(self, text, emotion, motion=None, expressive=False, pace=None, variation=None):
+        # Signature kept in step with AudioIO.speak on purpose. When it drifted,
+        # ctx.say raised TypeError, the runner's guard absorbed it exactly as it
+        # is meant to, and the only symptom was a demo that said nothing -- which
+        # is what this check exists to notice.
         self.said.append(text)
 
 

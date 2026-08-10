@@ -1,5 +1,15 @@
 # Process supervision: systemd service + heartbeat watchdog
 
+> **Not deployed, and not what runs the robot today.** These units were built
+> and tested under WSL2 against a stand-in process; the `ExecStart` paths point
+> at `/home/tmarepal/reachy_supervisor/` and they supervise
+> `supervised_process.py`, not `main.py` (see "Why `supervised_process.py`
+> isn't the real `main.py`" below). What actually keeps the robot running on
+> Windows is `start_reachy.ps1`, which relaunches on any non-zero exit with a
+> backoff, plus the Startup-folder shortcut `install.ps1` creates. Treat this
+> directory as a design for Linux deployment rather than as live infrastructure
+> -- the paths and the target process both need changing before it would run.
+
 Two independent recovery mechanisms, layered because they catch different
 failure modes:
 
