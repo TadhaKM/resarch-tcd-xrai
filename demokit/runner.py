@@ -91,19 +91,30 @@ NAME_HANDOFF_CUES = ("its", "it is", "im", "i am", "actually")
 _OPEN_MIC_WINDOW_S = 30.0
 _OPEN_MIC_SILENCE_S = 5.0
 
-#: Wake phrases, for stripping off the front of an open-mic follow-up. These
-#: mirror the spotter's keywords file; a phrase missing here is only ever a
-#: cosmetic fault (the model sees a stray "hey reachy"), never a broken turn.
-WAKE_PHRASES = ("hey reachy", "hello there reachy", "attention reachy")
+#: A leading wake phrase, for stripping off an open-mic follow-up. Written as a
+#: pattern rather than a list of the spotter's keywords because the two are not
+#: the same job: the spotter needs every spelling it might hear, while this only
+#: needs to recognise that a sentence opened by addressing the robot. Matching
+#: the shape covers spellings nobody has added to the keywords file yet, and a
+#: miss here is cosmetic anyway -- the model sees a stray "hey reachy" -- so the
+#: looser rule costs nothing and the stricter one would need maintaining twice.
+_WAKE_PREFIX_RE = re.compile(
+    r"^\s*(?:(?:hey|hi|hello|ok|okay|attention)\s+)?(?:there\s+)?"
+    r"(?:reachy|reachie|reechy|retchy|ricky|richie|ritchie|richy)\b[\s,.!?]*",
+    re.IGNORECASE,
+)
 
 
 def _strip_wake_phrase(text: str) -> str:
-    """Drop a leading wake phrase from something said with the mic already open."""
-    words = _word_stream(text)
-    for phrase in WAKE_PHRASES:
-        if words.startswith(f" {phrase} "):
-            return " ".join(text.split()[len(phrase.split()) :]).strip()
-    return text
+    """Drop a leading wake phrase from something said with the mic already open.
+
+    Only ever strips a *leading* one, so "what does hey reachy mean" survives
+    intact -- somebody asking about the wake phrase is asking a real question.
+    """
+    stripped = _WAKE_PREFIX_RE.sub("", text, count=1).strip()
+    # An utterance that was nothing but the robot's name is not a question, and
+    # returning "" tells the caller so rather than sending an empty prompt.
+    return stripped
 
 
 def _word_stream(text: str) -> str:

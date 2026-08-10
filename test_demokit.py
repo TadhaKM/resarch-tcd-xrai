@@ -304,6 +304,10 @@ check("off, the second question is not taken", heard, ["what is xr"])
 # in, the model is asked a question that begins with its own name.
 heard, _, _ = converse(True, ["what is xr", "hey reachy what about vr"])
 check("a habitual wake phrase is stripped", heard[-1], "what about vr")
+heard, _, _ = converse(True, ["what is xr", "reachy, what about vr"])
+check("including the bare name", heard[-1], "what about vr")
+heard, _, _ = converse(True, ["what is xr", "what does hey reachy mean"])
+check("but not one in the middle of a question", heard[-1], "what does hey reachy mean")
 
 # Quiet for long enough and it goes back to needing the wake word, rather than
 # staying open all afternoon on the strength of one conversation at eleven.
