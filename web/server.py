@@ -33,13 +33,24 @@ _PAGE = Path(__file__).parent / "index.html"
 
 
 def read_wake_phrases() -> list[str]:
-    """Wake phrases in readable form.
+    """Wake phrases worth showing a visitor, in readable form.
 
     The file the spotter loads holds BPE token sequences ("▁HE Y ▁RE A CH Y"),
     which is unreadable, so this reads the raw text the tokenized file was
     generated from. Returns [] rather than guessing if it is missing -- an
     empty list shows as "unavailable", which is honest, where a hardcoded
     fallback could confidently list phrases that do not work.
+
+    Two things it has to drop, both learned by putting them on the screen.
+    Comments and per-keyword boosts: this used to title-case every line, which
+    was fine while the file held three bare phrases and turned six paragraphs
+    of explanation into wake phrases the moment it did not. And the alternate
+    spellings -- "Hey Retchy", "Hey Reechy" -- which exist so the spotter
+    recognises an accent, not so anybody reads them off a screen and tries to
+    pronounce them.
+
+    Case comes from the file rather than .title(), which rendered "OK Reachy"
+    as "Ok Reachy".
     """
     raw = MODELS.kws_keywords_file.with_name("custom_keywords_raw.txt")
     try:
@@ -47,7 +58,15 @@ def read_wake_phrases() -> list[str]:
     except OSError:
         logger.warning("Could not read %s", raw)
         return []
-    return [line.strip().title() for line in lines if line.strip()]
+
+    phrases = []
+    for line in lines:
+        text, _, comment = line.partition("#")
+        text = text.split(":", 1)[0].strip()  # drop any per-keyword boost
+        if not text or "alt" in comment.lower():
+            continue
+        phrases.append(text)
+    return phrases
 
 app = FastAPI(title="Reachy Mini")
 
