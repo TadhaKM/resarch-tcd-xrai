@@ -44,12 +44,17 @@ _SEARCH_PERIOD_S = 12.0
 _SEARCH_YAW_DEG = 20.0
 
 #: Pitch the sweep centres on, as an offset from the resting pose -- NOT as an
-#: absolute aim. That distinction was the bug: motion.py already holds a
-#: permanent upward camera bias, and this was written as though it did not, so
-#: the two added up and the head sat at its upper limit staring at the ceiling
-#: for the whole time nobody was detected. Zero means "sweep around wherever
-#: the camera already rests", which is where faces already are.
-_SEARCH_PITCH_DEG = 0.0
+#: absolute aim. That distinction was the bug: motion.py already holds an
+#: upward camera bias, and this was written as though it did not, so the two
+#: added up and the head sat at its upper limit staring at the ceiling for the
+#: whole time nobody was detected.
+#:
+#: The upward lean that finding a face genuinely needs lives here rather than
+#: in the resting bias, because it only applies while the head is visibly
+#: sweeping. Somebody watching sees a robot looking around for them, which is
+#: what it is doing; the same lean held still just looks like a robot facing
+#: the wrong way.
+_SEARCH_PITCH_DEG = 7.0
 
 #: How far the sweep rocks above and below that centre. Wider than the 6 it
 #: was, to cover both a seated visitor and a standing one now that the sweep is

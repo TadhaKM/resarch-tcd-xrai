@@ -169,14 +169,17 @@ class _TrackingTarget:
 #: hands with the head cropped off the top, which is why face detection
 #: reported "no faces" while working perfectly.
 #:
-#: 8, not the 15 this was set to originally. Fifteen was chosen to fix that
-#: cropping and did, but it also reads as the robot studying the ceiling rather
-#: than looking at you -- and it was compounding with the search sweep, which
-#: added its own 16 on top and pinned the head at the 34-degree limit whenever
-#: nobody was in view, which is exactly the state a robot is in when someone
-#: walks up to it. Eight still lifts the lens off people's chests while resting
-#: close enough to level that it reads as facing forward.
-_CAMERA_PITCH_BIAS = 8.0
+#: 3, down from 15 in two steps, because both were still visibly wrong to
+#: somebody standing in front of the robot. The mistake was making one number
+#: serve two jobs: finding a face nobody has found yet, and resting once the
+#: robot is already looking at someone. Only the first needs an upward lean,
+#: and it now lives in face_tracker's sweep, which is applied while the head is
+#: visibly moving and so does not read as a resting posture at all.
+#:
+#: What is left is a token lift that keeps the lens off people's chests without
+#: being perceptible as a tilt. Once a face is actually found, tracking aims
+#: the head properly and this contributes almost nothing.
+_CAMERA_PITCH_BIAS = 3.0
 
 #: The head's usable range, named because both _clamp_pose and _room_for have
 #: to agree on it -- the second exists to keep a composed pose inside what the
