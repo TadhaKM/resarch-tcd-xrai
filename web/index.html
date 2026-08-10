@@ -141,6 +141,9 @@
     <span class="pill"><span class="dot" id="d-act"></span><span id="s-act">&mdash;</span></span>
     <span class="pill" id="p-up">up &mdash;</span>
     <span class="pill" id="p-model" title="The language model answering questions">&#129504; &mdash;</span>
+    <label class="pill" id="p-web" title="Let the robot look things up online. Off by default: it makes answers slower and costs credits.">
+      <input type="checkbox" id="web-search"> &#127760; Web search
+    </label>
     <span class="pill">
       <span title="Speaker volume">&#128266;</span>
       <input id="vol" type="range" min="0" max="100" step="5" aria-label="Speaker volume">
@@ -259,6 +262,7 @@
 
   function setStatus(s) {
     renderModes(s.modes, s.mode);
+    renderWebSearch(s);
 
     const conn = $("d-conn"), connText = $("s-conn");
     conn.className = "dot " + (s.ready ? "on" : "warn");
@@ -357,6 +361,34 @@
       } catch (e) { label.textContent = "!"; }
     };
   })();
+
+  // Web search. Driven from the polled status rather than kept locally, so two
+  // people with the dashboard open on their phones see the same switch -- and
+  // greyed out entirely when the live backend cannot search at all, rather than
+  // offering a setting that would quietly do nothing.
+  const webBox = $("web-search"), webPill = $("p-web");
+  let webAvailable = null;
+  function renderWebSearch(status) {
+    if (!webBox) return;
+    if (webAvailable !== status.web_search_available) {
+      webAvailable = status.web_search_available;
+      webBox.disabled = !webAvailable;
+      webPill.style.opacity = webAvailable ? "" : "0.45";
+      webPill.title = webAvailable
+        ? "Let the robot look things up online. Off by default: it makes answers slower and costs credits."
+        : "Unavailable — the model answering is running on this laptop and cannot search.";
+    }
+    if (document.activeElement !== webBox) webBox.checked = !!status.web_search;
+  }
+  if (webBox) webBox.onchange = async () => {
+    const enabled = webBox.checked;
+    try {
+      await fetch("/api/websearch", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({enabled})
+      });
+    } catch (e) { webBox.checked = !enabled; }
+  };
 
   // Which model is answering. Read once: it is fixed for the life of the
   // process, since brain/llm_backends.py resolves the backend at import.

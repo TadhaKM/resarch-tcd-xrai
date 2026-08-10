@@ -57,13 +57,25 @@ class Backend(ABC):
 
     name: str
 
+    #: Whether this backend can look things up on the web when asked to. Only
+    #: one can, so the caller has to be able to tell -- promising a visitor a
+    #: live answer and then giving them a stale one is worse than saying no.
+    supports_web = False
+
     @abstractmethod
     def generate(self, messages: Messages, max_tokens: Optional[int] = None) -> str:
         """Return the whole reply."""
 
     @abstractmethod
-    def stream(self, messages: Messages, max_tokens: Optional[int] = None) -> Iterator[str]:
-        """Yield the reply in pieces as it is produced."""
+    def stream(
+        self, messages: Messages, max_tokens: Optional[int] = None, web: bool = False
+    ) -> Iterator[str]:
+        """Yield the reply in pieces as it is produced.
+
+        `web` asks the backend to look things up online. Backends that cannot
+        ignore it rather than failing: the reply is then merely out of date,
+        which is the same answer the robot gave before the feature existed.
+        """
 
 
 class OllamaBackend(Backend):
@@ -92,7 +104,9 @@ class OllamaBackend(Backend):
         )
         return response["message"]["content"]
 
-    def stream(self, messages: Messages, max_tokens: Optional[int] = None) -> Iterator[str]:
+    def stream(
+        self, messages: Messages, max_tokens: Optional[int] = None, web: bool = False
+    ) -> Iterator[str]:
         for chunk in self._client.chat(
             model=MODELS.ollama_model,
             messages=messages,
@@ -122,10 +136,18 @@ def _cloud_max_tokens(max_tokens: Optional[int]) -> int:
     return max_tokens if max_tokens is not None else MODELS.cloud_max_tokens
 
 
+#: The server-side web search tool. Anthropic runs the search itself and hands
+#: the model the results, so there is no scraper here to keep working and no
+#: second API key. max_uses caps it: a spoken turn that takes three searches
+#: has already lost the room, and each one costs.
+_WEB_SEARCH_TOOL = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 2}]
+
+
 class AnthropicBackend(Backend):
     """A Claude model over the API. Used when a key is configured."""
 
     name = "anthropic"
+    supports_web = True
 
     def __init__(self, api_key: str) -> None:
         # Imported here, not at module top: the package is optional, and the
@@ -149,14 +171,21 @@ class AnthropicBackend(Backend):
         )
         return "".join(block.text for block in response.content if block.type == "text")
 
-    def stream(self, messages: Messages, max_tokens: Optional[int] = None) -> Iterator[str]:
+    def stream(
+        self, messages: Messages, max_tokens: Optional[int] = None, web: bool = False
+    ) -> Iterator[str]:
         system, rest = _split_system(messages)
+        extra = {"tools": _WEB_SEARCH_TOOL} if web else {}
         with self._client.messages.stream(
             model=MODELS.anthropic_model,
             max_tokens=_cloud_max_tokens(max_tokens),
             system=system,
             messages=rest,
+            **extra,
         ) as stream:
+            # text_stream yields only the model's own words; the search request
+            # and its results arrive as separate block types and are skipped,
+            # so nothing about the mechanics is ever spoken aloud.
             yield from stream.text_stream
 
 
@@ -191,7 +220,9 @@ class OpenAIBackend(Backend):
         )
         return response.choices[0].message.content or ""
 
-    def stream(self, messages: Messages, max_tokens: Optional[int] = None) -> Iterator[str]:
+    def stream(
+        self, messages: Messages, max_tokens: Optional[int] = None, web: bool = False
+    ) -> Iterator[str]:
         for chunk in self._client.chat.completions.create(
             model=MODELS.openai_model,
             messages=messages,

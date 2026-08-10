@@ -38,6 +38,7 @@ def stream_reply(
     style: str | None = None,
     extra_system: str | None = None,
     cache: bool = True,
+    web: bool = False,
 ) -> Iterator[tuple[str, str]]:
     """Yield (sentence_text, emotion_tag) pairs as the reply streams in, so the
     caller can start speaking sentence 1 while the model is still generating
@@ -105,7 +106,9 @@ def stream_reply(
 
     history = memory.get_history(person_id)
     context = long_term_memory.get_context(person_id)
-    messages = build_messages(context, history, message, style=style, extra_system=extra_system)
+    messages = build_messages(
+        context, history, message, style=style, extra_system=extra_system, web=web
+    )
 
     max_tokens = _STORY_MAX_TOKENS if style == "story" else None
     backends = llm.streaming_backends()
@@ -120,7 +123,7 @@ def stream_reply(
         buffer = ""
         raw_parts = []
         try:
-            for piece in backend.stream(messages, max_tokens=max_tokens):
+            for piece in backend.stream(messages, max_tokens=max_tokens, web=web and backend.supports_web):
                 raw_parts.append(piece)
                 buffer += piece
                 match = _SENTENCE_BOUNDARY_RE.search(buffer)
@@ -158,7 +161,9 @@ def stream_reply(
         # would be replayed verbatim to the next group who asked the same words.
         # Every unrecognised visitor shares person_id 0, so that is not a corner
         # case; it is the open-day default.
-        if cache and not history and not context:
+        # Never cached: a live answer is by definition one that changes, so
+        # serving today's weather again tomorrow is worse than not caching.
+        if cache and not web and not history and not context:
             qa_cache.remember(message, reply_text, emotion_tag, extra_system)
 
 

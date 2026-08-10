@@ -199,6 +199,21 @@ class VoiceRequest(BaseModel):
     voice: str
 
 
+class WebSearchRequest(BaseModel):
+    enabled: bool
+
+
+@app.post("/api/websearch")
+def set_web_search(req: WebSearchRequest) -> JSONResponse:
+    """Turn looking things up online on or off.
+
+    Applied immediately rather than queued: unlike the voice, this touches no
+    hardware -- it is a flag the next turn reads.
+    """
+    enabled = STATE.set_web_search(bool(req.enabled))
+    return JSONResponse({"ok": True, "enabled": enabled})
+
+
 @app.get("/api/model")
 def model() -> JSONResponse:
     """Which language model the robot is set up to answer with.

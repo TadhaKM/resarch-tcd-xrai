@@ -175,6 +175,11 @@ def run_forever(target: HardwareTarget) -> None:
     REGISTRY.discover()
     STATE.set_demos(REGISTRY.dashboard_entries(capabilities))
     STATE.set_voices(audio.available_voices(), audio.voice_name)
+    # Whether searching is even possible: only the Anthropic backend can, so
+    # the dashboard greys the switch rather than offering a setting that
+    # would silently do nothing on the local model.
+    from brain.llm import streaming_backends
+    STATE.set_web_search_available(streaming_backends()[0].supports_web)
 
     runner = DemoRunner(
         audio=audio,

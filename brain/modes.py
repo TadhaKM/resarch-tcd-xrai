@@ -63,6 +63,11 @@ class RobotState:
         #: Installed speaking voices and the one in use, published by the voice
         #: loop (which is the only thread allowed to read them off disk).
         self._voices: dict = {"available": [], "current": ""}
+        #: Off by default. See set_web_search.
+        self._web_search = False
+        #: Whether the live backend can search at all, so the dashboard can
+        #: grey the switch instead of offering something that does nothing.
+        self._web_search_available = False
         self._events: list[Event] = []
         self._seq = 0
         self._listening = False
@@ -106,6 +111,31 @@ class RobotState:
     def demos(self) -> list[dict]:
         with self._lock:
             return list(self._demos)
+
+    @property
+    def web_search(self) -> bool:
+        """Whether the robot may look things up online. Off unless switched on.
+
+        Off by default deliberately. The robot's standing claim is that it has
+        no live information, and a demonstration that quietly went and searched
+        would make that claim a lie -- as well as adding seconds to a spoken
+        turn and spending credits per question. An operator turns it on for the
+        part of a visit where it is the point, and off again afterwards.
+        """
+        with self._lock:
+            return self._web_search
+
+    def set_web_search(self, enabled: bool) -> bool:
+        with self._lock:
+            if enabled == self._web_search:
+                return enabled
+            self._web_search = enabled
+        self.add("status", "Web search on -- answers may take longer" if enabled else "Web search off")
+        return enabled
+
+    def set_web_search_available(self, available: bool) -> None:
+        with self._lock:
+            self._web_search_available = available
 
     def set_voices(self, available: list[str], current: str) -> None:
         """Publish the installed voices for the dashboard. Called by the loop."""
@@ -268,6 +298,8 @@ class RobotState:
                     None if self._last_heard_at is None else time.time() - self._last_heard_at
                 ),
                 "modes": list(self._demos),
+                "web_search": self._web_search,
+                "web_search_available": self._web_search_available,
             }
 
 

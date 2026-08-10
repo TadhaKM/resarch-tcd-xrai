@@ -217,6 +217,7 @@ class DemoContext:
         style: Optional[str] = None,
         system: Optional[str] = None,
         cache: bool = True,
+        web: Optional[bool] = None,
     ) -> str:
         """Ask the language model and speak the answer, sentence by sentence.
 
@@ -236,8 +237,11 @@ class DemoContext:
         spoken: list[str] = []
         final_tag = "neutral"
         self.motion.express("thinking")
+        # None means "whatever the operator has the dashboard switch set to",
+        # which is what every demo wants; a demo can still force it either way.
+        use_web = self.state.web_search if web is None else web
         for sentence, tag in stream_reply(
-            person_id, message, style=style, extra_system=system, cache=cache
+            person_id, message, style=style, extra_system=system, cache=cache, web=use_web
         ):
             final_tag = tag
             if not sentence:

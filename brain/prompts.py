@@ -26,6 +26,24 @@ _CAPABILITIES = (
     "also do not have."
 )
 
+#: Replaces the two "cannot browse / no live information" sentences when web
+#: search is switched on. The rest of the capability block is unchanged and
+#: still load-bearing: turning on search must not quietly also grant the robot
+#: wheels. Swapped rather than appended, because leaving the original in and
+#: adding a contradiction is how you get a robot that refuses to look something
+#: up and then looks it up in the same breath.
+_CAPABILITIES_WEB = _CAPABILITIES.replace(
+    "browse the internet, control other devices",
+    "control other devices",
+).replace(
+    "You have no live information: no weather, news, or current date and time. ",
+    "You can search the web when a question genuinely needs current information "
+    "-- today's weather, recent news, a fact that changes. Search only when the "
+    "question needs it, answer from what you know otherwise, and keep the answer "
+    "to the same one or two spoken sentences. Never read out URLs or describe "
+    "the search itself; just say what you found. ",
+)
+
 # How to speak, as opposed to what to say. Every rule here was earned by
 # hearing the robot break it out loud in front of people.
 _DELIVERY = (
@@ -54,18 +72,20 @@ _HUB_CONTEXT = (
     f"{hub.GROUNDING}"
 )
 
-_BASE_SYSTEM_PROMPT = (
+def _base_prompt(web: bool = False) -> str:
+    """The standing prompt. `web` swaps the capability block for the online one."""
+    return (
     "You are Reachy Mini, a small expressive robot having a spoken conversation. "
     "Keep replies to one or two short sentences. "
     f"{_DELIVERY} "
-    f"{_CAPABILITIES} "
+    f"{_CAPABILITIES_WEB if web else _CAPABILITIES} "
     "Never claim to have done something physical unless it is one of the "
     "abilities listed above. "
     f"\n\n{_HUB_CONTEXT}\n\n"
     f"End every reply with exactly one emotion tag from this list: {_TAG_LIST} -- "
     "formatted like '[emotion: happy]', as the very last thing you say, e.g. "
     "\"What's your name? [emotion: curious]\". Never use any other tag or format."
-)
+    )
 
 
 # Stories get their own system prompt rather than a longer user request. The
@@ -99,6 +119,7 @@ def build_messages(
     message: str,
     style: str | None = None,
     extra_system: str | None = None,
+    web: bool = False,
 ) -> list[dict[str, str]]:
     """Build the chat message list sent to the LLM for this person's next turn.
 
@@ -123,7 +144,7 @@ def build_messages(
         # tell a story, not work the listener's life into one.
         system_prompt = _STORYTELLER_SYSTEM_PROMPT
     else:
-        system_prompt = _BASE_SYSTEM_PROMPT
+        system_prompt = _base_prompt(web)
         if long_term_context:
             system_prompt += (
                 "\n\nWhat you remember about this person from previous conversations:\n"
