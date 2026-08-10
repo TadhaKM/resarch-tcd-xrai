@@ -134,8 +134,19 @@ if (-not $OnRobot) {
 # multiplies instances rather than reducing them -- observed live, four robots
 # talking over each other after a few restarts, each with its own supervisor
 # faithfully keeping it alive. Stop the supervisors, then the children.
+#
+# "Other" has to mean every ancestor, not just this process. A shell that
+# launched this one carries the same script name on its own command line, so
+# matching on the name alone makes the launcher kill its own parent -- which
+# tears down the pipeline it is running in and reports a failure that looks
+# like the robot refused to start. Walk up and spare the whole chain.
+$mine = [System.Collections.Generic.HashSet[uint32]]::new()
+$walk = [uint32]$PID
+while ($walk -and $mine.Add($walk)) {
+    $walk = (Get-CimInstance Win32_Process -Filter "ProcessId=$walk" -ErrorAction SilentlyContinue).ParentProcessId
+}
 $launchers = @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" |
-    Where-Object { $_.CommandLine -like '*start_reachy*' -and $_.ProcessId -ne $PID })
+    Where-Object { $_.CommandLine -like '*start_reachy*' -and -not $mine.Contains([uint32]$_.ProcessId) })
 if ($launchers.Count -gt 0) {
     Write-Host "Stopping $($launchers.Count) other launcher(s) first." -ForegroundColor Yellow
     $launchers | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
