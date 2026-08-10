@@ -199,6 +199,21 @@ class VoiceRequest(BaseModel):
     voice: str
 
 
+@app.get("/api/model")
+def model() -> JSONResponse:
+    """Which language model the robot is set up to answer with.
+
+    Worth showing to a visitor as much as to an operator: half the point of the
+    demonstration is that the thing in front of them is a specific piece of
+    technology rather than magic, and "this is Claude Sonnet, and it falls back
+    to a model on the laptop if the wifi drops" is a more interesting sentence
+    than either half on its own.
+    """
+    from brain import llm
+
+    return JSONResponse(llm.describe())
+
+
 @app.get("/api/voices")
 def voices() -> JSONResponse:
     """Installed voices and the one in use.

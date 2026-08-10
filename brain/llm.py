@@ -19,6 +19,31 @@ def active_backend_name() -> str:
     return PREFERRED.name
 
 
+def describe() -> dict[str, str]:
+    """What is answering, for the dashboard.
+
+    Reports the configured preference and the fallback rather than claiming to
+    know which one produced the last reply. stream_reply switches to the local
+    model per request when the cloud one fails, and keeps that in a local
+    variable -- so anything here asserting "this model is answering" would be
+    telling a room full of people the cloud is in use on the exact day the
+    network died, which is the one day it matters.
+    """
+    from config import MODELS
+
+    models = {
+        "anthropic": MODELS.anthropic_model,
+        "openai": MODELS.openai_model,
+        "ollama": MODELS.ollama_model,
+    }
+    return {
+        "backend": PREFERRED.name,
+        "model": models.get(PREFERRED.name, PREFERRED.name),
+        "fallback": "" if PREFERRED is FALLBACK else models.get(FALLBACK.name, FALLBACK.name),
+        "local": "yes" if PREFERRED is FALLBACK else "no",
+    }
+
+
 def streaming_backends() -> tuple[Backend, ...]:
     """The backends to try, in order, for one streamed reply.
 

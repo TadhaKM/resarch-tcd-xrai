@@ -170,6 +170,13 @@ class _TrackingTarget:
 #: reported "no faces" while working perfectly.
 _CAMERA_PITCH_BIAS = 15.0
 
+#: The head's usable range, named because both _clamp_pose and _room_for have
+#: to agree on it -- the second exists to keep a composed pose inside what the
+#: first would otherwise cut off.
+_YAW_LIMIT = 24.0
+_PITCH_MIN = -15.0
+_PITCH_MAX = 34.0
+
 _SEND_WARNING_INTERVAL_S = 10.0
 
 # Sustained failure before rebuilding the connection. Longer than the SDK's 1s
@@ -180,12 +187,6 @@ _RECONNECT_AFTER_S = 8.0
 # Minimum gap between reconnect attempts, so a robot that is off or
 # unreachable is retried steadily rather than hammered.
 _RECONNECT_COOLDOWN_S = 15.0
-
-# Blend factor for daemon-side face tracking (see set_face_tracking). High
-# enough to hold someone's gaze convincingly, low enough that the emotion
-# poses and speech wobble still read on the head.
-_FACE_TRACK_WEIGHT = 0.65
-
 
 def _enable_motors(robot: object) -> None:
     """Arm the robot's motors, tolerating SDK versions that lack the call."""
@@ -533,10 +534,24 @@ class MotionController:
         cy = y + h / 2
         x_norm = (cx - width / 2) / (width / 2)
         y_norm = (cy - height / 2) / (height / 2)
+        # Proportional control, and the gains are most of what makes following
+        # look deliberate rather than reluctant. They used to be 14 and 9
+        # against clamps of 16 and 10, well inside the head's real range of
+        # +/-24 yaw and -15/+34 pitch, so somebody standing off to one side was
+        # followed part of the way and then abandoned -- the head settled
+        # pointing between them and the middle of the room, which reads as the
+        # robot losing interest.
+        #
+        # The gain is deliberately below the camera's half-field-of-view rather
+        # than equal to it: matching it would centre a face in one step and then
+        # oscillate around it, since each correction is measured from the
+        # position the last one produced. At roughly two thirds it converges in
+        # two or three detections, which at 8Hz is a third of a second and
+        # looks like a person turning to face you.
         pose = HeadPose(
-            yaw=max(-16.0, min(16.0, -x_norm * 14.0)),
-            pitch=max(-10.0, min(10.0, -y_norm * 9.0)),
-            roll=max(-4.0, min(4.0, -x_norm * 3.0)),
+            yaw=max(-21.0, min(21.0, -x_norm * 22.0)),
+            pitch=max(-13.0, min(13.0, -y_norm * 14.0)),
+            roll=max(-5.0, min(5.0, -x_norm * 4.0)),
         )
         with self._lock:
             self._tracking = _TrackingTarget(pose=pose, expires_at=time.monotonic() + ttl)
@@ -582,7 +597,16 @@ class MotionController:
         pose = _add_pose(base, HeadPose(pitch=_CAMERA_PITCH_BIAS))
 
         if tracking is not None:
-            pose = _add_pose(pose, tracking.pose)
+            # The aim gets the room it needs and the expression takes what is
+            # left, rather than both being added and the total clipped. Clipped,
+            # the emotion pose eats the tracking range: "curious" leans about
+            # ten degrees, so a face at the edge of frame on the same side asked
+            # for 31 degrees of yaw against a 24 degree limit and the head
+            # simply stopped short, pointing between the visitor and the middle
+            # of the room. Same reasoning as _CAMERA_PITCH_BIAS above -- where
+            # the camera looks must not depend on the robot's mood -- applied to
+            # the rest of the range instead of just the tilt.
+            pose = _add_pose(_room_for(pose, tracking.pose), tracking.pose)
         elif not speech_active:
             pose = _add_pose(pose, self.idle.offset(now))
 
@@ -785,6 +809,21 @@ def _lerp(a: float, b: float, alpha: float) -> float:
     return a + (b - a) * alpha
 
 
+def _room_for(base: HeadPose, tracking: HeadPose) -> HeadPose:
+    """Trim `base` so that adding `tracking` to it still fits the head's range.
+
+    Only yaw and pitch, because only those two are contested: roll and z have
+    room to spare, and the antennas are not aim at all.
+    """
+    return HeadPose(
+        pitch=max(_PITCH_MIN - tracking.pitch, min(_PITCH_MAX - tracking.pitch, base.pitch)),
+        yaw=max(-_YAW_LIMIT - tracking.yaw, min(_YAW_LIMIT - tracking.yaw, base.yaw)),
+        roll=base.roll,
+        z=base.z,
+        antennas=base.antennas,
+    )
+
+
 def _clamp_pose(pose: HeadPose) -> HeadPose:
     return HeadPose(
         # Asymmetric on purpose. The camera needs a permanent upward tilt to
@@ -792,8 +831,8 @@ def _clamp_pose(pose: HeadPose) -> HeadPose:
         # sat exactly at that bias -- so the head was pinned at the ceiling and
         # every breath or downward expression could only drag it lower, never
         # higher. Looking further up is useful; looking further down is not.
-        pitch=max(-15.0, min(34.0, pose.pitch)),
-        yaw=max(-24.0, min(24.0, pose.yaw)),
+        pitch=max(_PITCH_MIN, min(_PITCH_MAX, pose.pitch)),
+        yaw=max(-_YAW_LIMIT, min(_YAW_LIMIT, pose.yaw)),
         roll=max(-16.0, min(16.0, pose.roll)),
         z=max(-15.0, min(15.0, pose.z)),
         antennas=(

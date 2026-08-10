@@ -358,5 +358,12 @@ MODELS = ModelConfig(
     face_detector_model_path=MODELS_DIR / "face" / "blaze_face_short_range.tflite",
     face_embedding_model_path=MODELS_DIR / "face" / "w600k_mbf.onnx",
     face_match_threshold=0.65,
-    face_detection_fps=4.0,
+    # 8Hz, not the 4Hz this ran at for most of its life. At 4Hz a quarter of a
+    # second passes between one look at the world and the next, and the head
+    # moves in visible steps behind somebody walking across the room. The cost
+    # is a MediaPipe detection and a face embedding per cycle, which was worth
+    # weighing when the same laptop was also generating every reply locally --
+    # with the language model on the API that CPU is free, so this is the
+    # cheapest available improvement to how alive the robot looks.
+    face_detection_fps=8.0,
 )

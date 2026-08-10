@@ -140,6 +140,7 @@
     <span class="pill"><span class="dot" id="d-conn"></span><span id="s-conn">connecting</span></span>
     <span class="pill"><span class="dot" id="d-act"></span><span id="s-act">&mdash;</span></span>
     <span class="pill" id="p-up">up &mdash;</span>
+    <span class="pill" id="p-model" title="The language model answering questions">&#129504; &mdash;</span>
     <span class="pill">
       <span title="Speaker volume">&#128266;</span>
       <input id="vol" type="range" min="0" max="100" step="5" aria-label="Speaker volume">
@@ -355,6 +356,25 @@
         label.textContent = v.volume != null ? v.volume : "!";
       } catch (e) { label.textContent = "!"; }
     };
+  })();
+
+  // Which model is answering. Read once: it is fixed for the life of the
+  // process, since brain/llm_backends.py resolves the backend at import.
+  (async () => {
+    const pill = $("p-model");
+    if (!pill) return;
+    // Model ids are for machines. "claude-sonnet-5" reads fine, but the local
+    // one is "qwen2.5:1.5b-instruct-q4_K_M", which is unreadable over
+    // somebody's shoulder at an open day.
+    const pretty = id => id.split(":")[0].replace(/-instruct.*$/, "");
+    try {
+      const m = await (await fetch("/api/model")).json();
+      const where = m.local === "yes" ? "on this laptop" : "in the cloud";
+      pill.textContent = `\u{1F9E0} ${pretty(m.model)} ${where}`;
+      pill.title = m.fallback
+        ? `Answering with ${m.model} (${m.backend}). Falls back to ${m.fallback} on this laptop if the network fails.`
+        : `Answering with ${m.model}, running on this laptop. No internet needed.`;
+    } catch (e) { pill.style.display = "none"; }
   })();
 
   // Speaking voice. The change is queued for the voice loop rather than applied
