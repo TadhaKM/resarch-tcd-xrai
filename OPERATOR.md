@@ -26,13 +26,19 @@ and tells you where it found it.
 
 Say **"Hey Reachy"**, wait for its antennas to perk up, then ask your question.
 
-**One "Hey Reachy" per question.** This is the thing visitors get wrong most
-often — they say it once and then keep talking. It needs the phrase each time,
-which is deliberate: in a room full of people it's the only way the robot knows
-someone is talking to *it* and not to each other.
+**One "Hey Reachy" per question** — unless you turn on **🎤 Open mic**, below.
+This is the thing visitors get wrong most often: they say it once and then keep
+talking. Normally it needs the phrase each time, which is deliberate — in a room
+full of people it's how the robot knows someone is talking to *it* and not to
+each other.
 
 These all work: **"Hey Reachy"**, **"Hello there Reachy"**, **"Attention
 Reachy"**.
+
+**It hears you from across the room.** You don't need to lean in or raise your
+voice. One side effect worth knowing: names that rhyme with it, like *Rachel* or
+*Richie*, can wake it by accident. Harmless — it listens for a moment, hears
+nothing meant for it, and goes back to waiting.
 
 **To interrupt it**, say "Hey Reachy" while it's still talking. It finishes the
 sentence it's on, then stops and listens. Useful when it's mid-story and
@@ -57,6 +63,7 @@ Along the top:
 | A green dot | Connected and working |
 | 🧠 with a model name | Which AI is answering, and whether it's on the laptop or online |
 | 🌐 **Web search** | Off by default. Tick it to let Reachy look things up — see below |
+| 🎤 **Open mic** | Off by default. Tick it and follow-up questions don't need "Hey Reachy" — see below |
 | 🔊 slider | Speaker volume |
 | A dropdown | Which voice it speaks in — four to choose from |
 | **Clear answers** | Makes it forget answers it has memorised. Only needed if it keeps repeating something wrong |
@@ -135,6 +142,28 @@ Turn it back off afterwards to keep conversation quick.
 
 ---
 
+## Open mic — the 🎤 tick box
+
+**Off by default.** Tick it and a conversation flows the way it would with a
+person: you still say **"Hey Reachy"** once to start, and after that you can
+just keep asking. No wake phrase before every question.
+
+It stays open for about **half a minute** after the robot finishes answering.
+Quiet for longer than that and it goes back to normal — say "Hey Reachy" again
+and you're straight back into it. You'll see *"Listening — no wake word
+needed"* on the screen while it's open.
+
+Everything else still works while it's open. "Go to sleep" still stops it,
+switching demos still works, and if you say "Hey Reachy" out of habit it just
+ignores the phrase rather than treating it as part of your question.
+
+**When to use which.** Open mic is better one-to-one — a colleague trying it
+out, a visitor who wants a proper back-and-forth. Leave it **off** for a busy
+room or a crowd demonstration: with several people talking at once, the wake
+phrase is what stops the robot answering a conversation it merely overheard.
+
+---
+
 ## On your phone
 
 Connect the phone to the same WiFi as the laptop, then type the address the
@@ -167,6 +196,8 @@ Worth knowing so you're not caught out:
 | **"NOT FOUND — no Reachy daemon answered"** | The laptop and robot are on different WiFi networks. Check the robot is on, joined the same network, then **Start Reachy** again. |
 | "UNREACHABLE" | The robot dropped off the network. Restart the robot, then **Start Reachy** again. |
 | It talks over itself / two voices | Two copies are running. Close every black window, then **Start Reachy** once. |
+| It answers something nobody asked it | Open mic is on and it picked up the room. Untick 🎤 **Open mic** — in a crowd the wake phrase is what keeps it out of other people's conversations. |
+| It wakes when nobody said "Hey Reachy" | Someone said a name that rhymes — *Rachel*, *Richie*. Nothing to fix; it gives up after a moment. |
 | Frozen but still talking | Wait a minute — it restarts itself. |
 | Answers are slow or odd | Check the 🧠 label. If it says "on this laptop", the internet or the API key is down and it has fallen back to the smaller offline model. It still works, just less well. |
 | A demo button is greyed out | It says why underneath. Usually a demo that failed a few times and was set aside; click it to re-enable, or restart. |
