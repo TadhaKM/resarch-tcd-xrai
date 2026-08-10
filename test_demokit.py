@@ -48,7 +48,8 @@ class FakeAudio:
             return True
         return False
 
-    def listen(self):
+    def listen(self, wait_for_speech_s=None):
+        # Signature kept in step with AudioIO.listen, like speak below.
         return self._transcripts.pop(0) if self._transcripts else ""
 
     def speak(self, text, emotion, motion=None, expressive=False, pace=None, variation=None):
@@ -278,7 +279,42 @@ check("ordinary talk is left alone", correct("what does my name mean"), "Telaget
 check("and an article is not a name", correct("can you call me a taxi"), "Telaget")
 
 print()
-print("[10] audio from the wrong thread is refused, not silently interleaved")
+print("[10] open mic carries a conversation without the wake word")
+
+
+def converse(open_mic: bool, transcripts, cycles=2):
+    """One wake-word turn, then `cycles-1` more, and what the demo heard."""
+    chatty = Chatty()
+    runner, state, audio, _ = build([chatty], wake_at=(1,), transcripts=list(transcripts))
+    state.set_mode("chatty")
+    state.set_open_mic(open_mic)
+    for _ in range(cycles):
+        runner.cycle()
+    return chatty.heard, audio.calls, runner
+
+
+heard, wake_calls, _ = converse(True, ["what is xr", "and what about vr"])
+check("the follow-up needs no wake word", heard, ["what is xr", "and what about vr"])
+check("and none was waited for", wake_calls, 1)
+
+heard, _, _ = converse(False, ["what is xr", "and what about vr"])
+check("off, the second question is not taken", heard, ["what is xr"])
+
+# Said out of habit for the first minute of every open-mic conversation. Left
+# in, the model is asked a question that begins with its own name.
+heard, _, _ = converse(True, ["what is xr", "hey reachy what about vr"])
+check("a habitual wake phrase is stripped", heard[-1], "what about vr")
+
+# Quiet for long enough and it goes back to needing the wake word, rather than
+# staying open all afternoon on the strength of one conversation at eleven.
+_h, _c, runner = converse(True, ["what is xr"])
+runner._open_until = 0.0
+before = runner._audio.calls
+runner.cycle()
+check("a lapsed window waits for the wake word again", runner._audio.calls, before + 1)
+
+print()
+print("[11] audio from the wrong thread is refused, not silently interleaved")
 import threading  # noqa: E402
 
 ctx = DemoContext(

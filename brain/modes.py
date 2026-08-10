@@ -65,6 +65,8 @@ class RobotState:
         self._voices: dict = {"available": [], "current": ""}
         #: Off by default. See set_web_search.
         self._web_search = False
+        #: Off by default. See set_open_mic.
+        self._open_mic = False
         #: Whether the live backend can search at all, so the dashboard can
         #: grey the switch instead of offering something that does nothing.
         self._web_search_available = False
@@ -131,6 +133,34 @@ class RobotState:
                 return enabled
             self._web_search = enabled
         self.add("status", "Web search on -- answers may take longer" if enabled else "Web search off")
+        return enabled
+
+    @property
+    def open_mic(self) -> bool:
+        """Whether a conversation may continue without the wake word each time.
+
+        Off by default, and deliberately not a way to make the robot listen
+        permanently. The wake word still opens a conversation; this only keeps
+        it open afterwards, so follow-up questions can be asked the way they
+        would be asked of a person.
+
+        Always listening was the obvious reading and is the wrong one here. The
+        AGC notes what happens when this room's background speech reaches the
+        recognizer: it transcribes the room continuously, and that text becomes
+        questions the robot answers out loud to nobody.
+        """
+        with self._lock:
+            return self._open_mic
+
+    def set_open_mic(self, enabled: bool) -> bool:
+        with self._lock:
+            if enabled == self._open_mic:
+                return enabled
+            self._open_mic = enabled
+        self.add(
+            "status",
+            "Open mic on -- follow-ups need no wake word" if enabled else "Open mic off",
+        )
         return enabled
 
     def set_web_search_available(self, available: bool) -> None:
@@ -299,6 +329,7 @@ class RobotState:
                 ),
                 "modes": list(self._demos),
                 "web_search": self._web_search,
+                "open_mic": self._open_mic,
                 "web_search_available": self._web_search_available,
             }
 

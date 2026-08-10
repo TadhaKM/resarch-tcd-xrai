@@ -218,6 +218,7 @@ class ModelConfig:
     #: reachy" and "excuse me reachy" all now work.
     kws_keywords_file: Path
     kws_threshold: float
+    kws_score: float
     """Tuned empirically against synthesized "Hey Reachy" audio (see
     test_stt_reliability.py): 0.15 gave the best recall (13/15) with zero
     false positives on the test-phrase set. Values from 0.05-0.2 performed
@@ -337,6 +338,24 @@ MODELS = ModelConfig(
     # wake costs a moment of listening to nothing, so this errs that way
     # deliberately. Raise it if the robot starts waking on unrelated speech.
     kws_threshold=0.02,
+    # How hard the decoder leans toward the wake phrase while searching. The
+    # threshold decides whether a match counts; this decides whether the match
+    # is found at all, and at the quiet, smeared input a voice across a room
+    # produces, that is the one that was losing. Measured against synthesized
+    # takes attenuated to stand in for distance, 18 per cell, two seeds: at
+    # roughly two metres the default 1.0 scored 15-16/18 and this scores 18/18;
+    # at roughly four metres, 4/18 against 11-18/18.
+    #
+    # 5.0 rather than more because 6.0 and 7.0 started missing the wake word
+    # spoken directly into the robot -- the boost widens what counts as the
+    # phrase until close, clean speech is no longer the best match for it.
+    #
+    # The cost is names that genuinely rhyme with it: "Hey Rachel" and "Hey
+    # Richie" both wake it now, and no setting tested separated them from the
+    # real thing. Left that way on purpose -- a false wake costs a moment of
+    # listening to nothing, a missed one costs a visitor repeating themselves
+    # at a robot that appears to be ignoring them.
+    kws_score=5.0,
     tts_model_path=MODELS_DIR / "tts" / "en_US-amy-medium.onnx",
     tts_config_path=MODELS_DIR / "tts" / "en_US-amy-medium.onnx.json",
     # 127.0.0.1, never "localhost". On Windows that name resolves to IPv6 ::1

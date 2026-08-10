@@ -144,6 +144,9 @@
     <label class="pill" id="p-web" title="Let the robot look things up online. Off by default: it makes answers slower and costs credits.">
       <input type="checkbox" id="web-search"> &#127760; Web search
     </label>
+    <label class="pill" id="p-openmic" title="Keep talking without saying 'Hey Reachy' before every question. Say it once to start; follow-ups need no wake word until half a minute of quiet.">
+      <input type="checkbox" id="open-mic"> &#127908; Open mic
+    </label>
     <span class="pill">
       <span title="Speaker volume">&#128266;</span>
       <input id="vol" type="range" min="0" max="100" step="5" aria-label="Speaker volume">
@@ -263,6 +266,7 @@
   function setStatus(s) {
     renderModes(s.modes, s.mode);
     renderWebSearch(s);
+    renderOpenMic(s);
 
     const conn = $("d-conn"), connText = $("s-conn");
     conn.className = "dot " + (s.ready ? "on" : "warn");
@@ -388,6 +392,24 @@
         body: JSON.stringify({enabled})
       });
     } catch (e) { webBox.checked = !enabled; }
+  };
+
+  // Open mic. Same shape as the switch above, and driven from the polled
+  // status for the same reason: two people with this open should not see
+  // different settings for one robot.
+  const micBox = $("open-mic");
+  function renderOpenMic(status) {
+    if (!micBox) return;
+    if (document.activeElement !== micBox) micBox.checked = !!status.open_mic;
+  }
+  if (micBox) micBox.onchange = async () => {
+    const enabled = micBox.checked;
+    try {
+      await fetch("/api/openmic", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({enabled})
+      });
+    } catch (e) { micBox.checked = !enabled; }
   };
 
   // Which model is answering. Read once: it is fixed for the life of the

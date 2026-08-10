@@ -83,6 +83,29 @@ NEGATIVE_NAME_CUES = frozenset({"not my name", "wrong name", "my name is not"})
 NAME_HANDOFF_CUES = ("its", "it is", "im", "i am", "actually")
 
 
+#: How long the mic stays open after an exchange, and how long each open-mic
+#: listen waits for someone to start speaking before handing the cycle back.
+#: The window is generous because thinking of the next question takes longer
+#: than people expect, and it costs nothing to leave open -- the robot only
+#: acts on speech it actually hears.
+_OPEN_MIC_WINDOW_S = 30.0
+_OPEN_MIC_SILENCE_S = 5.0
+
+#: Wake phrases, for stripping off the front of an open-mic follow-up. These
+#: mirror the spotter's keywords file; a phrase missing here is only ever a
+#: cosmetic fault (the model sees a stray "hey reachy"), never a broken turn.
+WAKE_PHRASES = ("hey reachy", "hello there reachy", "attention reachy")
+
+
+def _strip_wake_phrase(text: str) -> str:
+    """Drop a leading wake phrase from something said with the mic already open."""
+    words = _word_stream(text)
+    for phrase in WAKE_PHRASES:
+        if words.startswith(f" {phrase} "):
+            return " ".join(text.split()[len(phrase.split()) :]).strip()
+    return text
+
+
 def _word_stream(text: str) -> str:
     """Lowercased words, space-separated and space-padded, for phrase matching.
 
@@ -138,6 +161,10 @@ class DemoRunner:
         #: name is what gets said, and two ids for one person -- which face
         #: recognition does produce -- should still only greet once.
         self._greeted: set[str] = set()
+        #: While now is under this, follow-ups need no wake word. Zero means a
+        #: conversation has not been opened yet, so the switch being on changes
+        #: nothing until somebody says the wake word once.
+        self._open_until = 0.0
 
     # --- the loop --------------------------------------------------------
 
@@ -163,8 +190,18 @@ class DemoRunner:
         # something: listen_for above zero is the demo telling us it has
         # nothing in hand, which is the one safe moment to speak over nothing.
         self._greet_if_recognised(ctx)
+
+        # One listen per cycle either way, so the dashboard stays responsive and
+        # a visitor can still be switched away from or put to sleep mid-chat.
+        if self._state.open_mic and time.monotonic() < self._open_until:
+            if self._open_mic_turn(demo, ctx):
+                self._open_until = time.monotonic() + _OPEN_MIC_WINDOW_S
+            return
+
         if self._audio.wait_for_wake_word(timeout=result.listen_for):
             self._take_turn(demo, ctx)
+            if self._state.open_mic:
+                self._open_until = time.monotonic() + _OPEN_MIC_WINDOW_S
 
     def _greet_if_recognised(self, ctx: DemoContext) -> None:
         """Say hello, by name, the first time a known face appears.
@@ -186,6 +223,31 @@ class DemoRunner:
         logger.info("Recognised %s.", name)
         self._motion.express("happy")
         ctx.say(f"Oh, hello again {name}.", "happy")
+
+    def _open_mic_turn(self, demo: Demo, ctx: DemoContext) -> bool:
+        """Take a follow-up question with no wake word. True if one was heard.
+
+        The wake word still opens a conversation; this only keeps it open
+        afterwards. Listening permanently was the other way to read the
+        request and is the wrong one in a room like this -- the AGC's own notes
+        record what happens when background speech reaches the recognizer, and
+        a robot answering a conversation it merely overheard is worse than one
+        that needs addressing by name.
+        """
+        self._state.note("status", "Listening -- no wake word needed")
+        heard = self._listen(wait_for_speech_s=_OPEN_MIC_SILENCE_S)
+        if not heard:
+            return False
+
+        # People keep saying it out of habit for the first minute, and it
+        # arrives as ordinary words now that nothing is filtering it out.
+        # Left in, "hey reachy what is XR" reaches the model as a question
+        # about its own name.
+        heard = _strip_wake_phrase(heard)
+        if not heard:
+            return False
+        self._dispatch(demo, ctx, heard)
+        return True
 
     def _correct_name_if_asked(self, ctx: DemoContext, words: str, heard: str) -> bool:
         """Let somebody the robot already knows fix the name it knows them by.
@@ -263,7 +325,15 @@ class DemoRunner:
             logger.info("Heard the wake word but nothing after it.")
             self._state.note("status", "Didn't catch that")
             return
+        self._dispatch(demo, ctx, heard, depth)
 
+    def _dispatch(self, demo: Demo, ctx: DemoContext, heard: str, depth: int = 0) -> None:
+        """Decide who handles something a visitor said.
+
+        Split out from _take_turn so open mic can reach it: a follow-up asked
+        without the wake word has to be routed by exactly the same rules, or
+        "go to sleep" would stop working the moment the mic stayed open.
+        """
         words = _word_stream(heard)
 
         if any(contains_phrase(words, phrase) for phrase in SLEEP_PHRASES):
@@ -321,10 +391,10 @@ class DemoRunner:
             logger.exception("Conversational reply failed")
             self._state.add("error", "I lost my train of thought there.")
 
-    def _listen(self) -> str:
+    def _listen(self, wait_for_speech_s: Optional[float] = None) -> str:
         self._state.set_flags(listening=True)
         try:
-            heard = (self._audio.listen() or "").strip()
+            heard = (self._audio.listen(wait_for_speech_s=wait_for_speech_s) or "").strip()
         except Exception:
             logger.exception("Listening failed")
             return ""

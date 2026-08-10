@@ -242,6 +242,7 @@ def _build_spotter() -> sherpa_onnx.KeywordSpotter:
         joiner=str(d / "joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx"),
         keywords_file=str(MODELS.kws_keywords_file),
         keywords_threshold=MODELS.kws_threshold,
+        keywords_score=MODELS.kws_score,
         num_threads=2,
         sample_rate=MODELS.asr_sample_rate,
     )
@@ -702,12 +703,21 @@ class AudioIO:
         if dropped:
             logger.info("Flushed %d stale mic chunk(s).", dropped)
 
-    def listen(self) -> str:
+    def listen(self, wait_for_speech_s: Optional[float] = None) -> str:
         """Record and transcribe one utterance.
 
         Logs the partial transcript as it grows, so it's visible *what* the
         recognizer is picking up and *when* -- a final-only log can't
         distinguish "never heard you" from "heard you and mistranscribed it".
+
+        `wait_for_speech_s` gives up and returns "" if nobody has started
+        speaking within that long, which is what open-mic follow-ups need: with
+        no wake word to mark the start of a turn, this would otherwise sit on
+        the voice loop for the full utterance ceiling every time a conversation
+        simply ended, and the robot could not be switched away from or put to
+        sleep for 25 seconds. It bounds only the wait for speech to *begin* --
+        once someone is talking, the ordinary endpoint logic finishes the
+        sentence however long it runs.
         """
         # Only drop the backlog when it is genuinely stale (the robot's own
         # voice from the previous turn). Straight after a wake-word match it
@@ -752,6 +762,17 @@ class AudioIO:
 
             if self._whisper is not None:
                 captured.append(frame)
+
+            if wait_for_speech_s is not None and not partial:
+                if time.monotonic() - started >= wait_for_speech_s:
+                    # Nothing was said. Keep the backlog rather than letting the
+                    # next call flush it: speech beginning in the final frames
+                    # has not decoded into a partial yet, and dropping it would
+                    # clip the first word off someone who spoke just as the
+                    # window lapsed -- which, in open mic, is a whole turn lost
+                    # with no wake word to make the visitor say it again.
+                    self._mic_fresh = True
+                    return ""
 
             if self._recognizer.is_endpoint(stream):
                 text = self._recognizer.get_result(stream).strip()

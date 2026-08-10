@@ -214,6 +214,17 @@ def set_web_search(req: WebSearchRequest) -> JSONResponse:
     return JSONResponse({"ok": True, "enabled": enabled})
 
 
+@app.post("/api/openmic")
+def set_open_mic(req: WebSearchRequest) -> JSONResponse:
+    """Let a conversation continue without the wake word before every question.
+
+    Same shape as the switch above, and applied the same way: a flag the voice
+    loop reads at the top of its next turn, touching no hardware.
+    """
+    enabled = STATE.set_open_mic(bool(req.enabled))
+    return JSONResponse({"ok": True, "enabled": enabled})
+
+
 @app.get("/api/model")
 def model() -> JSONResponse:
     """Which language model the robot is set up to answer with.
