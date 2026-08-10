@@ -212,7 +212,42 @@ check("cycles are cheap, not a busy loop", time.monotonic() - started < 1.0, Tru
 check("no listening was attempted", audio.calls, 0)
 
 print()
-print("[8] audio from the wrong thread is refused, not silently interleaved")
+print("[8] a recognised face is greeted by name, once")
+
+
+class KnownTracker:
+    """A tracker that always reports the same recognised person."""
+
+    enabled = True
+
+    def current(self, max_age_s=1.5):
+        return (7, object())
+
+
+class Quiet(Demo):
+    id, label, help = "quiet", "Quiet", "h"
+
+    def on_idle(self, ctx):
+        return IdleResult(listen_for=1.0)
+
+
+import brain.db as _db  # noqa: E402
+
+_db.get_person_name = lambda person_id: "Ada" if person_id == 7 else None
+
+quiet = Quiet()
+runner, state, audio, _ = build([quiet])
+runner._tracker = KnownTracker()
+state.set_mode("quiet")
+runner.cycle()
+greeted_once = [line for line in audio.said if "Ada" in line]
+check("greets a known face by name", len(greeted_once), 1)
+for _ in range(4):
+    runner.cycle()
+check("and does not greet again", len([line for line in audio.said if "Ada" in line]), 1)
+
+print()
+print("[9] audio from the wrong thread is refused, not silently interleaved")
 import threading  # noqa: E402
 
 ctx = DemoContext(

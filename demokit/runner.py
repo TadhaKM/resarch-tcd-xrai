@@ -100,6 +100,11 @@ class DemoRunner:
         self._active_demo: Optional[Demo] = None
         self._ctx: Optional[DemoContext] = None
         self._stores: dict[str, dict] = {}
+        #: Names already greeted this session, so being recognised is a moment
+        #: rather than a running commentary. Names rather than ids because a
+        #: name is what gets said, and two ids for one person -- which face
+        #: recognition does produce -- should still only greet once.
+        self._greeted: set[str] = set()
 
     # --- the loop --------------------------------------------------------
 
@@ -121,8 +126,33 @@ class DemoRunner:
 
         if result.listen_for <= 0.0:
             return
+        # Only when the demo is waiting rather than part-way through saying
+        # something: listen_for above zero is the demo telling us it has
+        # nothing in hand, which is the one safe moment to speak over nothing.
+        self._greet_if_recognised(ctx)
         if self._audio.wait_for_wake_word(timeout=result.listen_for):
             self._take_turn(demo, ctx)
+
+    def _greet_if_recognised(self, ctx: DemoContext) -> None:
+        """Say hello, by name, the first time a known face appears.
+
+        In the core rather than in a demo because being recognised should feel
+        the same wherever the robot happens to be -- somebody who was greeted
+        by name in the vision demonstration and then ignored by every other one
+        has learned that the recognition was a trick of that screen.
+
+        Once per person per session. The robot has no way to tell "came back
+        after lunch" from "stepped out of frame for two seconds", and of the
+        two mistakes available, greeting someone every time they turn their
+        head is much the worse one.
+        """
+        name = ctx.person_name()
+        if not name or name in self._greeted:
+            return
+        self._greeted.add(name)
+        logger.info("Recognised %s.", name)
+        self._motion.express("happy")
+        ctx.say(f"Oh, hello again {name}.", "happy")
 
     # --- turn handling ---------------------------------------------------
 

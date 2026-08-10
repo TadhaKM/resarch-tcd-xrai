@@ -26,7 +26,6 @@ import time
 from typing import TYPE_CHECKING
 
 from body.face import clean_spoken_name
-from brain import db
 from demokit import Demo, DemoContext, IdleResult
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -161,7 +160,11 @@ class Vision(Demo):
             return IdleResult(listen_for=_LISTEN_S)
 
         if person_id:
-            self._greet(ctx, person_id)
+            # Greeting a recognised face is the runner's job now
+            # (DemoRunner._greet_if_recognised), so that being known feels the
+            # same under every demo rather than only under this one. Nothing to
+            # do here but keep following them.
+            pass
         elif store.get("stage") is None:
             self._offer(ctx)
         # A stage in progress means the robot has asked something and is
@@ -251,19 +254,6 @@ class Vision(Demo):
         index = ctx.store.get(f"line:{key}", 0)
         ctx.store[f"line:{key}"] = index + 1
         ctx.say(lines[index % len(lines)], emotion)
-
-    def _greet(self, ctx: DemoContext, person_id: int) -> None:
-        """Say hello by name, once per person for as long as the robot is up."""
-        greeted = ctx.store.setdefault("greeted", set())
-        if person_id in greeted:
-            return
-        # Recorded before the lookup and whatever it returns: a person row with
-        # no name gives nothing to say, and re-checking it every couple of
-        # seconds for the rest of the visit would say nothing in a loop.
-        greeted.add(person_id)
-        name = db.get_person_name(person_id)
-        if name:
-            ctx.say(f"Hello again, {name}.", "happy")
 
     def _offer(self, ctx: DemoContext) -> None:
         """Ask an unrecognised visitor, at most once per cooldown, to be known.

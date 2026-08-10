@@ -252,6 +252,23 @@ class DemoContext:
         self._stop_if_switched()
         from brain.interface import stream_reply
 
+        # Tell the model who it is talking to, when it knows. Done here rather
+        # than left to each demo so that being recognised feels the same
+        # wherever you are in the robot -- and done through the prompt rather
+        # than by pasting a name into the answer, because a model given a name
+        # uses it where a person would ("Sure, Tadhg -- ...") and a template
+        # would put it in the same place every time, which stops sounding
+        # personal by about the third reply.
+        name = self.person_name()
+        if name:
+            known = (
+                f"You are speaking with {name}, whom you have met before and have just "
+                f"recognised. Use their name occasionally and naturally, the way a person "
+                f"would -- once in a while, not in every sentence and not at the start of "
+                f"every reply."
+            )
+            system = f"{system}\n\n{known}" if system else known
+
         spoken: list[str] = []
         final_tag = "neutral"
         self.motion.express("thinking")
@@ -328,6 +345,20 @@ class DemoContext:
             return 0
         person_id, _face = self.tracker.current()
         return int(person_id or 0)
+
+    def person_name(self) -> Optional[str]:
+        """The recognised visitor's name, or None for a stranger.
+
+        None covers three different things that all mean "do not use a name":
+        face features are off, nobody is in view, or the person in view has
+        never told the robot who they are.
+        """
+        person_id = self.person_id()
+        if not person_id:
+            return None
+        from brain import db
+
+        return db.get_person_name(person_id)
 
     def status(self, text: str) -> None:
         """Note something on the dashboard without speaking it."""
