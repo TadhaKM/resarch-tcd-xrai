@@ -346,6 +346,39 @@ class AudioIO:
             self._spotter.decode_stream(stream)
         return bool(self._spotter.get_result(stream))
 
+    def detect_wake_word_streaming(self, samples: np.ndarray) -> bool:
+        """Run the spotter over a clip the way the live loop would hear it.
+
+        The difference from detect_wake_word_offline is not cosmetic, and
+        measuring the wrong one gives the wrong answer about the wake word. That
+        one hands the decoder a single clip; this feeds 100ms frames through
+        _apply_gain and checks after each, which is what wait_for_wake_word and
+        wake_word_in_backlog both do, and nothing else in the robot does it any
+        other way.
+
+        Measured over ten takes per phrase, the two paths disagree sharply:
+        "hey reachy" scored 4/10 offline and 9/10 streaming on identical audio,
+        and widening the keyword list moved the two in opposite directions. The
+        offline number is the one that looks like a broken wake word, and it is
+        the one the robot never runs -- so tests use this instead.
+        """
+        stream = self._spotter.create_stream()
+        was_gated, self._gate_enabled = self._gate_enabled, False
+        try:
+            padded = np.concatenate([samples, _TAIL_PADDING])
+            for start in range(0, len(padded), FRAME_SAMPLES):
+                frame = padded[start : start + FRAME_SAMPLES]
+                if len(frame) < FRAME_SAMPLES:
+                    frame = np.pad(frame, (0, FRAME_SAMPLES - len(frame)))
+                stream.accept_waveform(MODELS.asr_sample_rate, self._apply_gain(frame))
+                while self._spotter.is_ready(stream):
+                    self._spotter.decode_stream(stream)
+                if self._spotter.get_result(stream):
+                    return True
+            return False
+        finally:
+            self._gate_enabled = was_gated
+
     # --- live mic/speaker: robot.media in "robot" mode, this machine's real
     # devices in "simulation" mode ---
 

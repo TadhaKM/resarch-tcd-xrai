@@ -144,6 +144,23 @@ def check_assets() -> None:
     for p in needed:
         report(PASS if Path(p).exists() else FAIL, str(Path(p).relative_to(REPO)))
 
+    # A phrase list edited without rebuilding the token file is the quietest
+    # possible failure: the phrase is plainly there in English, and the spotter
+    # never sees it because it only reads the BPE pieces beside it.
+    try:
+        import subprocess
+        stale = subprocess.run(
+            [sys.executable, str(REPO / "tools" / "build_keywords.py"), "--check"],
+            capture_output=True, text=True,
+        )
+        report(
+            PASS if stale.returncode == 0 else FAIL,
+            "wake phrase token file matches the phrase list",
+            stale.stdout.strip().splitlines()[0] if stale.returncode else "",
+        )
+    except Exception as exc:
+        report(WARN, "wake phrase token file", str(exc))
+
     try:
         from body.motion import EMOTION_MOVES
         from reachy_mini.motion.recorded_move import RecordedMoves
@@ -181,15 +198,19 @@ def check_speech() -> "object":
     ]
     for phrase in phrases:
         # Best of three, re-synthesizing each time. The variance that matters
-        # is piper's, not the decoder's: measured over ten independent takes,
-        # detection runs 8-10 out of 10 per phrase, but decoding one fixed
-        # take three times just gives the same answer three times. Synthesizing
-        # once outside the loop therefore turned a ~15% chance of an unlucky
-        # take into a hard 0/3 failure, which is what made this check fail a
-        # different phrase on almost every run while the wake word worked
-        # fine live. Zero of three is a dead phrase; one of three is shaky.
+        # is piper's, not the decoder's: decoding one fixed take three times
+        # just gives the same answer three times, so synthesizing once outside
+        # the loop turned an unlucky take into a hard 0/3 failure. Zero of
+        # three is a dead phrase; one of three is shaky.
+        #
+        # Through the streaming decoder, not detect_wake_word_offline. This
+        # check used the offline one and was reporting on a code path the robot
+        # does not run: on identical audio the two disagree by 4/10 against
+        # 9/10, and the offline number is the pessimistic one. It failed here
+        # while the wake word worked live, which is the worst way for a test to
+        # be wrong -- it sends you looking for a fault that is in the test.
         hits = sum(
-            audio.detect_wake_word_offline(_synthesize(audio._voice, phrase.lower()))
+            audio.detect_wake_word_streaming(_synthesize(audio._voice, phrase.lower()))
             for _ in range(3)
         )
         status = PASS if hits >= 2 else WARN if hits == 1 else FAIL

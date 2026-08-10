@@ -32,13 +32,24 @@ talking. Normally it needs the phrase each time, which is deliberate — in a ro
 full of people it's how the robot knows someone is talking to *it* and not to
 each other.
 
-These all work: **"Hey Reachy"**, **"Hello there Reachy"**, **"Attention
-Reachy"**.
+**It answers to its name, not just to one magic phrase.** All of these work:
+
+> "Hey Reachy" · "Hi Reachy" · "Hello Reachy" · "OK Reachy" · **just "Reachy"**
+> · "Hello there Reachy" · "Attention Reachy"
+
+And it answers to the name as people actually say it. Plenty of visitors, Irish
+and Scottish accents especially, land somewhere nearer *Ricky* or *Richie* —
+those wake it too, on purpose. **Nobody should have to say the name carefully
+to be heard.**
 
 **It hears you from across the room.** You don't need to lean in or raise your
-voice. One side effect worth knowing: names that rhyme with it, like *Rachel* or
-*Richie*, can wake it by accident. Harmless — it listens for a moment, hears
-nothing meant for it, and goes back to waiting.
+voice.
+
+The cost of all that: if someone in the room is actually called **Ricky**,
+**Richie** or **Rachel**, the robot will occasionally think it was called. It
+listens for a moment, hears nothing meant for it, and goes back to waiting — so
+it's untidy rather than a problem. Tell visitors it's a robot that answers to
+its name and they'll find it funny rather than broken.
 
 **To interrupt it**, say "Hey Reachy" while it's still talking. It finishes the
 sentence it's on, then stops and listens. Useful when it's mid-story and
@@ -192,12 +203,12 @@ Worth knowing so you're not caught out:
 
 | What you see | What to do |
 |---|---|
-| It ignores "Hey Reachy" | Check the screen — does your speech appear as text? If yes, the microphone is fine; say the phrase again more clearly and pause before your question. |
+| It ignores "Hey Reachy" | Check the screen — does your speech appear as text? If yes, the microphone is fine. Try just saying **"Reachy"** on its own, which it also answers to, and pause before your question. |
 | **"NOT FOUND — no Reachy daemon answered"** | The laptop and robot are on different WiFi networks. Check the robot is on, joined the same network, then **Start Reachy** again. |
 | "UNREACHABLE" | The robot dropped off the network. Restart the robot, then **Start Reachy** again. |
 | It talks over itself / two voices | Two copies are running. Close every black window, then **Start Reachy** once. |
 | It answers something nobody asked it | Open mic is on and it picked up the room. Untick 🎤 **Open mic** — in a crowd the wake phrase is what keeps it out of other people's conversations. |
-| It wakes when nobody said "Hey Reachy" | Someone said a name that rhymes — *Rachel*, *Richie*. Nothing to fix; it gives up after a moment. |
+| It wakes when nobody said "Hey Reachy" | Someone nearby is called *Ricky*, *Richie* or *Rachel*. It answers to those on purpose, so visitors with accents are heard. Nothing to fix; it gives up after a moment. |
 | Frozen but still talking | Wait a minute — it restarts itself. |
 | Answers are slow or odd | Check the 🧠 label. If it says "on this laptop", the internet or the API key is down and it has fallen back to the smaller offline model. It still works, just less well. |
 | A demo button is greyed out | It says why underneath. Usually a demo that failed a few times and was set aside; click it to re-enable, or restart. |
