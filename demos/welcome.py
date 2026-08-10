@@ -51,12 +51,11 @@ def _spoken_lines(script: str) -> tuple[str, ...]:
 _WELCOME_LINES = _spoken_lines(hub.WELCOME_SCRIPT)
 
 #: Spoken after the script, and not a claim about the Hub, which is why it is
-#: here rather than in brain/hub.py. The wake phrase is named because visitors
-#: who were not briefed otherwise talk at the robot and get nothing back; it
-#: repeats what runner.py says on the way to sleep, because the real source is
-#: a tokenised keyword file (config.kws_keywords_file) that no readable phrase
-#: can be recovered from.
-_INVITATION = "Ask me anything you like, just start with hey Reachy so I know you're talking to me."
+#: here rather than in brain/hub.py. It used to name the wake phrase as well.
+#: That is the operator's job -- it belongs in their guide, said once to a
+#: group, rather than in the robot's closing line to every visitor, where it
+#: turned the end of a thirty-second welcome into an instruction manual.
+_INVITATION = "Ask me anything you like."
 
 #: How long to wait for someone to appear before starting anyway. An operator
 #: presses this button in front of a group; if the tracker cannot see them --

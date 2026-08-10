@@ -57,7 +57,7 @@ from demokit import Demo, DemoContext, IdleResult, REGISTRY
 #: after lunch inherits the last group's question.
 _PERSONA = "persona_id"
 _QUESTION = "question"
-_INTRO_STEP = "intro_step"
+_PERSONA_SEQ = "persona_seq"
 _INTRODUCED = "introduced"
 
 #: Used when someone asks to switch before asking anything. Deliberately a
@@ -169,15 +169,6 @@ def _bucket_for(persona) -> int:
     return _BUCKET_BY_PERSONA_ID.get(persona.id, _UNKNOWN_PERSONA_BUCKET)
 
 
-def _spoken_list(names: list[str]) -> str:
-    """Join names the way they are said aloud, not the way they are printed."""
-    if not names:
-        return ""
-    if len(names) == 1:
-        return names[0]
-    return f"{', '.join(names[:-1])}, or {names[-1]}"
-
-
 def _only_filler_remains(text: str, *phrases: str) -> bool:
     """True if `text` is one of `phrases` and nothing but filler around it.
 
@@ -243,32 +234,35 @@ class Personality(Demo):
 
     def on_enter(self, ctx: DemoContext) -> None:
         ctx.store.clear()
-        ctx.store[_PERSONA] = personas.get("").id  # get("") is the documented default
+        chosen, seq = ctx.state.persona
+        ctx.store[_PERSONA] = personas.get(chosen).id  # get("") is the default
         ctx.store[_QUESTION] = ""
-        ctx.store[_INTRO_STEP] = 0
+        ctx.store[_PERSONA_SEQ] = seq
         ctx.store[_INTRODUCED] = set()
-        persona = self._current(ctx)
-        ctx.status(f"Starting as {persona.label}.")
-        # The pose rides on the emotion of this line rather than a separate
-        # express() call, because say() sets the base pose from its tag and
-        # would immediately overwrite one set just before it.
-        ctx.say("Personality demo. I can answer the same question in very different ways.", persona.pose)
+        # Enters silently. It used to open with five scripted lines explaining
+        # what a persona is, how many there are, what to ask and what to say
+        # afterwards -- half a minute of a robot describing a demonstration
+        # instead of giving one. The contrast is the demonstration: it lands
+        # when a visitor hears the same question answered twice, and briefing
+        # them first gives away the ending.
+        ctx.status(f"Ready as {self._current(ctx).label}.")
 
     def on_idle(self, ctx: DemoContext) -> IdleResult:
-        intro = self._intro()
-        step = ctx.store.get(_INTRO_STEP, 0)
-        if step < len(intro):
-            line, emotion = intro[step]
-            ctx.store[_INTRO_STEP] = step + 1
-            ctx.say(line, emotion)
-            # A second between lines rather than none: listen_for=0.0 returns
-            # without opening the microphone at all, so a run of them is a
-            # stretch of deafness in which nobody can interrupt and the wake
-            # word goes unheard. The wake-word stream survives across calls
-            # (body/audio_io.wait_for_wake_word), so a visitor keen enough to
-            # interrupt accumulates a match across the gaps and the lines still
-            # sound back-to-back.
-            return IdleResult(listen_for=1.0)
+        # An operator picking a style from the dashboard is a request to answer
+        # in it, so if a question has already been asked it gets answered again
+        # rather than waiting for the visitor to ask something new -- which is
+        # the whole comparison, done without anyone having to say a phrase.
+        chosen, seq = ctx.state.persona
+        if seq != ctx.store.get(_PERSONA_SEQ):
+            ctx.store[_PERSONA_SEQ] = seq
+            persona = personas.get(chosen)
+            question = ctx.store.get(_QUESTION) or ""
+            if question:
+                self._answer(ctx, question, persona, same_question=True)
+            else:
+                ctx.store[_PERSONA] = persona.id
+                ctx.motion.express(persona.pose)
+                ctx.status(f"Ready as {persona.label}.")
         return IdleResult(listen_for=3.0)
 
     def on_utterance(self, ctx: DemoContext, text: str) -> bool:
@@ -287,12 +281,10 @@ class Personality(Demo):
             return True
 
         if _only_filler_remains(lowered, *self.triggers):
-            # Either the phrase that switched us here (on_enter has already
-            # spoken and the introduction is the invitation, so adding a line
-            # would just talk over it), or someone naming the demo they are
-            # already in, who deserves an answer.
-            if ctx.store.get(_INTRO_STEP, 0) >= len(self._intro()):
-                ctx.say("Still here. Ask me anything, then say switch personality.", "happy")
+            # The phrase that switched us here, or somebody naming the demo they
+            # are already in. Answered with silence either way: the reply used
+            # to be an invitation to ask something and a reminder of the switch
+            # phrase, which is instruction rather than conversation.
             return True
 
         if self._belongs_to_another_demo(lowered):
@@ -320,10 +312,6 @@ class Personality(Demo):
         """
         ctx.store[_PERSONA] = persona.id
         ctx.store[_QUESTION] = question
-        # Anything asked cancels the rest of the introduction; finishing a
-        # scripted "ask me anything" after someone already has is the clearest
-        # possible signal that nothing is listening.
-        ctx.store[_INTRO_STEP] = len(self._intro())
         ctx.status(f"Answering as {persona.label}.")
 
         self._announce(ctx, persona, same_question=same_question)
@@ -420,21 +408,6 @@ class Personality(Demo):
         # get() falls back to the default persona for an unknown or missing id
         # rather than raising, which is what makes this safe on a fresh store.
         return personas.get(ctx.store.get(_PERSONA, ""))
-
-    def _intro(self) -> list[tuple[str, str]]:
-        """The opening script, one line per idle slice.
-
-        Built from PERSONAS rather than written out so that adding a persona
-        stays a one-file change, as personas.py promises. Nothing here claims
-        how many there are for the same reason.
-        """
-        names = _spoken_list([p.label for p in personas.PERSONAS])
-        return [
-            ("The words come from the same model and the same facts. All that changes is the instruction about how to behave.", "curious"),
-            (f"I can answer as {names}.", "neutral"),
-            ("Ask me anything. Something arguable works better than something factual.", "happy"),
-            ("Then say switch personality, and I'll take the same question again.", "happy"),
-        ]
 
     def _belongs_to_another_demo(self, lowered: str) -> bool:
         """True if this is plainly a command for a different demo.

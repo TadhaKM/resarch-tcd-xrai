@@ -67,6 +67,15 @@ class RobotState:
         self._web_search = False
         #: Off by default. See set_open_mic.
         self._open_mic = False
+        #: Which answering style the personality demo should use next. Held in
+        #: the core rather than in the demo's own store so the dashboard can
+        #: set it directly -- picking one from a list is what an operator wants
+        #: when showing the contrast, where saying "switch personality" twice to
+        #: reach the third one is a demonstration of patience.
+        self._persona = ""
+        #: Bumped whenever the dashboard picks one, so the demo can tell an
+        #: operator's choice from its own last selection and re-answer.
+        self._persona_seq = 0
         #: Whether the live backend can search at all, so the dashboard can
         #: grey the switch instead of offering something that does nothing.
         self._web_search_available = False
@@ -162,6 +171,23 @@ class RobotState:
             "Open mic on -- follow-ups need no wake word" if enabled else "Open mic off",
         )
         return enabled
+
+    @property
+    def persona(self) -> tuple[str, int]:
+        """The requested answering style and the request's sequence number."""
+        with self._lock:
+            return self._persona, self._persona_seq
+
+    def set_persona(self, persona_id: str) -> str:
+        """Ask the personality demo to answer as `persona_id` from now on."""
+        from brain import personas
+
+        chosen = personas.get(persona_id)
+        with self._lock:
+            self._persona = chosen.id
+            self._persona_seq += 1
+        self.add("status", f"Personality: {chosen.label}")
+        return chosen.id
 
     def set_web_search_available(self, available: bool) -> None:
         with self._lock:
@@ -330,6 +356,7 @@ class RobotState:
                 "modes": list(self._demos),
                 "web_search": self._web_search,
                 "open_mic": self._open_mic,
+                "persona": self._persona,
                 "web_search_available": self._web_search_available,
             }
 

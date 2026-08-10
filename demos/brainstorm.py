@@ -1,4 +1,4 @@
-"""A facilitated idea session: three questions, three directions, then a recap.
+"""A facilitated idea session: three questions, then three directions back.
 
 Structured as an interview rather than a chat because of who it is for. A
 business-school visitor arrives with a half-formed idea and no shared frame for
@@ -15,16 +15,18 @@ Three decisions about how this talks to the framework are worth knowing:
   (5s of trailing silence, then a Whisper re-decode), so a hook that calls it
   holds the robot for as long as the room stays quiet and the operator cannot
   switch away from it. The cost is that a visitor has to say "hey Reachy"
-  before each answer, so the opening line says so and one nudge repeats it
-  after a long silence. A slightly less fluid interview is worth a robot that
-  is always switchable, which is the trade the framework exists to enforce.
+  before each answer unless open mic is on. That is explained by whoever is
+  running the demonstration, not by the robot: saying it here made the first
+  thing a visitor heard about their own idea a lesson in operating a robot.
+  A slightly less fluid interview is worth one that is always switchable,
+  which is the trade the framework exists to enforce.
 - No hook returns listen_for=0.0 while there is script left to speak. Zero
   means DemoRunner.cycle returns without opening the microphone, so a run of
   such slices is a stretch of speech that cannot be interrupted and during
   which the wake word is simply unheard. In a facilitation demo, where the
   whole point is that the visitor takes part, that is the worst thing this
-  file could do: the bridge, the three directions and the recap lines each
-  leave a one-second window instead. The wake-word stream survives across
+  file could do: the bridge, the three directions and the closing question
+  each leave a one-second window instead. The wake-word stream survives across
   windows, so a phrase spoken over a boundary is still matched and the lines
   still sound back-to-back.
 - claims_utterances, because a visitor answering "dance studios in Dublin"
@@ -95,13 +97,6 @@ _RECAP_WORD_CAP = 25
 #: visitor cannot interrupt. Never 0.0 here: see the module docstring.
 _BETWEEN_LINES_S = 1.0
 
-#: Silent listening windows to let pass before repeating how to answer. Each
-#: window is MAX_LISTEN_WINDOW_S, so this is roughly six seconds of quiet --
-#: long enough to be a person thinking, short enough that a visitor who simply
-#: didn't know they had to say the wake word isn't left stranded.
-_NUDGE_AFTER_WINDOWS = 2
-
-
 def _for_speech(answer: str) -> str:
     """Tidy one transcript into something worth reading back aloud.
 
@@ -162,27 +157,21 @@ def _direction_brief(answers: dict[str, str], ordinal: str) -> str:
 def _recap_lines(answers: dict[str, str], directions: list[str]) -> list[tuple[str, str]]:
     """The session played back as (line, emotion) pairs, one per idle slice.
 
-    Built from whatever has been answered so far, because "summarise that" is a
-    legitimate thing to say two questions in.
+    Only ever reached now by someone explicitly asking for it. It used to run
+    automatically after the third direction, and hearing it live is what settled
+    that: a visitor who answers "everybody" and "it's cool" -- which is what
+    people actually say to a robot in a corridor -- gets "It's for everybody"
+    and "What makes it different, or what's in the way: It's cool" read back at
+    them a minute later. Their own words in a template do not become a summary,
+    and the session had already made its point with the three directions.
     """
-    lines = [("Here's the whole thing back to you.", "neutral")]
+    lines = []
     if "problem" in answers:
         lines.append((f"The problem: {_for_speech(answers['problem'])}.", "neutral"))
     if "audience" in answers:
         lines.append((f"It's for {_for_speech(answers['audience'])}.", "neutral"))
     if "edge" in answers:
         lines.append((f"What makes it different, or what's in the way: {_for_speech(answers['edge'])}.", "neutral"))
-    if directions:
-        # Ends on the question rather than on a conclusion: the useful output of
-        # a session like this is what the visitor tests on Monday, and a robot
-        # that picks the winner for them has taken the interesting part away.
-        lines.append(
-            (
-                "The question worth taking away is which of those you'd test first, and what "
-                "the cheapest way to find out would be.",
-                "curious",
-            )
-        )
     return lines
 
 
@@ -219,18 +208,15 @@ class Brainstorm(Demo):
             # gets asked again rather than waited on silently -- the visitor in
             # front of the robot now may not be the one who heard it.
             store["awaiting"] = None
-            store["nudged"] = False
             store["waited"] = 0
         store["touched"] = time.monotonic()
-        # The wake word is named in the opener because every answer now arrives
-        # through it: a visitor who replies to the first question without it is
-        # talking into a microphone the core has not opened, and the six-second
-        # nudge in _ask_next is a repair for that rather than a substitute.
+        # Says what is about to happen, not how to operate the robot. Explaining
+        # the wake word is the operator's job and belongs in their guide -- said
+        # here it was the first thing a visitor heard about their own idea.
         ctx.say(
-            "Picking up where we left off. Say hey Reachy before each answer."
+            "Picking up where we left off."
             if resuming
-            else "Let's brainstorm. Three questions from me, then some directions back. "
-            "Say hey Reachy before each answer, so I know it's me you're talking to.",
+            else "Let's brainstorm. Three questions from me, then some directions back.",
             "happy",
         )
 
@@ -310,15 +296,14 @@ class Brainstorm(Demo):
         if store.get("awaiting") == key:
             # The question is already out. Wait quietly rather than repeating
             # it: a robot that re-asks every three seconds in a room full of
-            # people is worse than one that lets a pause be a pause. The one
-            # exception is a visitor who does not know the wake word is needed,
-            # which sounds identical to thinking, so it is offered once.
+            # people is worse than one that lets a pause be a pause.
+            #
+            # It used to nudge once with instructions about the wake word. That
+            # is the operator's job to explain, not something to say to a
+            # visitor mid-thought -- and a pause here usually is thinking, which
+            # this then talked over.
             store["waited"] = store.get("waited", 0) + 1
-            if store["waited"] >= _NUDGE_AFTER_WINDOWS and not store.get("nudged"):
-                store["nudged"] = True
-                ctx.say("Whenever you're ready. Say hey Reachy, then your answer.", "neutral")
-            else:
-                ctx.status(f"Waiting for an answer: {key}")
+            ctx.status(f"Waiting for an answer: {key}")
             return IdleResult(listen_for=MAX_LISTEN_WINDOW_S)
 
         # Set before speaking, not after: say() raises DemoStopped if the
@@ -335,9 +320,6 @@ class Brainstorm(Demo):
         store["answers"][key] = answer
         store["awaiting"] = None
         store["waited"] = 0
-        # "nudged" is deliberately not cleared here. It records that this
-        # visitor has been told how to answer, and telling them again before
-        # each of three questions is nagging, not helping.
         store["touched"] = time.monotonic()
         store["step"] += 1
         # A nod instead of "got it": spoken acknowledgement between two
@@ -367,7 +349,17 @@ class Brainstorm(Demo):
         store["touched"] = time.monotonic()
         if len(directions) >= len(_ORDINALS):
             store["stage"] = _SUMMARY
-            store["queue"] = _recap_lines(store["answers"], directions)
+            # One closing line, not the session read back. It ends on the
+            # question rather than a conclusion because the useful output here
+            # is what the visitor tests on Monday, and a robot that picks the
+            # winner has taken the interesting part away.
+            store["queue"] = [
+                (
+                    "Which of those would you test first, and what's the cheapest way "
+                    "to find out?",
+                    "curious",
+                )
+            ]
         # A direction is a couple of sentences and there are three of them back
         # to back. Between each one the visitor gets a window to cut in, which
         # in a session about their own idea is the whole point.
@@ -383,7 +375,12 @@ class Brainstorm(Demo):
             ctx.say("Nothing to sum up yet. Give me the idea first.", "curious")
             return True
         stage = store.get("stage")
-        store["queue"] = _recap_lines(answers, store.get("directions") or [])
+        # The lead-in belongs here rather than in _recap_lines: asked for, a
+        # summary needs announcing; volunteered, that same line was the robot
+        # starting a speech nobody requested.
+        store["queue"] = [("So far:", "neutral")] + _recap_lines(
+            answers, store.get("directions") or []
+        )
         # Mid-session this is a re-orienting move, not an exit: the interview
         # resumes at the stage it was in, and the pending question is asked
         # again because awaiting was cleared.
@@ -422,7 +419,6 @@ class Brainstorm(Demo):
             answers={},
             directions=[],
             awaiting=None,
-            nudged=False,
             waited=0,
             touched=time.monotonic(),
             # Fixed for the whole session. person_id() flickers between a

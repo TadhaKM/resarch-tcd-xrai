@@ -394,7 +394,7 @@ class Timers(Demo):
             # falling through to the language model, which would answer as if
             # it had set one.
             ctx.store["script"] = []
-            ctx.say("I can do that. Tell me how long, like, set a timer for five minutes.", "curious")
+            ctx.say("How long for?", "curious")
             return True
 
         # Anything else is ordinary conversation, and this demo has no business

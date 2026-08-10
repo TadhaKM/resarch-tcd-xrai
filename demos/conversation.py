@@ -81,7 +81,7 @@ class Conversation(Demo):
         first_entry = not ctx.store.get("entered")
         ctx.store["entered"] = True
         if first_entry:
-            ctx.say("I'm listening. Ask me anything about the Hub, or about me.", "happy")
+            ctx.say("I'm listening.", "happy")
         else:
             ctx.say("Back to questions.", "curious")
 

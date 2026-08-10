@@ -147,6 +147,10 @@
     <label class="pill" id="p-openmic" title="Keep talking without saying 'Hey Reachy' before every question. Say it once to start; follow-ups need no wake word until half a minute of quiet.">
       <input type="checkbox" id="open-mic"> &#127908; Open mic
     </label>
+    <span class="pill" id="p-persona" title="Which style the AI Personality demo answers in. Pick one and it re-answers the last question in that style.">
+      &#127917;
+      <select id="persona" aria-label="Answering personality"></select>
+    </span>
     <span class="pill">
       <span title="Speaker volume">&#128266;</span>
       <input id="vol" type="range" min="0" max="100" step="5" aria-label="Speaker volume">
@@ -267,6 +271,7 @@
     renderModes(s.modes, s.mode);
     renderWebSearch(s);
     renderOpenMic(s);
+    renderPersona(s);
 
     const conn = $("d-conn"), connText = $("s-conn");
     conn.className = "dot " + (s.ready ? "on" : "warn");
@@ -410,6 +415,46 @@
         body: JSON.stringify({enabled})
       });
     } catch (e) { micBox.checked = !enabled; }
+  };
+
+  // Personality. Populated once from /api/personas -- the list is fixed for the
+  // life of the process -- then kept in step with the polled status, so the
+  // dropdown shows what the robot is actually set to rather than what this
+  // browser last clicked.
+  const personaBox = $("persona"), personaPill = $("p-persona");
+  let personaLoaded = false;
+  (async () => {
+    try {
+      const r = await fetch("/api/personas");
+      const d = await r.json();
+      for (const p of d.personas || []) {
+        const o = document.createElement("option");
+        o.value = p.id; o.textContent = p.label; o.title = p.blurb || "";
+        personaBox.appendChild(o);
+      }
+      personaLoaded = (d.personas || []).length > 0;
+      if (personaPill) personaPill.style.display = personaLoaded ? "" : "none";
+    } catch (e) { if (personaPill) personaPill.style.display = "none"; }
+  })();
+  function renderPersona(status) {
+    if (!personaBox || !personaLoaded) return;
+    // Only the personality demo acts on this, so it is greyed elsewhere rather
+    // than hidden -- an operator looking for it should find it, and find out
+    // why it is inert, instead of wondering where it went.
+    const live = status.mode === "personality";
+    personaBox.disabled = !live;
+    if (personaPill) personaPill.style.opacity = live ? "" : "0.45";
+    if (status.persona && document.activeElement !== personaBox) {
+      personaBox.value = status.persona;
+    }
+  }
+  if (personaBox) personaBox.onchange = async () => {
+    try {
+      await fetch("/api/persona", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({persona: personaBox.value})
+      });
+    } catch (e) { /* the next poll re-syncs it */ }
   };
 
   // Which model is answering. Read once: it is fixed for the life of the

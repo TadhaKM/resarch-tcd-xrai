@@ -284,7 +284,15 @@ class Vision(Demo):
     def _ask_name(self, ctx: DemoContext) -> None:
         """Invite the name. Answered through on_utterance, for the same reason."""
         ctx.store["stage"] = _AWAITING_NAME
-        ctx.say("Say hey Reachy, then your name.", "curious")
+        # The only place the robot still explains itself, and only when it must:
+        # the answer arrives through the wake-word path, so with the mic shut a
+        # visitor who just says their name is talking into a microphone nobody
+        # opened, and the offer to remember them quietly fails. With open mic on
+        # there is nothing to explain, so it does not.
+        if ctx.state.open_mic:
+            ctx.say("What's your name?", "curious")
+        else:
+            ctx.say("What's your name? Say hey Reachy first.", "curious")
 
     def _take_name(self, ctx: DemoContext, tracker: "FaceTracker", heard: str) -> None:
         """Enrol the name just heard against the face in view right now."""

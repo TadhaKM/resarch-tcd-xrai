@@ -225,6 +225,35 @@ def set_open_mic(req: WebSearchRequest) -> JSONResponse:
     return JSONResponse({"ok": True, "enabled": enabled})
 
 
+class PersonaRequest(BaseModel):
+    persona: str
+
+
+@app.get("/api/personas")
+def personas_list() -> JSONResponse:
+    """The answering styles the dashboard can choose between.
+
+    Read from brain/personas.py rather than listed here, so adding one stays
+    the one-file change that module promises.
+    """
+    from brain import personas
+
+    return JSONResponse(
+        {
+            "personas": [
+                {"id": p.id, "label": p.label, "blurb": p.blurb} for p in personas.PERSONAS
+            ]
+        }
+    )
+
+
+@app.post("/api/persona")
+def set_persona(req: PersonaRequest) -> JSONResponse:
+    """Pick which style the personality demo answers in."""
+    chosen = STATE.set_persona(req.persona)
+    return JSONResponse({"ok": True, "persona": chosen})
+
+
 @app.get("/api/model")
 def model() -> JSONResponse:
     """Which language model the robot is set up to answer with.
