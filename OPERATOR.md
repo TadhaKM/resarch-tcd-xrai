@@ -75,7 +75,7 @@ Along the top:
 | 🧠 with a model name | Which AI is answering, and whether it's on the laptop or online |
 | 🌐 **Web search** | Off by default. Tick it to let Reachy look things up — see below |
 | 🎤 **Open mic** | Off by default. Tick it and follow-up questions don't need "Hey Reachy" — see below |
-| 🎭 dropdown | Which character the **AI Personality** demo answers as. Greyed out in the other demos |
+| 🎭 dropdown | The robot's manner **everywhere** — wording, tone of voice, how it holds its head. "Default" is its own |
 | 🔊 slider | Speaker volume |
 | A dropdown | Which voice it speaks in — four to choose from |
 | **Clear answers** | Makes it forget answers it has memorised. Only needed if it keeps repeating something wrong |
@@ -98,14 +98,15 @@ and the robot.
 > Try: *"Hey Reachy, who runs the AI XR Hub?"* — it knows the real answer.
 > Then: *"Hey Reachy, what is extended reality?"*
 
-**AI Personality** — it answers the **same question** again as a different
-character: Professional, Friendly, or Consultant. They differ in wording, in
-tone of voice, and in how the robot holds its head.
+**AI Personality** — the **🎭 dropdown changes the whole robot**, not just this
+demo. Pick Professional, Friendly or Consultant and everything it says, in
+every demonstration, changes with it: the wording, the speed and warmth of its
+voice, and how it holds its head. "Default" is its own manner.
 
-**Use the 🎭 dropdown at the top of the screen.** Pick a character and it
-re-answers the last question in that style straight away — no phrase to
-remember, and you can jump to any of the three rather than cycling through.
-Saying *"switch personality"* still works if your hands are full.
+This demo is where the difference is easiest to *show*, because it re-answers
+the **same question** as each character back to back — the only way a listener
+can tell the personality apart from the question. Pick a character and it
+re-answers straight away; saying *"switch personality"* still works too.
 > Ask a question with no single right answer — *"Should a business student
 > learn to code?"* — then change the dropdown twice. Factual questions make all
 > three sound the same; arguable ones make the difference obvious.

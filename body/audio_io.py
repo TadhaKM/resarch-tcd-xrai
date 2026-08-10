@@ -29,6 +29,7 @@ import sounddevice as sd
 from piper import PiperVoice, SynthesisConfig
 from scipy.signal import resample
 
+from brain import personas
 from brain.modes import STATE
 from config import MODELS, HardwareTarget
 
@@ -680,19 +681,34 @@ class AudioIO:
         # the robot's much louder voice set the level and scales the visitor's
         # speech down to nothing.
         stream = self._spotter.create_stream()
+        # The gate is not the only thing _apply_gain mutates: it also advances
+        # _agc_envelope and _agc_noise_floor, and this buffer is mostly the
+        # robot's own voice at full scale. Left un-restored, that inflated
+        # envelope is still decaying when the visitor's next question arrives
+        # and under-gains it -- the scan quietly degrading the listening that
+        # follows it, every single time it runs.
         was_gated, self._gate_enabled = self._gate_enabled, False
+        saved_envelope = self._agc_envelope
+        saved_floor = self._agc_noise_floor
+        chunks = 0
+        loudest = 0.0
         try:
             for _ in range(_MAX_FLUSH_CHUNKS):
                 sample = self._robot.media.get_audio_sample()
                 if sample is None:
                     break
+                chunks += 1
                 mono = sample[:, 0] if sample.ndim == 2 else sample
+                loudest = max(loudest, float(np.abs(mono).max()) if mono.size else 0.0)
                 frame = _resample(self._apply_gain(mono), input_rate, MODELS.asr_sample_rate)
                 stream.accept_waveform(MODELS.asr_sample_rate, frame)
                 while self._spotter.is_ready(stream):
                     self._spotter.decode_stream(stream)
                 if self._spotter.get_result(stream):
-                    logger.info("Wake word heard while speaking -- interrupting.")
+                    logger.info(
+                        "Wake word heard while speaking -- interrupting (%d chunk(s), peak %.3f).",
+                        chunks, loudest,
+                    )
                     # Dropped so the turn that follows starts from a clean
                     # stream rather than resuming this one mid-phrase.
                     self._kws_stream = None
@@ -709,11 +725,31 @@ class AudioIO:
             while self._spotter.is_ready(stream):
                 self._spotter.decode_stream(stream)
             if self._spotter.get_result(stream):
-                logger.info("Wake word heard while speaking -- interrupting.")
+                logger.info(
+                    "Wake word heard while speaking -- interrupting (%d chunk(s), peak %.3f).",
+                    chunks, loudest,
+                )
                 self._kws_stream = None
                 return True
         finally:
             self._gate_enabled = was_gated
+            self._agc_envelope = saved_envelope
+            self._agc_noise_floor = saved_floor
+        # Logged even on a miss, because this is the only way to tell the two
+        # failures apart: nobody spoke (low peak) against somebody spoke and
+        # the spotter did not hear them (high peak). The scan used to be silent
+        # either way, so a barge-in that did not work left nothing behind.
+        #
+        # The peak is also the measurement that matters most here. Synthesised
+        # mixtures put the ceiling on what this can ever do: with the robot's
+        # own voice in the buffer at half scale or more, the wake phrase spoken
+        # over it was detected 0 times out of 4 at every visitor level tried;
+        # at a tenth of scale it was 4/4. So this number says whether the
+        # robot's speaker is being cancelled before the mic stream reaches us.
+        # A high peak through a whole reply means it is not, and no amount of
+        # tuning on this side will find a phrase buried under it.
+        level = logging.INFO if loudest > 0.05 else logging.DEBUG
+        logger.log(level, "No wake word in backlog (%d chunk(s), peak %.3f).", chunks, loudest)
         return False
 
     def flush_mic(self) -> None:
@@ -854,8 +890,22 @@ class AudioIO:
         if pace is not None or variation is not None:
             syn_config = _voice_config(pace if pace is not None else 1.0,
                                        variation if variation is not None else 0.667)
+        elif expressive:
+            # The storyteller's voice is the point of that demo, and it is both
+            # slower AND more varied than any persona -- so a persona must not
+            # quietly replace it.
+            syn_config = _STORY_SYNTHESIS
         else:
-            syn_config = _STORY_SYNTHESIS if expressive else _CHAT_SYNTHESIS
+            # Hooked here rather than in DemoContext.say because this is the
+            # only place that also covers the runner's own lines, which speak
+            # through AudioIO directly. An explicit pace or variation still
+            # wins above: the personality demo passes its own.
+            persona = personas.active(STATE.persona[0])
+            syn_config = (
+                _voice_config(persona.pace, persona.variation)
+                if persona is not None
+                else _CHAT_SYNTHESIS
+            )
         if motion is not None:
             motion.begin_speech()
         try:
@@ -870,6 +920,14 @@ class AudioIO:
             # the robot's own voice. Dropping the stream makes the next
             # wait_for_wake_word flush that before it starts matching.
             self._kws_stream = None
+            # And the backlog is stale for listen() too. listen() skips its
+            # flush while _mic_fresh is set, and listen() itself sets that flag
+            # when a wait_for_speech_s window lapses in silence -- so a question
+            # asked, met with silence, and asked again left the flag standing
+            # across this speak() and the second listen() transcribed the
+            # robot's own question. In the enrolment exchange that is a
+            # re-prompt being decoded as somebody's name.
+            self._mic_fresh = False
 
     def _speak_local(
         self, text: str, motion: Optional[Any], syn_config: SynthesisConfig

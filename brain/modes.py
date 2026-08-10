@@ -181,15 +181,22 @@ class RobotState:
             return self._persona, self._persona_seq
 
     def set_persona(self, persona_id: str) -> str:
-        """Ask the personality demo to answer as `persona_id` from now on."""
+        """Set the robot's standing manner. "" means its own, unstyled.
+
+        Resolved through personas.active rather than personas.get, which falls
+        back to Professional for anything it does not recognise -- including
+        the empty string. Coerced that way, "no persona" became a robot-wide
+        Professional register that nobody had chosen, and there was no value
+        left that meant "off".
+        """
         from brain import personas
 
-        chosen = personas.get(persona_id)
+        chosen = personas.active(persona_id)
         with self._lock:
-            self._persona = chosen.id
+            self._persona = chosen.id if chosen else ""
             self._persona_seq += 1
-        self.add("status", f"Personality: {chosen.label}")
-        return chosen.id
+        self.add("status", f"Personality: {chosen.label}" if chosen else "Personality: default")
+        return chosen.id if chosen else ""
 
     def mark_greeted(self, name: str) -> bool:
         """Claim the one per-session greeting for `name`. True for the claimant.

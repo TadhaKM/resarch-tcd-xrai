@@ -147,7 +147,7 @@
     <label class="pill" id="p-openmic" title="Keep talking without saying 'Hey Reachy' before every question. Say it once to start; follow-ups need no wake word until half a minute of quiet.">
       <input type="checkbox" id="open-mic"> &#127908; Open mic
     </label>
-    <span class="pill" id="p-persona" title="Which style the AI Personality demo answers in. Pick one and it re-answers the last question in that style.">
+    <span class="pill" id="p-persona" title="The robot's manner everywhere: wording, tone of voice and how it holds its head. Default is its own.">
       &#127917;
       <select id="persona" aria-label="Answering personality"></select>
     </span>
@@ -427,25 +427,28 @@
     try {
       const r = await fetch("/api/personas");
       const d = await r.json();
+      // "Default" first and selected by default. Without a value meaning "no
+      // persona", the robot would boot into whichever style happened to sort
+      // first and wear it everywhere, unasked.
+      const none = document.createElement("option");
+      none.value = ""; none.textContent = "Default";
+      none.title = "The robot's own manner.";
+      personaBox.appendChild(none);
       for (const p of d.personas || []) {
         const o = document.createElement("option");
         o.value = p.id; o.textContent = p.label; o.title = p.blurb || "";
         personaBox.appendChild(o);
       }
-      personaLoaded = (d.personas || []).length > 0;
+      personaLoaded = true;
       if (personaPill) personaPill.style.display = personaLoaded ? "" : "none";
     } catch (e) { if (personaPill) personaPill.style.display = "none"; }
   })();
   function renderPersona(status) {
     if (!personaBox || !personaLoaded) return;
-    // Only the personality demo acts on this, so it is greyed elsewhere rather
-    // than hidden -- an operator looking for it should find it, and find out
-    // why it is inert, instead of wondering where it went.
-    const live = status.mode === "personality";
-    personaBox.disabled = !live;
-    if (personaPill) personaPill.style.opacity = live ? "" : "0.45";
-    if (status.persona && document.activeElement !== personaBox) {
-      personaBox.value = status.persona;
+    // Live in every demo now, not only the personality one -- it sets how the
+    // robot talks everywhere -- so no greying out.
+    if (document.activeElement !== personaBox) {
+      personaBox.value = status.persona || "";
     }
   }
   if (personaBox) personaBox.onchange = async () => {

@@ -103,6 +103,18 @@ class Interrupted(Exception):
     """
 
 
+def _is_stop_phrase(text: str) -> bool:
+    """Whether this is one of the core "stop" phrases.
+
+    Imported lazily: this module is a stdlib-only leaf (see the docstring) and
+    demokit.runner imports it, so naming that at module scope closes a cycle.
+    """
+    from .runner import SLEEP_PHRASES, _word_stream, contains_phrase
+
+    words = _word_stream(text)
+    return any(contains_phrase(words, phrase) for phrase in SLEEP_PHRASES)
+
+
 #: The wake phrase, as the robot might say it itself. A reply containing it
 #: would be found in the robot's own recorded voice and interrupt itself, so
 #: lines like "say hey Reachy if you want me to stop" skip the check.
@@ -164,6 +176,18 @@ class DemoContext:
         if self.mode_changed():
             raise DemoStopped(self._entered_mode)
 
+    def persona(self):
+        """The robot's standing manner, or None if the operator picked none.
+
+        Read from state on every call rather than cached, because the operator
+        changes it from the dashboard mid-visit and the next thing said should
+        already be in the new manner.
+        """
+        from brain import personas
+
+        chosen, _seq = self.state.persona
+        return personas.active(chosen)
+
     def _stop_if_interrupted(self, just_said: str) -> None:
         """Give up the floor if someone said the wake word while we spoke.
 
@@ -190,6 +214,8 @@ class DemoContext:
         expressive: bool = False,
         pace: Optional[float] = None,
         variation: Optional[float] = None,
+        *,
+        interruptible: bool = True,
     ) -> None:
         """Speak one line, with a matching expression.
 
@@ -197,6 +223,14 @@ class DemoContext:
         speaking-rate multiplier (higher is slower), variation is how much the
         prosody moves. Used by demos where the voice itself is the point --
         see brain/personas.py -- and ignored by everything else.
+
+        Raises Interrupted if a visitor said the wake word over this line.
+        Every scripted demo speaks through here one line per idle slice, so
+        without this only generated replies and say_lines scripts could be
+        talked over -- the welcome, the tour, the timer announcements all had
+        to be waited out. Pass interruptible=False for a line that must finish:
+        a question whose own answer is being waited for (see ask), or the
+        robot's own "going to sleep".
         """
         self._require_loop_thread("say")
         text = (text or "").strip()
@@ -211,6 +245,8 @@ class DemoContext:
             pace=pace, variation=variation,
         )
         self.state.set_flags(speaking=False)
+        if interruptible:
+            self._stop_if_interrupted(text)
 
     def say_lines(self, lines: Iterator[str] | list[str], emotion: str = "neutral") -> None:
         """Speak several lines, giving up promptly if the demo is switched away.
@@ -223,7 +259,6 @@ class DemoContext:
         for line in lines:
             self._stop_if_switched()
             self.say(line, emotion)
-            self._stop_if_interrupted(line)
 
     def reply(
         self,
@@ -269,6 +304,23 @@ class DemoContext:
             )
             system = f"{system}\n\n{known}" if system else known
 
+        # The robot's standing manner, layered on the same way. Deliberately
+        # here rather than in prompts.py's base prompt: extra_system is what
+        # brain/qa_cache.py digests into its key, so a persona that rides here
+        # makes the cache persona-aware for free, where one buried in the base
+        # prompt would replay a Professional answer to somebody who had just
+        # switched to Friendly.
+        #
+        # Two exclusions. A story swaps the whole system prompt for the
+        # storyteller's and has its own voice; and the personality demo passes
+        # its own, fuller brief, which this would fight with.
+        persona = self.persona() if style is None and self.demo_id != "personality" else None
+        if persona is not None:
+            from brain.personas import GLOBAL_STYLE_FRAME
+
+            brief = f"{persona.global_prompt} {GLOBAL_STYLE_FRAME}"
+            system = f"{system}\n\n{brief}" if system else brief
+
         spoken: list[str] = []
         final_tag = "neutral"
         self.motion.express("thinking")
@@ -285,15 +337,21 @@ class DemoContext:
             # mid-word reads as a fault, mid-sentence reads as responsive.
             self._stop_if_switched()
             spoken.append(sentence)
+            # say() checks for an interruption itself. A visitor can take the
+            # floor back here without waiting for a thirty-second story to
+            # finish: their words were captured while this sentence played.
             self.say(
                 sentence, tag, expressive=style == "story",
                 pace=pace, variation=variation,
             )
-            # A visitor can take the floor back here without waiting for a
-            # thirty-second story to finish. Their words were captured while
-            # this sentence played; this is where they get looked at.
-            self._stop_if_interrupted(sentence)
         self.motion.express_move(final_tag)
+        # Leave the body in the persona's resting pose. Without this a reply
+        # ends on whatever the last sentence's tag was -- in practice
+        # "thinking", which brain/interface.py hardcodes for every streamed
+        # sentence -- so the robot sat pondering after every answer whatever
+        # manner it was in. The personality demo restores its own.
+        if persona is not None:
+            self.motion.express(persona.pose)
         return " ".join(spoken)
 
     # --- listening -------------------------------------------------------
@@ -317,6 +375,16 @@ class DemoContext:
         heard = heard.strip()
         if heard:
             self.state.add("heard", heard)
+        if heard and _is_stop_phrase(heard):
+            # The core phrases have to work here too. An inline exchange --
+            # ask() and everything built on it -- never reaches the runner's
+            # dispatch, so for its whole duration "go to sleep" was just an
+            # answer the demo could not make sense of: in enrolment it read as
+            # a decline, or as a name that failed validation and got the
+            # question asked again. Queued rather than raised so the demo
+            # finishes its slice and the runner acts on it next time round.
+            self.state.request("sleep")
+            return ""
         return heard
 
     def ask(
@@ -326,8 +394,14 @@ class DemoContext:
         *,
         wait_for_speech_s: Optional[float] = None,
     ) -> str:
-        """Say something and listen for the answer. "" if nothing came back."""
-        self.say(question, emotion)
+        """Say something and listen for the answer. "" if nothing came back.
+
+        The question is deliberately not interruptible. This is say-then-listen
+        in one call, so an Interrupted raised by the question would abandon the
+        exchange at the exact moment it was about to listen -- and the visitor
+        answering promptly is precisely what would trigger it.
+        """
+        self.say(question, emotion, interruptible=False)
         return self.listen(wait_for_speech_s=wait_for_speech_s)
 
     def wait_for_wake_word(self, seconds: float) -> bool:

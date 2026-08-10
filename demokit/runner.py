@@ -143,6 +143,9 @@ def contains_phrase(word_stream: str, phrase: str) -> bool:
     normalised = _word_stream(phrase).strip()
     return bool(normalised) and f" {normalised} " in word_stream
 
+#: Pause on an idle slice that asked for no listening. See cycle().
+_IDLE_SLICE_S = 0.05
+
 #: How long a visitor has to say something after the wake word before the robot
 #: gives up and goes back to waiting.
 _EMPTY_TRANSCRIPT_RETRIES = 1
@@ -167,6 +170,8 @@ class DemoRunner:
         self._active_demo: Optional[Demo] = None
         self._ctx: Optional[DemoContext] = None
         self._stores: dict[str, dict] = {}
+        #: Interruptions currently nested inside one another. See _guarded.
+        self._interrupt_depth = 0
         #: While now is under this, follow-ups need no wake word. Zero means a
         #: conversation has not been opened yet, so the switch being on changes
         #: nothing until somebody says the wake word once.
@@ -191,6 +196,14 @@ class DemoRunner:
         result = IdleResult.sanitised(result, demo.id)
 
         if result.listen_for <= 0.0:
+            # A breath, not a wait. Zero means "call me again promptly" -- a
+            # demo chaining two halves of one exchange wants the next slice now
+            # -- but the loop above this has no sleep of its own, so returning
+            # bare turned a demo that always says zero (the missing-return
+            # mistake, and the storyteller between lines) into a spin that
+            # starves the motion thread of the GIL. Short enough that a chained
+            # dialogue still feels immediate.
+            time.sleep(_IDLE_SLICE_S)
             return
         # Only when the demo is waiting rather than part-way through saying
         # something: listen_for above zero is the demo telling us it has
@@ -205,9 +218,44 @@ class DemoRunner:
             return
 
         if self._audio.wait_for_wake_word(timeout=result.listen_for):
-            self._take_turn(demo, ctx)
+            # Interrupted can now reach here from any ctx.say inside the turn,
+            # and cycle() is outside every guard -- unhandled it would end the
+            # slice as a "Cycle failed" error in front of visitors. Handled the
+            # same way _guarded does: the visitor's words are already waiting,
+            # so take the turn again rather than making them repeat themselves.
+            try:
+                self._take_turn(demo, ctx)
+            except Interrupted:
+                self._retake_after_interruption(demo, ctx)
             if self._state.open_mic:
                 self._open_until = time.monotonic() + _OPEN_MIC_WINDOW_S
+
+    def _retake_after_interruption(self, demo: Demo, ctx: DemoContext) -> None:
+        """Give the floor to whoever talked over the robot.
+
+        Their question is already in the microphone backlog, so this takes the
+        turn straight away rather than returning to the idle loop, which would
+        make them say it twice -- once to stop the robot and once to be heard.
+
+        The depth counter is the runner's rather than a parameter because an
+        interruption surfaces from inside an arbitrary hook and there is no
+        call chain to thread one through. Each interruption resumes inside the
+        turn it interrupted, so without a bound a visitor talking over every
+        answer grows the stack until it breaks. Latent until now: this path was
+        unreachable from the default demo, which was swallowing Interrupted.
+        """
+        if self._interrupt_depth >= _MAX_INTERRUPT_DEPTH:
+            logger.info("Interruption limit reached; back to the idle loop.")
+            return
+        logger.info("Interrupted by the wake word; listening.")
+        self._state.note("listen", "Interrupted -- listening")
+        self._interrupt_depth += 1
+        try:
+            self._take_turn(demo, ctx)
+        except Interrupted:
+            self._retake_after_interruption(demo, ctx)
+        finally:
+            self._interrupt_depth -= 1
 
     def _greet_if_recognised(self, ctx: DemoContext) -> None:
         """Say hello, by name, the first time a known face appears.
@@ -230,7 +278,11 @@ class DemoRunner:
             return
         logger.info("Recognised %s.", name)
         self._motion.express("happy")
-        ctx.say(f"Oh, hello again {name}.", "happy")
+        # Not interruptible: cycle() calls this outside _guarded, so an
+        # Interrupted raised here would leave the runner entirely and surface
+        # to the operator as "Cycle failed". It is four words; nobody needs to
+        # talk over it, and the wake-word window opens immediately after.
+        ctx.say(f"Oh, hello again {name}.", "happy", interruptible=False)
 
     def _open_mic_turn(self, demo: Demo, ctx: DemoContext) -> bool:
         """Take a follow-up question with no wake word. True if one was heard.
@@ -516,6 +568,17 @@ class DemoRunner:
             if demo is not None and ctx is not None:
                 self._take_turn(demo, ctx)
             return True
+        if kind == "sleep":
+            # Queued by DemoContext.listen, which is where a sleep phrase said
+            # during an inline exchange lands. That exchange runs entirely
+            # inside a demo hook, so it never passes _dispatch and the core
+            # phrases were unreachable by voice for its whole duration --
+            # against the promise at the top of this file that the robot can
+            # always be stopped. Routed through the existing queue rather than
+            # a new exception so the demo unwinds on its own next slice.
+            logger.info("Sleep phrase heard inside a demo exchange.")
+            self._go_to_sleep()
+            return True
         if kind == "voice":
             # Applied here rather than in the web handler because loading a
             # voice swaps the object every utterance goes through, and doing
@@ -588,11 +651,17 @@ class DemoRunner:
             # whatever was being said. Take their turn straight away rather
             # than returning to the idle loop, which would make them say it
             # twice -- once to stop the robot and once to be heard.
-            logger.info("Interrupted by the wake word; listening.")
-            self._state.note("listen", "Interrupted -- listening")
+            #
+            # The depth counter is the runner's rather than a parameter,
+            # because unlike _converse this path cannot thread one through: the
+            # interruption surfaces from inside an arbitrary hook. Without it,
+            # each interruption resumes inside the turn it interrupted and a
+            # visitor talking over every answer grows the stack until it
+            # breaks. That was latent until now -- this branch was unreachable
+            # from the default demo, which swallowed Interrupted.
             demo_now, ctx_now = self._active_demo, self._ctx
             if demo_now is not None and ctx_now is not None:
-                self._take_turn(demo_now, ctx_now)
+                self._retake_after_interruption(demo_now, ctx_now)
             return None
         except Exception:
             logger.exception("%s.%s failed", demo.id, hook)

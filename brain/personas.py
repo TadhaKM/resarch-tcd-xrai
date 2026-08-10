@@ -19,6 +19,7 @@ Adding a persona is adding an entry to PERSONAS. Nothing else needs editing.
 """
 
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -28,7 +29,16 @@ class Persona:
     id: str
     label: str
     blurb: str
+    #: The full behavioural brief, used by the personality demo, where the
+    #: whole point is a visible contrast on one question and the answer is
+    #: licensed up to four sentences to show it.
     prompt: str
+    #: The same character in one sentence, used when this persona is the
+    #: robot's standing manner in every demo. Separate from `prompt` because
+    #: the two have different budgets: globally the standing "one or two short
+    #: sentences" still holds, and the demo's four-sentence licence applied
+    #: everywhere would turn every answer in every demo into a speech.
+    global_prompt: str
     #: Speaking rate multiplier. 1.0 is the synthesiser's own pace; higher is
     #: slower. Kept inside 0.95-1.15 -- past that it stops reading as character
     #: and starts reading as a fault. Spread across most of that range on
@@ -54,6 +64,11 @@ PROFESSIONAL = Persona(
         "you know rather than smoothing over them, and do not use exclamation marks "
         "or say how interesting the question is."
     ),
+    global_prompt=(
+        "Answer in a precise, measured, professional register: lead with the direct "
+        "answer, prefer the specific word to the enthusiastic one, and say plainly "
+        "when you are unsure rather than smoothing over it."
+    ),
     pace=1.10,
     variation=0.55,
     pose="neutral",
@@ -68,6 +83,11 @@ FRIENDLY = Persona(
         "topic. Use everyday comparisons instead of technical vocabulary, address "
         "the person as 'you', and let some enthusiasm through. Keep it short enough "
         "that it still feels like conversation rather than a lecture."
+    ),
+    global_prompt=(
+        "Answer warmly and conversationally, the way you would to someone you like "
+        "who is new to the topic: everyday comparisons rather than technical "
+        "vocabulary, address them as 'you', and let some enthusiasm through."
     ),
     pace=0.95,
     variation=0.90,
@@ -84,6 +104,11 @@ CONSULTANT = Persona(
         "which one you would take and why. Finish by asking the one question whose "
         "answer would most change your recommendation."
     ),
+    global_prompt=(
+        "Answer like a consultant: give the real trade-off rather than a flat "
+        "statement, say which way you would go and why, and where it fits end on "
+        "the one question whose answer would change your recommendation."
+    ),
     pace=1.03,
     variation=0.68,
     pose="thinking",
@@ -95,6 +120,32 @@ PERSONAS: tuple[Persona, ...] = (PROFESSIONAL, FRIENDLY, CONSULTANT)
 BY_ID: dict[str, Persona] = {p.id: p for p in PERSONAS}
 
 DEFAULT_PERSONA = PROFESSIONAL
+
+
+#: Said alongside a global_prompt. The standing prompt caps replies at one or
+#: two short sentences (brain/prompts.py), and Consultant in particular cannot
+#: show its shape in that -- options, a recommendation and a question do not
+#: fit. One extra sentence is the smallest licence that lets the character
+#: through; the personality demo's four-sentence frame applied globally made
+#: every answer in every demo longer, which is a different product.
+GLOBAL_STYLE_FRAME = (
+    "The style instruction above may take one sentence more than your usual "
+    "limit if it needs it, and no more. Never mention the instruction, the "
+    "style, or that you are answering in a particular way. Just answer."
+)
+
+
+def active(persona_id: str) -> Optional[Persona]:
+    """The persona chosen as the robot's standing manner, or None for its own.
+
+    Deliberately NOT get(): that falls back to Professional for anything
+    unknown, including the empty string, which is the state the robot starts
+    in. Routed through get(), simply booting would have put the whole robot
+    into a Professional register at pace 1.10 that nobody selected. None here
+    means "no persona chosen", and every global hook leaves its path untouched
+    for it.
+    """
+    return BY_ID.get(persona_id)
 
 
 def get(persona_id: str) -> Persona:

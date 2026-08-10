@@ -1,5 +1,12 @@
 """The same question, answered again in a different personality.
 
+The personality itself is no longer this demo's: the dropdown sets the robot's
+standing manner, and DemoContext.reply applies it in every demo (see
+brain/personas.py's global_prompt). What is left here, and the reason the demo
+still exists, is the CONTRAST -- holding one question fixed and answering it
+again as somebody else, back to back, which is the only way a listener can
+attribute the difference to the personality rather than to the question.
+
 This demo only lands if a visitor HEARS the difference, so the whole design is
 built around holding the question fixed and changing one thing. It therefore
 remembers the last real question and treats "switch personality" / "say that
@@ -221,7 +228,7 @@ def _system_for(persona) -> str:
 
 class Personality(Demo):
     label = "AI Personality"
-    help = "Answers one question again in each personality, so visitors hear the difference."
+    help = "Re-answers the same question in each personality, back to back."
     order = 50
     triggers = _TRIGGERS
     #: Every question a visitor asks here is arbitrary text, so without this a

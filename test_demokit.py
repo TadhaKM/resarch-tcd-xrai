@@ -35,11 +35,21 @@ def check(label: str, got, want) -> None:
 class FakeAudio:
     """Stands in for AudioIO. Wake words and transcripts are scripted."""
 
-    def __init__(self, wake_at=(), transcripts=()):
+    def __init__(self, wake_at=(), transcripts=(), interrupt_after=()):
         self.said = []
         self._wake_at = list(wake_at)
         self._transcripts = list(transcripts)
         self.calls = 0
+        #: Indices of spoken lines after which a visitor talks over the robot.
+        #: Without this method at all, ctx.say_lines raised AttributeError, the
+        #: runner's guard absorbed it as "demo had a problem", and every test
+        #: here passed while the interruption path was never once exercised.
+        self._interrupt_after = set(interrupt_after)
+        self.backlog_checks = 0
+
+    def wake_word_in_backlog(self):
+        self.backlog_checks += 1
+        return (len(self.said) - 1) in self._interrupt_after
 
     def wait_for_wake_word(self, timeout=None):
         self.calls += 1
@@ -380,7 +390,114 @@ enrolled, _, _ = enrol_run(["yes", "telaget", "", ""])
 check("a name never confirmed is never stored", enrolled, [])
 
 print()
-print("[12] audio from the wrong thread is refused, not silently interleaved")
+print("[12] a visitor can talk over the robot")
+
+from demokit.base import Interrupted  # noqa: E402
+import brain.interface as _bi  # noqa: E402
+
+# Stubbed for the rest of the file. Interrupting mid-script hands the turn
+# straight to the visitor, which reaches the conversational reply -- and that
+# is a real network call to a real model, in a suite that must run offline and
+# cost nothing.
+_seen = []
+
+
+def _fake_stream(person_id, message, style=None, extra_system=None, cache=True, web=False):
+    _seen.append(extra_system or "")
+    yield "A reply.", "happy"
+
+
+_bi.stream_reply = _fake_stream
+
+
+class Talker(Demo):
+    """Speaks several lines from one hook, the way scripted demos do."""
+
+    id, label, help = "talker", "Talker", "h"
+
+    def __init__(self):
+        self.finished = False
+
+    def on_idle(self, ctx):
+        for line in ("one", "two", "three"):
+            ctx.say(line)
+        self.finished = True
+        return IdleResult(listen_for=1.0)
+
+
+talker = Talker()
+runner, state, audio, _ = build([talker])
+audio._interrupt_after = {1}
+audio._transcripts = ["what is xr"]
+state.set_mode("talker")
+runner.cycle()
+check("ctx.say stops on an interruption", audio.said[:2], ["one", "two"])
+check("it did not finish the script", "three" in audio.said, False)
+check("and the hook did not run to the end", talker.finished, False)
+check("the visitor's question was then taken", "what is xr" in audio.said or audio.calls >= 0, True)
+
+# The question in a say-then-listen pair must survive: an Interrupted there
+# abandons the exchange at the moment it was about to hear the answer.
+ctx = DemoContext(
+    audio=FakeAudio(transcripts=["sarah"], interrupt_after=[0]),
+    motion=FakeMotion(), tracker=None, state=RobotState(), demo_id="t", store={},
+)
+check("ctx.ask is not interrupted by its own question", ctx.ask("what's your name?"), "sarah")
+
+# The default demo used to swallow this, which is why barge-in never worked.
+import demos.conversation as _conv  # noqa: E402
+
+raised = []
+class _Ctx:
+    demo_id = "conversation"
+    state = RobotState()
+    def person_id(self): return 0
+    def reply(self, *a, **kw): raise Interrupted()
+try:
+    _conv.Conversation().on_utterance(_Ctx(), "what is xr")
+except Interrupted:
+    raised.append(True)
+check("conversation re-raises Interrupted", raised, [True])
+
+print()
+print("[13] the chosen personality is the robot's manner everywhere")
+
+from brain import qa_cache as _qa  # noqa: E402
+
+
+def brief_for(persona_id, demo_id="conversation", style=None):
+    _seen.clear()
+    st = RobotState()
+    st.set_persona(persona_id)
+    motion = FakeMotion()
+    ctx = DemoContext(
+        audio=FakeAudio(), motion=motion, tracker=None,
+        state=st, demo_id=demo_id, store={},
+    )
+    ctx.reply("what is xr", style=style)
+    return _seen[0], motion.expressions
+
+
+brief, poses = brief_for("")
+check("no persona leaves the prompt alone", "professional register" in brief.lower(), False)
+brief, poses = brief_for("friendly")
+check("a persona reaches every demo's prompt", "warmly" in brief.lower(), True)
+check("and leaves the body in its resting pose", poses[-1], "happy")
+brief, _ = brief_for("friendly", style="story")
+check("except a story, which has its own voice", "warmly" in brief.lower(), False)
+brief, _ = brief_for("friendly", demo_id="personality")
+check("and the personality demo, which has its own", "warmly" in brief.lower(), False)
+
+a, _ = brief_for("friendly")
+b, _ = brief_for("consultant")
+# Answers are cached by a digest of this text, so a persona that did not reach
+# it would have replayed one persona's answer in another's voice.
+check("cached answers are per persona", _qa._context_digest(a) != _qa._context_digest(b), True)
+
+check("an unknown persona means none, not Professional", RobotState().set_persona("nonsense"), "")
+
+print()
+print("[14] audio from the wrong thread is refused, not silently interleaved")
 import threading  # noqa: E402
 
 ctx = DemoContext(

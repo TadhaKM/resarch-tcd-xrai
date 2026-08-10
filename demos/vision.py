@@ -183,12 +183,9 @@ class Vision(Demo):
             # (DemoRunner._greet_if_recognised), so that being known feels the
             # same under every demo rather than only under this one. Nothing to
             # do here but keep following them.
-            pass
-        elif store.get("stage") is None:
-            self._offer(ctx)
-        # A stage in progress means the robot has asked something and is
-        # waiting for on_utterance to bring the answer. Nothing to do here but
-        # keep listening.
+            return IdleResult(listen_for=_LISTEN_S)
+        if store.get("stage") is None:
+            return self._offer(ctx)
         return IdleResult(listen_for=_LISTEN_S)
 
     def on_utterance(self, ctx: DemoContext, text: str) -> bool:
@@ -252,7 +249,7 @@ class Vision(Demo):
         ctx.store[f"line:{key}"] = index + 1
         ctx.say(lines[index % len(lines)], emotion)
 
-    def _offer(self, ctx: DemoContext) -> None:
+    def _offer(self, ctx: DemoContext) -> IdleResult:
         """Ask an unrecognised visitor, at most once per cooldown, to be known.
 
         The whole exchange is direct question-and-answer -- no wake word, no
@@ -265,7 +262,7 @@ class Vision(Demo):
         store = ctx.store
         offered_at = store.get("offered_at")
         if offered_at is not None and time.monotonic() - offered_at < _ASK_COOLDOWN_S:
-            return
+            return IdleResult(listen_for=_LISTEN_S)
         # Stamped before the question, not after: a demo switched away
         # mid-sentence still counts as having asked, so the visitor is not
         # asked again on the way back.
@@ -277,9 +274,15 @@ class Vision(Demo):
         )
         if not _is_yes(answer):
             ctx.status("Name declined; not asking again for a while.")
-            return
+            return IdleResult(listen_for=_LISTEN_S)
         store["stage"] = _ASK_NAME
         store["rounds"] = 0
+        # Straight into the next question rather than back to the idle window.
+        # Returning _LISTEN_S here put three seconds of silence and a wake-word
+        # window between "yes" and "what's your name?", which reads as the robot
+        # having lost interest -- and is the point a visitor starts talking into
+        # a microphone that is listening for something else.
+        return IdleResult(listen_for=0.0)
 
     def _capture_name(self, ctx: DemoContext) -> IdleResult:
         """One attempt at hearing the name; the confirm slice decides its fate."""

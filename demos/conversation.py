@@ -30,7 +30,7 @@ import logging
 
 from brain import hub
 from demokit import Demo, DemoContext, IdleResult
-from demokit.base import DemoStopped, MAX_LISTEN_WINDOW_S
+from demokit.base import DemoStopped, Interrupted, MAX_LISTEN_WINDOW_S
 
 
 logger = logging.getLogger(__name__)
@@ -96,10 +96,19 @@ class Conversation(Demo):
         """Answer with the Hub's facts in front of the model, and never hand the turn back."""
         try:
             ctx.reply(text, person_id=ctx.person_id(), system=_HUB_BRIEFING)
-        except DemoStopped:
-            # The operator switched away mid-answer and ctx.reply unwound between
-            # sentences. That is the demo behaving, not failing, so it goes to the
-            # runner's guard, which is where the framework decides what it means.
+        except (DemoStopped, Interrupted):
+            # The operator switched away mid-answer, or a visitor talked over it,
+            # and ctx.reply unwound between sentences. Both are the demo
+            # behaving, not failing, so they go to the runner's guard, which is
+            # where the framework decides what they mean.
+            #
+            # Interrupted was missing from this line and that is the whole
+            # reason barge-in never worked. It subclasses Exception, so the
+            # catch below swallowed it, logged "Grounded reply failed" and told
+            # the operator the robot had lost its train of thought -- in the
+            # demo that is selected by default and therefore running almost all
+            # the time. A visitor saying the wake word over an answer got an
+            # error banner instead of the floor.
             raise
         except Exception:
             # Claimed anyway, and this is the whole reason for catching. Left to
