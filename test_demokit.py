@@ -318,7 +318,69 @@ runner.cycle()
 check("a lapsed window waits for the wake word again", runner._audio.calls, before + 1)
 
 print()
-print("[11] audio from the wrong thread is refused, not silently interleaved")
+print("[11] enrolment hears a sentence, finds the name, and confirms before storing")
+
+from body.face import extract_spoken_name  # noqa: E402
+from demos.vision import Vision  # noqa: E402
+
+check("finds the name in a full sentence",
+      extract_spoken_name("MY NAME IS SARAH NICE TO MEET YOU"), "Sarah")
+check("a bare name is enough", extract_spoken_name("tadhg"), "Tadhg")
+check("a correction reads past the rejected name",
+      extract_spoken_name("no my name is not telaget its tadhagath"), "Tadhagath")
+check("a refusal is not a name", extract_spoken_name("i dont want to say"), None)
+check("neither is a command", extract_spoken_name("go to sleep"), None)
+
+
+class EnrolTracker:
+    """Reports an unrecognised face and records what gets enrolled."""
+
+    enabled = True
+
+    def __init__(self):
+        self.enrolled = []
+        self._face = self
+
+    def current(self, max_age_s=1.5):
+        return (None, object())
+
+    def enroll(self, name, face):
+        self.enrolled.append(name)
+        return 42
+
+
+def enrol_run(transcripts):
+    state = RobotState()
+    state.set_demos([{"id": "vision", "label": "V", "help": "", "available": True, "note": ""}])
+    state.set_mode("vision")
+    audio, tracker = FakeAudio(transcripts=list(transcripts)), EnrolTracker()
+    ctx = DemoContext(
+        audio=audio, motion=FakeMotion(), tracker=tracker,
+        state=state, demo_id="vision", store={},
+    )
+    ctx.store["present_since"] = time.monotonic() - 10  # a settled stranger
+    demo = Vision()
+    for _ in range(8):
+        demo.on_idle(ctx)
+    return tracker.enrolled, audio, state
+
+
+enrolled, audio, state = enrol_run(["yes", "my name is sarah nice to meet you", "yes"])
+check("consent, sentence, confirm -> enrolled", enrolled, ["Sarah"])
+check("the name was said back first", any("Sarah. Did I get" in s for s in audio.said), True)
+check("greeting spent, so no hello-again follows", state.mark_greeted("Sarah"), False)
+
+enrolled, _, _ = enrol_run(["yes", "telaget", "no its tadhagath", "yes"])
+check("wrong hearing corrected in one breath", enrolled, ["Tadhagath"])
+
+enrolled, _, _ = enrol_run(["yes", "telaget", "no", "tadhagath", "yes"])
+check("or by a plain no and a fresh try", enrolled, ["Tadhagath"])
+
+enrolled, _, _ = enrol_run(["yes", "telaget", "", ""])
+check("a name never confirmed is never stored", enrolled, [])
+
+print()
+print("[12] audio from the wrong thread is refused, not silently interleaved")
 import threading  # noqa: E402
 
 ctx = DemoContext(

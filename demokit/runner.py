@@ -167,11 +167,6 @@ class DemoRunner:
         self._active_demo: Optional[Demo] = None
         self._ctx: Optional[DemoContext] = None
         self._stores: dict[str, dict] = {}
-        #: Names already greeted this session, so being recognised is a moment
-        #: rather than a running commentary. Names rather than ids because a
-        #: name is what gets said, and two ids for one person -- which face
-        #: recognition does produce -- should still only greet once.
-        self._greeted: set[str] = set()
         #: While now is under this, follow-ups need no wake word. Zero means a
         #: conversation has not been opened yet, so the switch being on changes
         #: nothing until somebody says the wake word once.
@@ -227,10 +222,12 @@ class DemoRunner:
         two mistakes available, greeting someone every time they turn their
         head is much the worse one.
         """
+        # The greeting ledger lives in state (see RobotState.mark_greeted):
+        # enrolment spends the greeting on its own thank-you, and without a
+        # shared record this would greet the person who was just enrolled.
         name = ctx.person_name()
-        if not name or name in self._greeted:
+        if not name or not self._state.mark_greeted(name):
             return
-        self._greeted.add(name)
         logger.info("Recognised %s.", name)
         self._motion.express("happy")
         ctx.say(f"Oh, hello again {name}.", "happy")
@@ -307,8 +304,9 @@ class DemoRunner:
         if name == was:
             return False
         db.rename_person(person_id, name)
-        self._greeted.discard(was)
-        self._greeted.add(name)
+        if was:
+            self._state.forget_greeted(was)
+        self._state.mark_greeted(name)
         logger.info("Renamed person %s from %r to %r.", person_id, was, name)
         ctx.say(f"Sorry about that. {name}. I have it right now.", "happy")
         return True

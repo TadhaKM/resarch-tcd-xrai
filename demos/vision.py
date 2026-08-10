@@ -10,10 +10,13 @@ is legible without a commentary, so most of this file is about not speaking.
 
 The name is asked for and never taken. Voice enrolment was removed from this
 project once before because a noisy transcript became a permanent name bound to
-a face, so the answer goes through body.face.clean_spoken_name and anything it
-rejects is dropped rather than stored. Someone who declines, or who says
-nothing, is not asked again for _ASK_COOLDOWN_S; someone the robot already
-recognises is greeted once and never asked at all.
+a face, so nothing is stored until two separate filters agree: body.face.
+extract_spoken_name pulls the most name-like part out of whatever was said
+("My name is Sarah, nice to meet you" enrols Sarah, not the sentence), and the
+robot then says that name back and waits for a yes. Wrong, the visitor says so
+and gives it again -- two more tries before it stops pestering. Someone who
+declines, or who says nothing, is not asked again for _ASK_COOLDOWN_S; someone
+the robot already recognises is greeted once and never asked at all.
 
 Deliberately absent: any call to ctx.motion.express_move(). A recorded move
 pauses the motion loop for its duration (see MotionController._run), and that
@@ -25,7 +28,7 @@ import re
 import time
 from typing import TYPE_CHECKING
 
-from body.face import clean_spoken_name
+from body.face import extract_spoken_name
 from demokit import Demo, DemoContext, IdleResult
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -60,9 +63,16 @@ _REMARK_COOLDOWN_S = 60.0
 #: all for a zero, and nothing here is worth being deaf for.
 _LISTEN_S = 3.0
 
-#: Said for a transcript that is not a plausible name, and again if enroll
-#: refuses the same text one call later. One string, because it is one failure.
-_NOT_CAUGHT = "Sorry, I did not catch that."
+#: How long each question in the enrolment exchange waits for the visitor to
+#: START answering before handing the turn back. Five seconds covers "um" and a
+#: think; once they are talking, the recogniser's endpoint finishes the
+#: sentence however long it runs, so this bounds silence rather than answers.
+_ANSWER_WAIT_S = 5.0
+
+#: Fresh goes at hearing the name -- the first ask plus retries -- before the
+#: robot stops pestering. The visitor asked to be remembered, so giving up on
+#: the first mishearing wastes their yes; a fourth attempt is badgering.
+_MAX_NAME_ROUNDS = 3
 
 #: Enough of an answer to act on, matched as whole words: "no" sits inside
 #: "know" and "now", and reading a no as a yes interrogates somebody who
@@ -71,11 +81,12 @@ _YES_WORDS = frozenset({"yes", "yeah", "yep", "yup", "sure", "ok", "okay", "plea
 _NO_WORDS = frozenset({"no", "nope", "nah", "not", "never", "rather"})
 _WORD_RE = re.compile(r"[a-z]+")
 
-#: What the robot is waiting to hear. The exchange is spread across turns
-#: rather than held open inside a hook, so each stage is one short question and
-#: the answer arrives through on_utterance like anything else a visitor says.
-_AWAITING_CONSENT = "consent"
-_AWAITING_NAME = "name"
+#: Enrolment stages, held in ctx.store["stage"]. One bounded exchange per idle
+#: slice: each slice says one question and waits at most _ANSWER_WAIT_S for the
+#: answer to begin, so the loop gets the robot back between questions and the
+#: operator can always switch away.
+_ASK_NAME = "ask_name"
+_CONFIRM = "confirm"
 
 #: Questions about the camera itself, which is what this demo's own trigger
 #: phrase is, so it is the first thing many visitors say on arriving here.
@@ -113,10 +124,10 @@ class Vision(Demo):
     #: request for the demonstration. The request forms below cannot be said
     #: about the subject in the abstract.
     triggers = ("show me face tracking", "demo the face tracking", "can you see me")
-    # Not claims_utterances: both questions here are asked with ctx.ask, which
-    # listens inside the hook, so their answers never reach on_utterance and
-    # there is nothing to protect. Someone who says "let's dance" while
-    # standing in front of it should get the dance.
+    # Not claims_utterances: the enrolment questions are asked with ctx.ask,
+    # which listens inside the hook (bounded by _ANSWER_WAIT_S), so their
+    # answers never reach on_utterance and there is nothing to protect. Someone
+    # who says "let's dance" while standing in front of it should get the dance.
 
     def on_enter(self, ctx: DemoContext) -> None:
         """Selected. One line naming what to watch for, then quiet.
@@ -142,14 +153,22 @@ class Vision(Demo):
             return IdleResult(listen_for=_LISTEN_S)
 
         store = ctx.store
+        # A dialogue in progress owns the next slice outright. listen_for=0.0
+        # on the way out is deliberate, against this file's own rule: the next
+        # slice re-enters the dialogue immediately, so the "deafness" lasts one
+        # trip round the loop -- and opening the wake-word or open-mic listener
+        # between two questions of the same exchange would eat the answer.
+        stage = store.get("stage")
+        if stage == _ASK_NAME:
+            return self._capture_name(ctx)
+        if stage == _CONFIRM:
+            return self._confirm_name(ctx, tracker)
+
         person_id, face = tracker.current(max_age_s=_PRESENT_AGE_S)
         if face is None:
             if store.get("present_since") is not None:
                 self._on_leaving(ctx)
             store["present_since"] = None
-            # A pending yes belongs to the person who said it, and they have
-            # gone. Whoever appears next is not answering their question.
-            store["wants_to_be_known"] = False
             return IdleResult(listen_for=_LISTEN_S)
 
         present_since = store.get("present_since")
@@ -173,29 +192,7 @@ class Vision(Demo):
         return IdleResult(listen_for=_LISTEN_S)
 
     def on_utterance(self, ctx: DemoContext, text: str) -> bool:
-        """Take the answer to whatever this demo last asked, or the camera question.
-
-        The two-step exchange lives here rather than in on_idle because
-        listening inside a hook holds the voice loop for as long as the
-        recogniser takes -- up to 25 seconds -- during which the robot cannot
-        be switched away from or interrupted. Speaking the question and
-        collecting the answer on a later turn keeps every hook short.
-        """
-        stage = ctx.store.get("stage")
-        if stage == _AWAITING_CONSENT:
-            ctx.store["stage"] = None
-            if _is_yes(text):
-                self._ask_name(ctx)
-            else:
-                ctx.status("Name declined; not asking again for a while.")
-            return True
-        if stage == _AWAITING_NAME:
-            ctx.store["stage"] = None
-            tracker = ctx.tracker
-            if tracker is not None and tracker.enabled:
-                self._take_name(ctx, tracker, text)
-            return True
-
+        """Answer the camera question; the enrolment dialogue never comes here."""
         lowered = text.lower()
         if not any(phrase in lowered for phrase in _SEEING_PHRASES):
             return False
@@ -258,13 +255,12 @@ class Vision(Demo):
     def _offer(self, ctx: DemoContext) -> None:
         """Ask an unrecognised visitor, at most once per cooldown, to be known.
 
-        Speaks and returns. The answer arrives through on_utterance on a later
-        slice, because ctx.ask would listen inside this hook: AudioIO.listen
-        returns only on a recogniser endpoint and is bounded at 25s, so one
-        offer could hold the voice loop -- and the microphone, and the
-        operator's ability to switch demo -- for the better part of half a
-        minute. Speaking and handing the turn back costs a wake word from the
-        visitor and keeps the robot answerable throughout.
+        The whole exchange is direct question-and-answer -- no wake word, no
+        instructions -- because a person who has just been asked a question is
+        going to answer it, and the robot telling them how to answer was the
+        last piece of operating manual it still read aloud. Each ctx.ask waits
+        _ANSWER_WAIT_S for speech to start and then lets the recogniser finish
+        the sentence, so no single hook holds the loop for long.
         """
         store = ctx.store
         offered_at = store.get("offered_at")
@@ -274,41 +270,92 @@ class Vision(Demo):
         # mid-sentence still counts as having asked, so the visitor is not
         # asked again on the way back.
         store["offered_at"] = time.monotonic()
-        store["stage"] = _AWAITING_CONSENT
-        ctx.say(
-            "Would you like to tell me your name, so I know you next time? "
-            "Say hey Reachy, then yes or no.",
+        answer = ctx.ask(
+            "I could remember you by name, if you like. Want me to?",
             "curious",
+            wait_for_speech_s=_ANSWER_WAIT_S,
         )
-
-    def _ask_name(self, ctx: DemoContext) -> None:
-        """Invite the name. Answered through on_utterance, for the same reason."""
-        ctx.store["stage"] = _AWAITING_NAME
-        # The only place the robot still explains itself, and only when it must:
-        # the answer arrives through the wake-word path, so with the mic shut a
-        # visitor who just says their name is talking into a microphone nobody
-        # opened, and the offer to remember them quietly fails. With open mic on
-        # there is nothing to explain, so it does not.
-        if ctx.state.open_mic:
-            ctx.say("What's your name?", "curious")
-        else:
-            ctx.say("What's your name? Say hey Reachy first.", "curious")
-
-    def _take_name(self, ctx: DemoContext, tracker: "FaceTracker", heard: str) -> None:
-        """Enrol the name just heard against the face in view right now."""
-        name = clean_spoken_name(heard)
-        if name is None:
-            # Nothing unvalidated is ever stored. A mis-decode here is not a
-            # wrong answer that the next sentence corrects; it is a permanent
-            # name bound to a face embedding, undone only by editing the
-            # database.
-            ctx.status(f"Name rejected as implausible: {heard!r}")
-            ctx.say(_NOT_CAUGHT, "sad")
+        if not _is_yes(answer):
+            ctx.status("Name declined; not asking again for a while.")
             return
+        store["stage"] = _ASK_NAME
+        store["rounds"] = 0
 
-        # Re-read rather than reusing the face from the top of the slice: that
-        # one is several seconds old by the time the name arrives, and the face
-        # this name belongs to is the one in front of the camera now.
+    def _capture_name(self, ctx: DemoContext) -> IdleResult:
+        """One attempt at hearing the name; the confirm slice decides its fate."""
+        store = ctx.store
+        store["rounds"] = store.get("rounds", 0) + 1
+        prompt = "What's your name?" if store["rounds"] == 1 else "One more time. Just your name."
+        heard = ctx.ask(prompt, "curious", wait_for_speech_s=_ANSWER_WAIT_S)
+
+        name = extract_spoken_name(heard)
+        if name is None:
+            if heard:
+                ctx.status(f"No name found in {heard!r}")
+            if store["rounds"] >= _MAX_NAME_ROUNDS:
+                store["stage"] = None
+                ctx.say("I'm not catching it, sorry. We can try again later.", "sad")
+                return IdleResult(listen_for=_LISTEN_S)
+            return IdleResult(listen_for=0.0)  # straight back in to re-ask
+
+        store["candidate"] = name
+        store["confirm_silences"] = 0
+        store["stage"] = _CONFIRM
+        return IdleResult(listen_for=0.0)
+
+    def _confirm_name(self, ctx: DemoContext, tracker: "FaceTracker") -> IdleResult:
+        """Say the name back and only store it on a yes.
+
+        This is the guard that lets extraction be permissive: a mis-decode here
+        is not a wrong answer the next sentence corrects, it is a permanent
+        name bound to a face embedding -- so nothing reaches the database that
+        the visitor has not heard aloud and agreed to.
+        """
+        store = ctx.store
+        name = store.get("candidate") or ""
+        answer = ctx.ask(f"{name}. Did I get that right?", "curious", wait_for_speech_s=_ANSWER_WAIT_S)
+
+        if _is_yes(answer):
+            store["stage"] = None
+            self._enroll(ctx, tracker, name)
+            return IdleResult(listen_for=_LISTEN_S)
+
+        # "No, it's Sarah" corrects and confirms in one breath: take the new
+        # name and check that one instead of making them start over.
+        corrected = extract_spoken_name(answer)
+        if corrected and corrected.lower() != name.lower():
+            store["candidate"] = corrected
+            store["rounds"] = store.get("rounds", 0) + 1
+            if store["rounds"] > _MAX_NAME_ROUNDS:
+                store["stage"] = None
+                ctx.say("I keep getting it wrong, sorry. Another time.", "sad")
+                return IdleResult(listen_for=_LISTEN_S)
+            return IdleResult(listen_for=0.0)
+
+        if not answer.strip():
+            # Silence is not a no: they may not have realised it was a
+            # question. One repeat, then leave them alone.
+            silences = store.get("confirm_silences", 0) + 1
+            store["confirm_silences"] = silences
+            if silences < 2:
+                return IdleResult(listen_for=0.0)
+            store["stage"] = None
+            ctx.status("No confirmation; nothing stored.")
+            return IdleResult(listen_for=_LISTEN_S)
+
+        # A plain no. Ask again from the top if tries remain.
+        if store.get("rounds", 0) >= _MAX_NAME_ROUNDS:
+            store["stage"] = None
+            ctx.say("Sorry about that. Another time, then.", "sad")
+            return IdleResult(listen_for=_LISTEN_S)
+        store["stage"] = _ASK_NAME
+        return IdleResult(listen_for=0.0)
+
+    def _enroll(self, ctx: DemoContext, tracker: "FaceTracker", name: str) -> None:
+        """Bind the confirmed name to the face in view right now."""
+        # Re-read rather than reusing a face from earlier in the exchange: that
+        # one is many seconds old by now, and the face this name belongs to is
+        # the one in front of the camera at the moment of storing.
         _person_id, face = tracker.current(max_age_s=_PRESENT_AGE_S)
         if face is None:
             ctx.say(f"I have lost sight of you, {name}. Another time.", "sad")
@@ -320,13 +367,11 @@ class Vision(Demo):
         # thread, which face_tracker.py exists to avoid.
         person_id = tracker._face.enroll(name, face)
         if person_id is None:
-            # enroll validates the name again and refuses exactly what
-            # clean_spoken_name refuses, so this is that failure arriving late.
-            ctx.say(_NOT_CAUGHT, "sad")
+            ctx.say("Sorry, I could not save that. Another time.", "sad")
             return
-        # The greeting is spent here, otherwise the next slice recognises the
-        # face it has just been handed and says hello again to somebody who
-        # never left.
-        ctx.store.setdefault("greeted", set()).add(person_id)
+        # The session greeting is spent here, on the thank-you: the tracker
+        # starts recognising this face within seconds, and without this the
+        # runner follows "thank you, Sarah" with "oh, hello again Sarah".
+        ctx.state.mark_greeted(name)
         ctx.status(f"Enrolled {name} as person {person_id}.")
         ctx.say(f"Thank you, {name}. I will know you next time.", "happy")

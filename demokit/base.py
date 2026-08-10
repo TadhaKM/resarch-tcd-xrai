@@ -298,13 +298,20 @@ class DemoContext:
 
     # --- listening -------------------------------------------------------
 
-    def listen(self) -> str:
-        """Transcribe one utterance. Returns "" if nothing was understood."""
+    def listen(self, wait_for_speech_s: Optional[float] = None) -> str:
+        """Transcribe one utterance. Returns "" if nothing was understood.
+
+        `wait_for_speech_s` bounds only the wait for speech to BEGIN -- once
+        someone is talking, the recogniser's endpoint finishes the sentence.
+        Pass it from any hook that listens directly: without a bound, a visitor
+        who walks away mid-exchange leaves the robot holding the microphone for
+        the full utterance ceiling, unswitchable the whole time.
+        """
         self._require_loop_thread("listen")
         self._stop_if_switched()
         self.state.set_flags(listening=True)
         try:
-            heard = self.audio.listen() or ""
+            heard = self.audio.listen(wait_for_speech_s=wait_for_speech_s) or ""
         finally:
             self.state.set_flags(listening=False)
         heard = heard.strip()
@@ -312,10 +319,16 @@ class DemoContext:
             self.state.add("heard", heard)
         return heard
 
-    def ask(self, question: str, emotion: str = "curious") -> str:
+    def ask(
+        self,
+        question: str,
+        emotion: str = "curious",
+        *,
+        wait_for_speech_s: Optional[float] = None,
+    ) -> str:
         """Say something and listen for the answer. "" if nothing came back."""
         self.say(question, emotion)
-        return self.listen()
+        return self.listen(wait_for_speech_s=wait_for_speech_s)
 
     def wait_for_wake_word(self, seconds: float) -> bool:
         """Listen for the wake word for at most `seconds`."""

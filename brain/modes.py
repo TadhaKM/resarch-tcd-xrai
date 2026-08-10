@@ -73,6 +73,8 @@ class RobotState:
         #: when showing the contrast, where saying "switch personality" twice to
         #: reach the third one is a demonstration of patience.
         self._persona = ""
+        #: Names greeted this session. See mark_greeted.
+        self._greeted_names: set[str] = set()
         #: Bumped whenever the dashboard picks one, so the demo can tell an
         #: operator's choice from its own last selection and re-answer.
         self._persona_seq = 0
@@ -188,6 +190,26 @@ class RobotState:
             self._persona_seq += 1
         self.add("status", f"Personality: {chosen.label}")
         return chosen.id
+
+    def mark_greeted(self, name: str) -> bool:
+        """Claim the one per-session greeting for `name`. True for the claimant.
+
+        In state rather than in the runner because two places spend it: the
+        runner greets a recognised face, and the vision demo's enrolment ends
+        on "thank you, Sarah" -- after which the tracker starts recognising
+        her, and without a shared record the runner follows the thank-you with
+        "oh, hello again Sarah" three seconds later.
+        """
+        with self._lock:
+            if name in self._greeted_names:
+                return False
+            self._greeted_names.add(name)
+            return True
+
+    def forget_greeted(self, name: str) -> None:
+        """Release a spent greeting -- used when a name turns out to be wrong."""
+        with self._lock:
+            self._greeted_names.discard(name)
 
     def set_web_search_available(self, available: bool) -> None:
         with self._lock:

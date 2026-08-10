@@ -79,6 +79,113 @@ def clean_spoken_name(text: str) -> Optional[str]:
     return " ".join(word.capitalize() for word in words)
 
 
+#: How real answers to "what's your name?" decorate the name. The LAST one in
+#: the sentence wins, because a correction restates the wrong name first: in
+#: "no, my name is not Telaget, it's Tadhg", cutting at the first cue captures
+#: the rejected name and cutting at the last captures the right one.
+_NAME_LEAD_INS = (
+    "my name is",
+    "my names",
+    "the name is",
+    "name is",
+    "they call me",
+    "you can call me",
+    "call me",
+    "i am",
+    "im",
+    "it is",
+    "its",
+    "this is",
+)
+
+#: Noise people open an answer with, stripped from the front until something
+#: substantive remains: "um, yeah, Sarah" is an answer of one word.
+_LEADING_FILLER = frozenset({
+    "um", "uh", "er", "ah", "eh", "oh", "well", "so", "yes", "yeah", "yep",
+    "no", "nope", "nah", "ok", "okay", "hi", "hello", "hey", "reachy", "sure",
+    "right", "please", "actually", "sorry",
+})
+
+#: Words that end the name and begin the pleasantry: "Sarah, nice to meet you"
+#: is a one-word answer with a five-word tail. Includes prepositions because
+#: "John, by the way" and "Anna from accounts" both carry the name up front.
+_TRAILING_STOP = frozenset({
+    "nice", "and", "but", "thanks", "thank", "by", "anyway", "so", "to", "of",
+    "for", "in", "on", "at", "with", "from", "how", "what", "who", "hello",
+    "hi", "hey", "its", "the", "a", "an", "please", "actually", "okay", "ok",
+    "here", "there", "everyone", "everybody",
+})
+
+#: A candidate containing any of these is a sentence, not a name. Names are an
+#: open class so there is no whitelist to check against; what can be said is
+#: that nobody is called Dont, Want or Know, and those are exactly the words in
+#: the answers that are not answers -- "I don't want to say", "you know my
+#: name", "why are you asking".
+_NOT_IN_NAMES = frozenset({
+    "dont", "don", "not", "know", "want", "say", "said", "see", "think", "why",
+    "what", "who", "where", "when", "how", "me", "you", "your", "my", "name",
+    "cant", "can", "wont", "will", "tell", "asking", "talking", "nothing",
+    "question", "again", "already", "sleep", "go", "stop", "never", "mind",
+})
+
+
+def extract_spoken_name(text: str) -> Optional[str]:
+    """Pull the most name-like part out of one spoken answer, or None.
+
+    clean_spoken_name validates a string that is supposed to BE a name, and
+    rejects anything longer than four words -- correct for what it does, but it
+    made "My name is Sarah, nice to meet you" fail enrolment outright, and that
+    is the single most natural way to answer the question being asked. This
+    finds the name inside the sentence instead: cut after the last lead-in
+    ("my name is", "it's"), drop the opening filler, stop at the first word
+    that starts a pleasantry, and only then hand the remainder to
+    clean_spoken_name for the final say.
+
+    Extraction is deliberately permissive and enrolment survives that because
+    the demo now says the name back and asks before storing anything -- the
+    confirmation is the real guard; this just has to put a plausible candidate
+    in front of it.
+    """
+    words = [w.replace("'", "") for w in re.findall(r"[a-z']+", (text or "").lower())]
+    if not words:
+        return None
+
+    def candidate(tail: list[str]) -> Optional[str]:
+        kept = []
+        for word in tail:
+            if word in _TRAILING_STOP:
+                break
+            kept.append(word)
+        if not kept or any(word in _NOT_IN_NAMES for word in kept):
+            return None
+        if any(word in _LEADING_FILLER for word in kept):
+            # "yeah yeah whatever" survives the front-strip only when filler
+            # sits mid-candidate, and a name does not have filler in its middle.
+            return None
+        return clean_spoken_name(" ".join(kept))
+
+    # The words after the last lead-in phrase, if any is present.
+    joined = " " + " ".join(words) + " "
+    cut = -1
+    for cue in _NAME_LEAD_INS:
+        at = joined.rfind(f" {cue} ")
+        if at >= 0:
+            end = at + len(cue) + 2
+            cut = max(cut, len(joined[:end].split()))
+    if cut >= 0:
+        found = candidate(words[cut:])
+        if found:
+            return found
+        # A lead-in whose tail is not a name was not introducing one: in
+        # "Sarah, and this is my friend", the "this is" belongs to the friend
+        # and the name sits at the front, so fall through and read it there.
+
+    front = list(words)
+    while front and front[0] in _LEADING_FILLER:
+        front.pop(0)
+    return candidate(front)
+
+
 @dataclass(frozen=True)
 class DetectedFace:
     """A detected face and the embedding-ready crop."""

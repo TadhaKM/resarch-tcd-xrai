@@ -137,15 +137,21 @@ groups because they participate rather than watch.
 ### Getting it to remember someone
 
 In **Vision & Face Tracking**, it offers to learn the name of a face it doesn't
-know. Say **"Hey Reachy, yes"**, then **"Hey Reachy,"** and your name. It
-greets you by name next time it sees you, in every demo.
+know. From there it's just a conversation — **no "Hey Reachy" needed for any of
+it**. Say yes, tell it your name however you like (*"my name's Sarah, nice to
+meet you"* works fine — it picks the name out), and it says the name back to
+check: *"Sarah. Did I get that right?"*
 
-**If it hears the name wrong** — and it often will, names are the hardest thing
-for speech recognition — just tell it: *"Hey Reachy, that's not my name, it's
-Sarah."* It corrects itself and remembers the new spelling.
+**Nothing is saved until you say yes to that.** If it heard wrong, say so —
+*"no, it's Sara"* — and it checks the new one. It gets three goes, then leaves
+you alone rather than nagging.
 
-It only asks once, and won't ask again for ten minutes, so it doesn't pester a
-room full of people.
+Once it knows you, it greets you by name in every demo. If a wrong name ever
+slips through anyway, say *"Hey Reachy, that's not my name, it's Sarah"* any
+time and it corrects itself.
+
+It only offers once, and won't ask again for ten minutes, so it doesn't pester
+a room full of people.
 
 ---
 
