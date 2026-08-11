@@ -496,6 +496,24 @@ check("cached answers are per persona", _qa._context_digest(a) != _qa._context_d
 
 check("an unknown persona means none, not Professional", RobotState().set_persona("nonsense"), "")
 
+# Each persona speaks in a different voice, not just at a different pace. The
+# files are checked here rather than assumed: a persona naming a voice that is
+# not installed falls back silently, so the only symptom would be two personas
+# sounding identical.
+from pathlib import Path as _Path  # noqa: E402
+
+from brain import personas as _p  # noqa: E402
+
+_tts = _Path(__file__).resolve().parent / "models" / "tts"
+_named = [p.voice for p in _p.PERSONAS if p.voice]
+check("every persona names a voice", len(_named), len(_p.PERSONAS))
+check("all of them distinct", len(set(_named)), len(_named))
+check(
+    "and installed",
+    [v for v in _named if not (_tts / f"{v}.onnx").exists()],
+    [],
+)
+
 print()
 print("[14] audio from the wrong thread is refused, not silently interleaved")
 import threading  # noqa: E402

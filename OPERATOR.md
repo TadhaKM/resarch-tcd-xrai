@@ -75,7 +75,7 @@ Along the top:
 | 🧠 with a model name | Which AI is answering, and whether it's on the laptop or online |
 | 🌐 **Web search** | Off by default. Tick it to let Reachy look things up — see below |
 | 🎤 **Open mic** | Off by default. Tick it and follow-up questions don't need "Hey Reachy" — see below |
-| 🎭 dropdown | The robot's manner **everywhere** — wording, tone of voice, how it holds its head. "Default" is its own |
+| 🎭 dropdown | The robot's manner **everywhere** — its speaking voice, its wording, how it holds its head. "Default" is its own |
 | 🔊 slider | Speaker volume |
 | A dropdown | Which voice it speaks in — four to choose from |
 | **Clear answers** | Makes it forget answers it has memorised. Only needed if it keeps repeating something wrong |
@@ -100,8 +100,17 @@ and the robot.
 
 **AI Personality** — the **🎭 dropdown changes the whole robot**, not just this
 demo. Pick Professional, Friendly or Consultant and everything it says, in
-every demonstration, changes with it: the wording, the speed and warmth of its
-voice, and how it holds its head. "Default" is its own manner.
+every demonstration, changes with it: **a different speaking voice**, different
+wording, and how it holds its head. "Default" is its own manner.
+
+| Character | Sounds like |
+|---|---|
+| **Professional** | A level, formal male voice. Answers narrowly and says what it's unsure of |
+| **Friendly** | The robot's usual warm voice, quicker and more animated. Everyday comparisons |
+| **Consultant** | A lower male voice. Gives you the trade-off and asks what matters most |
+
+The 🔊 voice dropdown still works: pick a voice by hand and it keeps it until
+you change character, at which point that character's voice takes over again.
 
 This demo is where the difference is easiest to *show*, because it re-answers
 the **same question** as each character back to back — the only way a listener

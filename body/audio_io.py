@@ -268,6 +268,13 @@ class AudioIO:
         )
         self._voice = PiperVoice.load(str(MODELS.tts_model_path), str(MODELS.tts_config_path))
         self._voice_name = MODELS.tts_model_path.stem
+        #: Piper voices already loaded, by file stem. A persona owns a voice,
+        #: so switching persona must not re-read a model off disk per sentence.
+        self._voice_cache: dict[str, Any] = {self._voice_name: self._voice}
+        #: A voice the operator chose by hand, which outranks the persona's
+        #: until a different persona is picked. See _speaking_voice.
+        self._voice_override: Optional[str] = None
+        self._persona_seq_seen = -1
 
         self._robot: Optional[Any] = robot
         self._owns_robot = robot is None
@@ -617,9 +624,62 @@ class AudioIO:
                 names.append(model.stem)
         return names
 
+    def _load_voice(self, name: str):
+        """A loaded piper voice by file stem, cached. None if unusable.
+
+        Cached because a persona owns a voice now, and loading a model takes
+        long enough to hear: uncached, every sentence after a persona switch
+        would pause while the same file was read off disk again. Three medium
+        voices sit in memory at once, which is the cost of the personas being
+        told apart by speaker rather than only by pace.
+        """
+        if name in self._voice_cache:
+            return self._voice_cache[name]
+        folder = MODELS.tts_model_path.parent
+        model, config = folder / f"{name}.onnx", folder / f"{name}.onnx.json"
+        loaded = None
+        if not model.exists() or not config.exists():
+            logger.warning("Voice %r is not installed in %s", name, folder)
+        else:
+            try:
+                loaded = PiperVoice.load(str(model), str(config))
+                logger.info("Loaded voice %s", name)
+            except Exception:
+                logger.exception("Could not load voice %r", name)
+        # Cached even when it failed, so a missing voice is one warning rather
+        # than one per sentence for the rest of the visit.
+        self._voice_cache[name] = loaded
+        return loaded
+
+    def _speaking_voice(self):
+        """(voice, name) to speak this line in.
+
+        A persona names a voice, and picking a persona picks it. An operator
+        who then chooses a voice by hand wins until the persona changes again,
+        which is the behaviour that needs no explaining in either direction:
+        choosing a character gives you its voice, and choosing a voice gives
+        you that voice.
+        """
+        persona_id, seq = STATE.persona
+        if seq != self._persona_seq_seen:
+            self._persona_seq_seen = seq
+            self._voice_override = None
+        if self._voice_override is None:
+            persona = personas.active(persona_id)
+            if persona is not None and persona.voice:
+                loaded = self._load_voice(persona.voice)
+                if loaded is not None:
+                    return loaded, persona.voice
+        return self._voice, self._voice_name
+
     @property
     def voice_name(self) -> str:
-        return self._voice_name
+        """The voice actually being spoken in, persona included.
+
+        Reports the effective voice rather than the last one set by hand, so
+        the dashboard cannot show a voice the robot is not using.
+        """
+        return self._speaking_voice()[1]
 
     def set_voice(self, name: str) -> bool:
         """Switch the speaking voice. Voice-loop thread only.
@@ -641,6 +701,17 @@ class AudioIO:
             logger.exception("Could not load voice %r; keeping %s", name, self._voice_name)
             return False
         self._voice_name = name
+        # Remembered as a deliberate choice, so it outranks the persona's own
+        # voice until a different persona is picked. Without this the operator
+        # could not choose a voice at all while a persona was active -- the
+        # next sentence would simply be back in the persona's.
+        #
+        # The sequence number is stamped here as well as in _speaking_voice,
+        # and that is not redundant: a persona picked and a voice chosen with
+        # nothing spoken in between left an unobserved change pending, so the
+        # very next line cleared the override the operator had just set.
+        self._voice_override = name
+        self._persona_seq_seen = STATE.persona[1]
         logger.info("Voice set to %s", name)
         return True
 
@@ -906,13 +977,14 @@ class AudioIO:
                 if persona is not None
                 else _CHAT_SYNTHESIS
             )
+        voice, _name = self._speaking_voice()
         if motion is not None:
             motion.begin_speech()
         try:
             if self.target.mode == "robot":
-                self._speak_robot(text, motion, syn_config)
+                self._speak_robot(text, motion, syn_config, voice)
             else:
-                self._speak_local(text, motion, syn_config)
+                self._speak_local(text, motion, syn_config, voice)
         finally:
             if motion is not None:
                 motion.end_speech()
@@ -930,9 +1002,9 @@ class AudioIO:
             self._mic_fresh = False
 
     def _speak_local(
-        self, text: str, motion: Optional[Any], syn_config: SynthesisConfig
+        self, text: str, motion: Optional[Any], syn_config: SynthesisConfig, voice: Any = None
     ) -> None:
-        for chunk in self._voice.synthesize(text, syn_config=syn_config):
+        for chunk in (voice or self._voice).synthesize(text, syn_config=syn_config):
             if motion is not None:
                 motion.feed_speech_audio(chunk.audio_float_array)
             sd.play(
@@ -943,7 +1015,7 @@ class AudioIO:
             sd.wait()
 
     def _speak_robot(
-        self, text: str, motion: Optional[Any], syn_config: SynthesisConfig
+        self, text: str, motion: Optional[Any], syn_config: SynthesisConfig, voice: Any = None
     ) -> None:
         """Stream synthesized audio to the robot, keeping its buffer ahead.
 
@@ -959,7 +1031,7 @@ class AudioIO:
         started = time.monotonic()
         pushed_s = 0.0
 
-        for chunk in self._voice.synthesize(text, syn_config=syn_config):
+        for chunk in (voice or self._voice).synthesize(text, syn_config=syn_config):
             if motion is not None:
                 motion.feed_speech_audio(chunk.audio_float_array)
             audio = _resample(chunk.audio_float_array, chunk.sample_rate, output_rate)

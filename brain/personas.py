@@ -9,7 +9,11 @@ prompt. Each one carries three things that a listener can actually perceive:
   hedge it, warm it up, turn it into a question -- not merely what tone to
   affect, because "be professional" alone produces the same reply with longer
   words.
-- `pace` and `variation`: abstract voice character, mapped to a synthesis
+- `voice`: which installed speaker says it. A different person, not the same
+  person at a different speed -- three characters separated only by pace and
+  prosody still read as one voice doing impressions, and the difference has to
+  land in the first syllable to be worth a dropdown.
+- `pace` and `variation`: how that speaker delivers it, mapped to a synthesis
   config by body/audio_io.py::_voice_config and reaching it through
   ctx.say/ctx.reply. Kept abstract here on purpose: brain/ stays
   hardware-independent, so nothing in this file imports piper.
@@ -51,6 +55,13 @@ class Persona:
     variation: float
     #: Resting expression from emotion.VALID_EMOTION_TAGS.
     pose: str
+    #: Installed piper voice to speak in, by file stem, or "" to keep whatever
+    #: voice is already selected. A different SPEAKER, not merely a different
+    #: pace: pace and variation reshape one voice, and three characters built
+    #: only out of those still read as one person doing impressions. Named
+    #: rather than described because the file has to exist -- see
+    #: AudioIO.available_voices; an absent one falls back rather than failing.
+    voice: str = ""
 
 
 PROFESSIONAL = Persona(
@@ -72,6 +83,9 @@ PROFESSIONAL = Persona(
     pace=1.10,
     variation=0.55,
     pose="neutral",
+    # Lessac is the most formal of the installed voices: level, unhurried, and
+    # the least inclined to lift at the end of a sentence.
+    voice="en_US-lessac-medium",
 )
 
 FRIENDLY = Persona(
@@ -92,6 +106,10 @@ FRIENDLY = Persona(
     pace=0.95,
     variation=0.90,
     pose="happy",
+    # Amy, the robot's own default: the warmest of the four, and the one people
+    # have already heard it use, which suits the persona that is meant to sound
+    # like the robot being itself at its friendliest.
+    voice="en_US-amy-medium",
 )
 
 CONSULTANT = Persona(
@@ -112,6 +130,10 @@ CONSULTANT = Persona(
     pace=1.03,
     variation=0.68,
     pose="thinking",
+    # Ryan: a different speaker again, and lower -- so the three personas are
+    # told apart in the first syllable rather than after a sentence of
+    # listening for a difference in phrasing.
+    voice="en_US-ryan-medium",
 )
 
 #: Order here is the order offered to visitors.
