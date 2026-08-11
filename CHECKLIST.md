@@ -317,11 +317,12 @@ room with visitors, and the code can only show that the machinery is present.
 
 ### Punch list, in the order worth doing
 
-1. **Run the four live tests in Section 6.** Nothing else on this list is
-   likely to bite you on an open day as hard as an untested cold start. In
-   order: cold start with a stopwatch; switch demos mid-sentence; pull the
-   network mid-answer; run it once on the Hub's own network rather than a
-   hotspot.
+1. **Run the remaining live tests in Section 6.** Barge-in is now confirmed
+   working, which was the largest unknown. Left, in order: cold start with a
+   stopwatch; switch demos mid-sentence; pull the network mid-answer; run it
+   once on the Hub's own network rather than a hotspot. Nothing else on this
+   list is likely to bite you on an open day as hard as an untested cold
+   start.
 2. **Decide about the brainstorming summary** (3F). The only item that does not
    meet the spec as written. Either accept the closing question as the ending,
    or restore a summary — in which case make it model-written rather than the
