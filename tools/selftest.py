@@ -220,12 +220,23 @@ def check_speech() -> "object":
     def norm(s: str) -> str:
         return "".join(ch for ch in s.lower() if ch.isalnum() or ch == " ").split().__str__()
 
+    # Best of three, re-synthesizing each time, for the same reason the wake
+    # phrases above are: piper is stochastic, so each take is an independent
+    # trial and one unlucky one is not evidence of anything. Measured over ten
+    # takes, "can you dance for me" decodes correctly 9 times and lands as
+    # "10. You dance for me." the tenth -- piper's rendering of "can you"
+    # occasionally sounding like "ten you", not a fault in the recognizer.
+    # Single-shot, that put a roughly one-in-ten spurious FAIL on every run of
+    # this script, which is the surest way to teach somebody to ignore it.
     for text in [
         "what can you do", "how are you today", "can you dance for me",
         "tell me about robots", "what is the weather like today",
     ]:
-        got = audio._transcribe_whisper(_synthesize(audio._voice, text))
-        report(PASS if norm(got) == norm(text) else FAIL, f"{text!r}", f"heard {got!r}")
+        heard = [audio._transcribe_whisper(_synthesize(audio._voice, text)) for _ in range(3)]
+        hits = sum(norm(got) == norm(text) for got in heard)
+        status = PASS if hits >= 2 else WARN if hits == 1 else FAIL
+        wrong = next((g for g in heard if norm(g) != norm(text)), "")
+        report(status, f"{text!r}", f"{hits}/3" + (f", once heard {wrong!r}" if wrong else ""))
     return audio
 
 
