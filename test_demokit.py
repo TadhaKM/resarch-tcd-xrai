@@ -536,27 +536,29 @@ for _demo_id in _REG.ids():
     )
 
 _st = RobotState()
-_st.set_demo_persona("friendly")
-check("a demo's manner applies when none is chosen", _st.effective_persona[0], "friendly")
+_st.apply_demo_persona("friendly")
+check("entering a demo applies its manner", _st.persona[0], "friendly")
 _st.set_persona("consultant")
-check("the operator's choice outranks it", _st.effective_persona[0], "consultant")
-_st.set_persona("")
-check("and Default hands it back to the demo", _st.effective_persona[0], "friendly")
-# The dropdown must keep reading Default, or an operator who chose nothing sees
-# whichever demo they happen to be in reported back as their own choice.
-check("the dropdown still shows the operator's choice", _st.snapshot()["persona"], "")
-check("with the live manner published separately",
-      _st.snapshot()["effective_persona"], "friendly")
+check("the dropdown overrides it", _st.persona[0], "consultant")
+
+# The rule that matters: the preset is the intent, so switching demo snaps to
+# it. Held the other way, one curious press of the dropdown left every later
+# demonstration stuck in a character nobody wanted there.
+_st.apply_demo_persona("professional")
+check("switching demo snaps back to that demo's preset", _st.persona[0], "professional")
+_st.apply_demo_persona("")
+check("including back to default", _st.persona[0], "")
+# One value, so the dropdown always reads what the robot is actually doing.
+_st.apply_demo_persona("friendly")
+check("and the dropdown shows it", _st.snapshot()["persona"], "friendly")
 
 # A voice picked by hand has to survive walking between demos, or choosing one
 # is pointless -- the next demo switch would take it back.
-_before = _st.effective_persona[1]
-_st.set_demo_persona("professional")
-check("a demo switch does not disturb a hand-picked voice",
-      _st.effective_persona[1], _before)
+_before = _st.persona[1]
+_st.apply_demo_persona("professional")
+check("a demo switch does not disturb a hand-picked voice", _st.persona[1], _before)
 _st.set_persona("friendly")
-check("but the operator changing personality does",
-      _st.effective_persona[1] != _before, True)
+check("but the operator changing personality does", _st.persona[1] != _before, True)
 
 print()
 print("[15] a name, once learned, is never forgotten")

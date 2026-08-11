@@ -73,9 +73,6 @@ class RobotState:
         #: when showing the contrast, where saying "switch personality" twice to
         #: reach the third one is a demonstration of patience.
         self._persona = ""
-        #: The manner the active demo asks for, published by the runner when
-        #: it enters one. Outranked by the operator's own choice above.
-        self._demo_persona = ""
         #: Names greeted this session. See mark_greeted.
         self._greeted_names: set[str] = set()
         #: Bumped whenever the dashboard picks one, so the demo can tell an
@@ -179,35 +176,35 @@ class RobotState:
 
     @property
     def persona(self) -> tuple[str, int]:
-        """The OPERATOR's chosen style and the sequence number of that choice.
+        """The manner in use, and the sequence number of the last hand pick.
 
-        "" means they have not chosen one, which is what the dashboard shows as
-        Default -- not a style. What the robot actually speaks in is
-        effective_persona, which falls back to the demo's own preference.
+        One value, not an operator choice layered over a demo default: each
+        demo snaps this to its own preset as it is entered, and choosing from
+        the dropdown overrides it until the next switch. So the dropdown always
+        reads what the robot is actually doing, which the two-layer version
+        could not -- it showed Default while the robot spoke as somebody.
+
+        The sequence number counts only hand picks. It is what releases a voice
+        chosen by hand, and that has to survive walking between demos:
+        otherwise choosing a voice at all is pointless, since the next switch
+        would take it straight back.
         """
         with self._lock:
             return self._persona, self._persona_seq
 
-    @property
-    def effective_persona(self) -> tuple[str, int]:
-        """The manner to actually use, and the operator's sequence number.
+    def apply_demo_persona(self, persona_id: str) -> None:
+        """Snap to the manner a demo asks for. Runner only, on entry.
 
-        The operator's choice wins outright; with none chosen, each demo may
-        ask for one (a welcome is friendlier than a brainstorm, and neither
-        should need saying out loud).
+        Deliberately outranks whatever was picked before, because the presets
+        ARE the intent: Welcome is friendly and Brainstorming is professional,
+        and an operator who tried Consultant once should not have every later
+        demonstration stuck in it.
 
-        The sequence number tracks only the OPERATOR's changes on purpose. It
-        is what clears a voice picked by hand, and a voice picked by hand
-        should survive walking between demos -- otherwise choosing a voice at
-        all is pointless, since the next demo switch would take it back.
+        Does not bump the sequence number: this is not a hand pick, so a voice
+        the operator chose deliberately survives the switch.
         """
         with self._lock:
-            return (self._persona or self._demo_persona), self._persona_seq
-
-    def set_demo_persona(self, persona_id: str) -> None:
-        """Publish the active demo's preferred manner. Runner only."""
-        with self._lock:
-            self._demo_persona = persona_id or ""
+            self._persona = persona_id or ""
 
     def set_persona(self, persona_id: str) -> str:
         """Set the robot's standing manner. "" means its own, unstyled.
@@ -415,12 +412,6 @@ class RobotState:
                 "web_search": self._web_search,
                 "open_mic": self._open_mic,
                 "persona": self._persona,
-                # What it is actually speaking in, which is the demo's
-                # preference whenever the operator has not chosen. Shown on the
-                # dashboard beside the dropdown rather than inside it: the
-                # dropdown is the operator's choice and must keep reading
-                # Default when they have not made one.
-                "effective_persona": self._persona or self._demo_persona,
                 "web_search_available": self._web_search_available,
             }
 

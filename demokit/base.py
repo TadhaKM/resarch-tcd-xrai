@@ -185,7 +185,7 @@ class DemoContext:
         """
         from brain import personas
 
-        chosen, _seq = self.state.effective_persona
+        chosen, _seq = self.state.persona
         return personas.active(chosen)
 
     def _stop_if_interrupted(self, just_said: str) -> None:

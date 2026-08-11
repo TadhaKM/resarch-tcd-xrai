@@ -499,9 +499,11 @@ class DemoRunner:
             store=store,
         )
         self._active_id, self._active_demo, self._ctx = wanted, demo, ctx
-        # Published before on_enter so the demo's first spoken line is already
-        # in its own manner rather than the previous demo's.
-        self._state.set_demo_persona(getattr(demo, "persona", ""))
+        # Applied before on_enter so the demo's first spoken line is already
+        # in its own manner rather than the one before it. Snaps rather than
+        # defers: the preset is the intent, and an operator who tried a
+        # character once should not find every later demo stuck in it.
+        self._state.apply_demo_persona(getattr(demo, "persona", ""))
         logger.info("Demo: %s", demo.label)
         self._guarded(demo, ctx, "on_enter", lambda: demo.on_enter(ctx))
         return demo, ctx

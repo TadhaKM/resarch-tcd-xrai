@@ -660,7 +660,7 @@ class AudioIO:
         choosing a character gives you its voice, and choosing a voice gives
         you that voice.
         """
-        persona_id, seq = STATE.effective_persona
+        persona_id, seq = STATE.persona
         if seq != self._persona_seq_seen:
             self._persona_seq_seen = seq
             self._voice_override = None
@@ -971,7 +971,7 @@ class AudioIO:
             # only place that also covers the runner's own lines, which speak
             # through AudioIO directly. An explicit pace or variation still
             # wins above: the personality demo passes its own.
-            persona = personas.active(STATE.effective_persona[0])
+            persona = personas.active(STATE.persona[0])
             syn_config = (
                 _voice_config(persona.pace, persona.variation)
                 if persona is not None
