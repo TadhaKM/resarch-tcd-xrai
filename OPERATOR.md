@@ -147,15 +147,22 @@ groups because they participate rather than watch.
 
 ### Getting it to remember someone
 
-In **Vision & Face Tracking**, it offers to learn the name of a face it doesn't
-know. From there it's just a conversation — **no "Hey Reachy" needed for any of
-it**. Say yes, tell it your name however you like (*"my name's Sarah, nice to
+In **Vision & Face Tracking**, it offers to learn the name of **every** face it
+doesn't know — the second and third visitor get asked the same as the first.
+From there it's just a conversation: it **holds the microphone open** for the
+whole exchange, so **no "Hey Reachy" is needed for any of it**, right up until
+a name is locked in. Your 🎤 Open mic setting isn't changed and comes straight
+back afterwards. Say yes, tell it your name however you like (*"my name's Sarah, nice to
 meet you"* works fine — it picks the name out), and it says the name back to
 check: *"Sarah. Did I get that right?"*
 
 **Nothing is saved until you say yes to that.** If it heard wrong, say so —
 *"no, it's Sara"* — and it checks the new one. It gets three goes, then leaves
 you alone rather than nagging.
+
+Answer however you like — *"go on then"*, *"why not"*, *"of course"* all count
+as yes. If it doesn't catch you it asks once more rather than assuming you said
+no, and it waits while you're mid-conversation rather than interrupting.
 
 **It does not forget.** Names are kept on the laptop and survive restarts, and
 it keeps learning your face — every time it recognises you clearly, standing at

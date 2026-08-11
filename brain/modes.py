@@ -67,6 +67,11 @@ class RobotState:
         self._web_search = False
         #: Off by default. See set_open_mic.
         self._open_mic = False
+        #: A demo holding the microphone open for the length of one exchange.
+        #: Separate from the switch above so the operator's setting is neither
+        #: read nor written by a demo: theirs is a policy for the visit, this
+        #: is one question-and-answer that has to be heard.
+        self._open_mic_hold = False
         #: Which answering style the personality demo should use next. Held in
         #: the core rather than in the demo's own store so the dashboard can
         #: set it directly -- picking one from a list is what an operator wants
@@ -159,9 +164,11 @@ class RobotState:
         AGC notes what happens when this room's background speech reaches the
         recognizer: it transcribes the room continuously, and that text becomes
         questions the robot answers out loud to nobody.
+
+        True while a demo is holding it open too -- see hold_open_mic.
         """
         with self._lock:
-            return self._open_mic
+            return self._open_mic or self._open_mic_hold
 
     def set_open_mic(self, enabled: bool) -> bool:
         with self._lock:
@@ -191,6 +198,20 @@ class RobotState:
         """
         with self._lock:
             return self._persona, self._persona_seq
+
+    def hold_open_mic(self, held: bool) -> None:
+        """Keep the microphone open for one exchange, whatever the switch says.
+
+        For a demo running its own question-and-answer, where every reply is
+        expected and a wake word before each one would be absurd -- being asked
+        your name and having to say "hey Reachy" to answer it. Held rather than
+        set, so the operator's own switch is neither read nor written by a demo:
+        theirs is a policy for the whole visit, this is one exchange that has to
+        be heard, and their setting comes back into force the moment the demo
+        lets go.
+        """
+        with self._lock:
+            self._open_mic_hold = held
 
     def apply_demo_persona(self, persona_id: str) -> None:
         """Snap to the manner a demo asks for. Runner only, on entry.

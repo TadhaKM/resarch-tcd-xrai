@@ -232,7 +232,7 @@ class Vision(Demo):
         Whoever is running the demonstration can say "watch its head" in half
         the time and to the right person. That is their line, not the robot's.
         """
-        ctx.store["stage"] = None
+        self._end_exchange(ctx)
         ctx.status("Vision: following faces.")
 
     def on_idle(self, ctx: DemoContext) -> IdleResult:
@@ -301,7 +301,10 @@ class Vision(Demo):
         # survives being switched away from, so a stale present_since would let
         # somebody who walked up while another demo was showing skip the settle
         # window and be spoken to the instant Vision is selected.
-        ctx.store["stage"] = None
+        # Releases the microphone hold too, which matters most here: switched
+        # away mid-question, the hold would otherwise outlive the demo that
+        # took it and leave the robot listening to the room all afternoon.
+        self._end_exchange(ctx)
         ctx.store["present_since"] = None
         ctx.status("Vision: off. Face tracking itself keeps running.")
 
@@ -339,6 +342,28 @@ class Vision(Demo):
         index = ctx.store.get(f"line:{key}", 0)
         ctx.store[f"line:{key}"] = index + 1
         ctx.say(lines[index % len(lines)], emotion)
+
+    def _begin_exchange(self, ctx: DemoContext, stage: str) -> None:
+        """Enter the name exchange and hold the microphone open for it.
+
+        Every reply from here to a name being locked in is expected, so a wake
+        word before each one is absurd -- being asked your name and having to
+        say "hey Reachy" to answer. Held rather than switched, so the
+        operator's own open-mic setting is untouched and returns the moment
+        this ends.
+        """
+        ctx.store["stage"] = stage
+        ctx.state.hold_open_mic(True)
+
+    def _end_exchange(self, ctx: DemoContext) -> None:
+        """Leave it, and give the microphone back to whatever was set before.
+
+        Every exit from the exchange goes through here -- enrolled, declined,
+        given up on, or switched away from mid-question -- because a hold left
+        on is a robot that listens to the room for the rest of the afternoon.
+        """
+        ctx.store["stage"] = None
+        ctx.state.hold_open_mic(False)
 
     def _busy_talking(self, ctx: DemoContext) -> bool:
         """Whether somebody is mid-conversation with the robot right now.
@@ -441,7 +466,7 @@ class Vision(Demo):
         if verdict is not _YES:
             ctx.status(f"Name declined ({answer!r}); not asking this face again.")
             return IdleResult(listen_for=_LISTEN_S)
-        store["stage"] = _ASK_NAME
+        self._begin_exchange(ctx, _ASK_NAME)
         store["rounds"] = 0
         # Straight into the next question rather than back to the idle window.
         # Returning _LISTEN_S here put three seconds of silence and a wake-word
@@ -463,14 +488,14 @@ class Vision(Demo):
             if heard:
                 ctx.status(f"No name found in {heard!r}")
             if store["rounds"] >= _MAX_NAME_ROUNDS:
-                store["stage"] = None
+                self._end_exchange(ctx)
                 ctx.say("I'm not catching it, sorry. We can try again later.", "sad")
                 return IdleResult(listen_for=_LISTEN_S)
             return IdleResult(listen_for=0.0)  # straight back in to re-ask
 
         store["candidate"] = name
         store["confirm_silences"] = 0
-        store["stage"] = _CONFIRM
+        self._begin_exchange(ctx, _CONFIRM)
         return IdleResult(listen_for=0.0)
 
     def _confirm_name(self, ctx: DemoContext, tracker: "FaceTracker") -> IdleResult:
@@ -488,7 +513,7 @@ class Vision(Demo):
         verdict = _read_answer(answer)
 
         if verdict is _YES:
-            store["stage"] = None
+            self._end_exchange(ctx)
             self._enroll(ctx, tracker, name)
             return IdleResult(listen_for=_LISTEN_S)
 
@@ -499,7 +524,7 @@ class Vision(Demo):
             store["candidate"] = corrected
             store["rounds"] = store.get("rounds", 0) + 1
             if store["rounds"] > _MAX_NAME_ROUNDS:
-                store["stage"] = None
+                self._end_exchange(ctx)
                 ctx.say("I keep getting it wrong, sorry. Another time.", "sad")
                 return IdleResult(listen_for=_LISTEN_S)
             return IdleResult(listen_for=0.0)
@@ -511,16 +536,16 @@ class Vision(Demo):
             store["confirm_silences"] = silences
             if silences < 2:
                 return IdleResult(listen_for=0.0)
-            store["stage"] = None
+            self._end_exchange(ctx)
             ctx.status("No confirmation; nothing stored.")
             return IdleResult(listen_for=_LISTEN_S)
 
         # A plain no. Ask again from the top if tries remain.
         if store.get("rounds", 0) >= _MAX_NAME_ROUNDS:
-            store["stage"] = None
+            self._end_exchange(ctx)
             ctx.say("Sorry about that. Another time, then.", "sad")
             return IdleResult(listen_for=_LISTEN_S)
-        store["stage"] = _ASK_NAME
+        self._begin_exchange(ctx, _ASK_NAME)
         return IdleResult(listen_for=0.0)
 
     def _enroll(self, ctx: DemoContext, tracker: "FaceTracker", name: str) -> None:

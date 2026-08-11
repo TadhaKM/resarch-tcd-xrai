@@ -734,6 +734,24 @@ offered_to("dave", ["", "yes", "my name is Sam", "yes"])
 check("silence is re-asked, not taken as no", any("was that a yes" in s for s in _vaudio.said), True)
 check("and a yes after it still enrols", _vtracker.enrolled, ["Sam"])
 
+# The microphone is held open for the exchange, so nobody has to say a wake
+# word to answer a question they were just asked. Held, not switched: the
+# operator's own setting is untouched and must come back afterwards.
+check("the operator's switch was never touched", _vstate._open_mic, False)
+check("and the hold is released once a name is in", _vstate.open_mic, False)
+
+_vtracker.enrolled.clear()
+_vrunner._ctx.store["offered_faces"].clear()
+_vrunner._ctx.store["offered_at"] = 0
+_vstate._last_heard_at = time.time() - 60
+offered_to("dave", ["yes", "my name is Sam"])   # walks off mid-question
+held_mid = _vstate.open_mic
+_vrunner._active_demo.on_exit(_vrunner._ctx)
+# A hold left on is a robot listening to the room for the rest of the
+# afternoon, so every way out of the exchange has to give it back -- including
+# the operator switching demo while a question is still in the air.
+check("a hold does not survive leaving the demo", _vstate.open_mic, False)
+
 print()
 print("[17] audio from the wrong thread is refused, not silently interleaved")
 import threading  # noqa: E402
