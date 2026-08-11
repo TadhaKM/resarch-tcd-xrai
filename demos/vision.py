@@ -8,6 +8,14 @@ and departure and explained the detection pipeline; watched live, that is a
 robot talking over the thing it is meant to be showing. A head that follows you
 is legible without a commentary, so most of this file is about not speaking.
 
+Every new face gets its own offer. That used to be one offer per ten minutes
+for the whole room, which is not the same thing at all -- the second visitor of
+the afternoon was simply never asked. Faces are now told apart by their own
+embedding (_already_offered), so declining is remembered against the person who
+declined and the visitor beside them still gets their turn. The offer waits
+while somebody is mid-conversation with the robot, rather than interrupting a
+question to talk about itself.
+
 The name is asked for and never taken. Voice enrolment was removed from this
 project once before because a noisy transcript became a permanent name bound to
 a face, so nothing is stored until two separate filters agree: body.face.
@@ -15,8 +23,8 @@ extract_spoken_name pulls the most name-like part out of whatever was said
 ("My name is Sarah, nice to meet you" enrols Sarah, not the sentence), and the
 robot then says that name back and waits for a yes. Wrong, the visitor says so
 and gives it again -- two more tries before it stops pestering. Someone who
-declines, or who says nothing, is not asked again for _ASK_COOLDOWN_S; someone
-the robot already recognises is greeted once and never asked at all.
+declines, or who says nothing, is not asked again; someone the robot already
+recognises is greeted once and never asked at all.
 
 Deliberately absent: any call to ctx.motion.express_move(). A recorded move
 pauses the motion loop for its duration (see MotionController._run), and that
@@ -28,7 +36,10 @@ import re
 import time
 from typing import TYPE_CHECKING
 
+import numpy as np
+
 from body.face import extract_spoken_name
+from config import MODELS
 from demokit import Demo, DemoContext, IdleResult
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -45,11 +56,47 @@ _PRESENT_AGE_S = 2.0
 #: somebody who has chosen to stand in front of the robot.
 _SETTLE_S = 3.0
 
-#: Silence after an offer, whatever the answer was. Ten minutes rather than
-#: one because an unrecognised face is by definition unidentified: there is no
-#: id to hang "this one already said no" on, so the cooldown has to cover
-#: everybody. Enrolling inside that window is manage_people.py's job.
-_ASK_COOLDOWN_S = 600.0
+#: Quiet after an offer before ANY new face is offered to. Ten seconds, where
+#: it used to be ten minutes -- and the ten minutes was not caution, it was the
+#: only tool available: an unrecognised face has no id to hang "this one
+#: already said no" on, so the silence had to cover everybody, and one visitor
+#: declining meant the next four were never asked at all.
+#:
+#: With faces now told apart by their own embedding, all this has left to do is
+#: stop a group being interrogated one after another as the tracker's attention
+#: moves between them. Short, because it defers rather than drops: somebody
+#: still standing there gets asked on the next slice.
+_ASK_COOLDOWN_S = 10.0
+
+#: Faces already offered to this session, matched by their own embedding, which
+#: is what lets the robot tell one stranger from another without knowing who
+#: either of them is. Somebody who declined is not asked again; the person
+#: beside them is a different face and gets their own turn.
+_OFFERED = "offered_faces"
+
+#: How alike two embeddings must be to count as the same person for the purpose
+#: above. The recognition threshold, deliberately: being asked twice is a small
+#: annoyance and never being asked is the thing this exists to fix, so it errs
+#: toward treating a doubtful match as somebody new.
+_SAME_FACE = MODELS.face_match_threshold
+
+#: How many faces to keep in that list. Every one is compared against on every
+#: slice while somebody unrecognised is in view, and the store outlives the
+#: demo, so this is both a memory and a per-slice cost.
+_MAX_REMEMBERED_OFFERS = 64
+
+#: A visitor who has spoken to the robot this recently is mid-conversation, and
+#: an unprompted "shall I remember you?" is the robot talking over them. It
+#: waits rather than dropping the offer -- they are still in front of it, so the
+#: next quiet slice will do.
+_BUSY_TALKING_S = 20.0
+
+#: When this demo last put a question of its own to somebody. Needed because
+#: the answers to those questions are themselves recorded as speech heard, so
+#: without it a visitor saying "no thanks" to the offer counted as a
+#: conversation in progress and silenced the offer to the person beside them
+#: for the next twenty seconds -- the exact fault this was meant to fix.
+_OUR_EXCHANGE_AT = "our_exchange_at"
 
 #: Silence between presence remarks of the same kind. A minute: often enough
 #: that a visitor deliberately stepping out of frame and back sees the robot
@@ -116,7 +163,7 @@ def _is_yes(answer: str) -> bool:
 
 class Vision(Demo):
     label = "Vision & Face Tracking"
-    help = "Follows whoever is in view, and offers once to learn a new face's name."
+    help = "Follows whoever is in view, and offers to learn each new face's name."
     order = 40
     requires = ("faces",)
     #: "face tracking" alone is the name of a topic taught two floors up, so it
@@ -251,19 +298,83 @@ class Vision(Demo):
         ctx.store[f"line:{key}"] = index + 1
         ctx.say(lines[index % len(lines)], emotion)
 
-    def _offer(self, ctx: DemoContext) -> IdleResult:
-        """Ask an unrecognised visitor, at most once per cooldown, to be known.
+    def _busy_talking(self, ctx: DemoContext) -> bool:
+        """Whether somebody is mid-conversation with the robot right now.
 
-        The whole exchange is direct question-and-answer -- no wake word, no
+        Counts only speech that arrived AFTER this demo's own last question.
+        The answers to those questions are recorded as speech heard like
+        anything else, so measured naively a visitor declining the offer looked
+        exactly like a conversation in progress -- and silenced the offer to
+        the next person for twenty seconds, which is the fault this whole rule
+        exists to fix.
+        """
+        since = ctx.state.seconds_since_heard()
+        if since is None or since >= _BUSY_TALKING_S:
+            return False
+        heard_at = time.time() - since
+        ours = ctx.store.get(_OUR_EXCHANGE_AT)
+        # A small margin: our own question and its answer land within a moment
+        # of each other, and the two clocks are read at slightly different
+        # points in the same turn.
+        return ours is None or heard_at > ours + 1.0
+
+    def _already_offered(self, ctx: DemoContext) -> bool:
+        """Whether the face in view has had its turn being asked.
+
+        Compared by embedding rather than by id, because the whole point is
+        that these people have no id yet. Without this the robot had one blunt
+        instrument -- a silence long enough to cover everybody -- so the second
+        visitor of the afternoon was never asked at all.
+        """
+        tracker = ctx.tracker
+        if tracker is None:
+            return False
+        current = tracker.current_embedding(max_age_s=_PRESENT_AGE_S)
+        if current is None:
+            # No face vector to compare. Treat as already handled rather than
+            # asking blind: the alternative offers to remember a face the robot
+            # cannot actually store.
+            return True
+        seen = ctx.store.setdefault(_OFFERED, [])
+        probe = float(np.linalg.norm(current))
+        for other in seen:
+            stored = float(np.linalg.norm(other))
+            if not stored or not probe:
+                continue
+            if float(np.dot(current, other) / (stored * probe)) >= _SAME_FACE:
+                return True
+        seen.append(current)
+        # Bounded: the store lives for the whole process, so an open day would
+        # otherwise grow this list all afternoon and compare against every face
+        # it had ever seen on every slice. Dropping the oldest costs somebody
+        # from hours ago being asked twice, which is not a problem.
+        if len(seen) > _MAX_REMEMBERED_OFFERS:
+            del seen[: len(seen) - _MAX_REMEMBERED_OFFERS]
+        return False
+
+    def _offer(self, ctx: DemoContext) -> IdleResult:
+        """Ask an unrecognised visitor, once each, to be known.
+
+        Once EACH, not once per session: every new face gets its own offer, so
+        the fifth person to stand in front of the robot is asked the same as
+        the first. Held off while somebody is mid-conversation with it, because
+        an unprompted "shall I remember you?" over the top of a question is the
+        robot interrupting a visitor to talk about itself.
+
+        The exchange itself is direct question-and-answer -- no wake word, no
         instructions -- because a person who has just been asked a question is
-        going to answer it, and the robot telling them how to answer was the
-        last piece of operating manual it still read aloud. Each ctx.ask waits
-        _ANSWER_WAIT_S for speech to start and then lets the recogniser finish
-        the sentence, so no single hook holds the loop for long.
+        going to answer it. Each ctx.ask waits _ANSWER_WAIT_S for speech to
+        start and then lets the recogniser finish the sentence, so no single
+        hook holds the loop for long.
         """
         store = ctx.store
+        if self._busy_talking(ctx):
+            # Not dropped, just deferred -- they are still standing there.
+            return IdleResult(listen_for=_LISTEN_S)
         offered_at = store.get("offered_at")
         if offered_at is not None and time.monotonic() - offered_at < _ASK_COOLDOWN_S:
+            return IdleResult(listen_for=_LISTEN_S)
+        if self._already_offered(ctx):
             return IdleResult(listen_for=_LISTEN_S)
         # Stamped before the question, not after: a demo switched away
         # mid-sentence still counts as having asked, so the visitor is not
@@ -274,6 +385,7 @@ class Vision(Demo):
             "curious",
             wait_for_speech_s=_ANSWER_WAIT_S,
         )
+        store[_OUR_EXCHANGE_AT] = time.time()
         if not _is_yes(answer):
             ctx.status("Name declined; not asking again for a while.")
             return IdleResult(listen_for=_LISTEN_S)
@@ -292,6 +404,7 @@ class Vision(Demo):
         store["rounds"] = store.get("rounds", 0) + 1
         prompt = "What's your name?" if store["rounds"] == 1 else "One more time. Just your name."
         heard = ctx.ask(prompt, "curious", wait_for_speech_s=_ANSWER_WAIT_S)
+        store[_OUR_EXCHANGE_AT] = time.time()
 
         name = extract_spoken_name(heard)
         if name is None:
@@ -319,6 +432,7 @@ class Vision(Demo):
         store = ctx.store
         name = store.get("candidate") or ""
         answer = ctx.ask(f"{name}. Did I get that right?", "curious", wait_for_speech_s=_ANSWER_WAIT_S)
+        store[_OUR_EXCHANGE_AT] = time.time()
 
         if _is_yes(answer):
             store["stage"] = None

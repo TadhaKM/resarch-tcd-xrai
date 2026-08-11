@@ -93,6 +93,11 @@ class FaceTracker:
         self._lock = threading.Lock()
         self._person_id: Optional[int] = None
         self._active_face: Optional[DetectedFace] = None
+        #: The embedding of the face in view. Kept because this thread has
+        #: already computed it to do the matching, and a demo that wants to
+        #: tell one unrecognised visitor from another would otherwise have to
+        #: run the model a second time on another thread.
+        self._embedding = None
         self._seen_at = 0.0
         self._searching_since: Optional[float] = None
         #: When each person last had a view stored. See _reinforce.
@@ -126,6 +131,17 @@ class FaceTracker:
             if time.monotonic() - self._seen_at > max_age_s:
                 return None, None
             return self._person_id, self._active_face
+
+    def current_embedding(self, max_age_s: float = 3.0):
+        """The face vector for whoever is in view, or None if stale.
+
+        Separate from current() rather than a third element of its tuple, so
+        the two existing callers keep working unchanged.
+        """
+        with self._lock:
+            if time.monotonic() - self._seen_at > max_age_s:
+                return None
+            return self._embedding
 
     def _search(self, now: float) -> None:
         """Sweep the head slowly while nobody is in view.
@@ -231,6 +247,7 @@ class FaceTracker:
                 with self._lock:
                     self._person_id = person_id
                     self._active_face = detected
+                    self._embedding = embedding
                     self._seen_at = time.monotonic()
             except Exception as exc:
                 logger.warning("Face tracking paused after error: %s", exc)

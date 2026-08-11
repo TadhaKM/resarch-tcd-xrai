@@ -349,6 +349,17 @@ class RobotState:
         with self._lock:
             return list(self._history)
 
+    def seconds_since_heard(self) -> Optional[float]:
+        """How long since anybody said anything to the robot, or None if never.
+
+        Used to tell an idle room from a conversation in progress, so a demo
+        can hold an interruption until the visitor has finished with it.
+        """
+        with self._lock:
+            if self._last_heard_at is None:
+                return None
+            return time.time() - self._last_heard_at
+
     def note(self, kind: str, text: str) -> None:
         """Record an event, unless it repeats the one before it.
 

@@ -13,6 +13,7 @@ import sqlite3
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Iterator, Optional
 
 import numpy as np
@@ -48,6 +49,44 @@ def _connection() -> Iterator[sqlite3.Connection]:
             yield conn
     finally:
         conn.close()
+
+
+#: Dated copies of the database to keep. This file is the only record of every
+#: name the robot knows, it is gitignored, and nothing else in the project
+#: writes it anywhere else -- so a laptop reimaged between one open day and the
+#: next takes every visitor with it. A week of daily copies is enough to notice
+#: and recover from that, and costs about a megabyte.
+_BACKUPS_TO_KEEP = 7
+
+
+def backup_db() -> Optional[Path]:
+    """Keep a dated copy of the database. At most one a day; oldest pruned.
+
+    Uses sqlite3's own backup API rather than copying the file, because the
+    voice loop may be mid-write: a plain copy of a WAL database can land
+    without its journal and restore as a corrupt file, which is the one
+    outcome worse than having no backup at all.
+    """
+    source = MODELS.db_path
+    if not source.exists():
+        return None
+    folder = source.parent / "backups"
+    target = folder / f"{source.stem}-{datetime.now(timezone.utc):%Y%m%d}.db"
+    if target.exists():
+        return target
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        with _connection() as conn, sqlite3.connect(target) as copy:
+            conn.backup(copy)
+        for old in sorted(folder.glob(f"{source.stem}-*.db"))[:-_BACKUPS_TO_KEEP]:
+            old.unlink(missing_ok=True)
+        logger.info("Database backed up to %s", target.name)
+        return target
+    except (sqlite3.Error, OSError):
+        # Never fatal. A robot that will not start because it could not write a
+        # backup is worse than one running without today's copy.
+        logger.exception("Could not back up the database")
+        return None
 
 
 def init_db() -> None:
@@ -251,16 +290,23 @@ def add_embedding(person_id: int, embedding: np.ndarray) -> None:
                 "VALUES (?, ?, ?)",
                 (person_id, normalized.tobytes(), _now()),
             )
-            # Oldest first, so what survives is how they look now.
+            # The newest views, so what survives is how they look now -- plus
+            # the very first one, which is never dropped. That anchor matters
+            # over a long gap: a busy afternoon in front of the robot adds a
+            # dozen views of one angle and would otherwise evict the face it
+            # was enrolled with, so somebody returning a year later would be
+            # matched only against how they stood last March.
             conn.execute(
                 """
                 DELETE FROM people_embeddings
-                WHERE person_id = ? AND id NOT IN (
-                    SELECT id FROM people_embeddings
-                    WHERE person_id = ? ORDER BY id DESC LIMIT ?
-                )
+                WHERE person_id = ?
+                  AND id <> (SELECT MIN(id) FROM people_embeddings WHERE person_id = ?)
+                  AND id NOT IN (
+                      SELECT id FROM people_embeddings
+                      WHERE person_id = ? ORDER BY id DESC LIMIT ?
+                  )
                 """,
-                (person_id, person_id, MAX_EMBEDDINGS_PER_PERSON),
+                (person_id, person_id, person_id, MAX_EMBEDDINGS_PER_PERSON - 1),
             )
     except sqlite3.Error:
         logger.exception("Failed to save embedding for person_id=%s", person_id)
@@ -346,3 +392,8 @@ def replace_notes_with_profile(person_id: int, profile_text: str) -> None:
 
 
 init_db()
+# Taken at import, which is once per run of the robot. After init_db so the
+# copy has the current schema, and deliberately not on a timer: what this
+# guards against is the file being lost between one open day and the next,
+# not a write going wrong mid-session.
+backup_db()

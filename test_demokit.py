@@ -347,6 +347,9 @@ check("a refusal is not a name", extract_spoken_name("i dont want to say"), None
 check("neither is a command", extract_spoken_name("go to sleep"), None)
 
 
+import numpy as _np_enrol  # noqa: E402
+
+
 class EnrolTracker:
     """Reports an unrecognised face and records what gets enrolled."""
 
@@ -358,6 +361,11 @@ class EnrolTracker:
 
     def current(self, max_age_s=1.5):
         return (None, object())
+
+    def current_embedding(self, max_age_s=1.5):
+        # One unchanging stranger. Kept in step with FaceTracker, which grew
+        # this so a demo can tell one unrecognised visitor from another.
+        return _np_enrol.zeros(512, dtype=_np_enrol.float32) + 0.5
 
     def enroll(self, name, face):
         self.enrolled.append(name)
@@ -578,6 +586,13 @@ _face = _rng.standard_normal(512).astype(_np.float32)
 _db2.add_embedding(_pid, _face)
 check("a face is stored on enrolment", _db2.count_embeddings(_pid), 1)
 
+import sqlite3 as _sq0  # noqa: E402
+
+_c0 = _sq0.connect(_db2.MODELS.db_path)
+_first_id = _c0.execute(
+    "SELECT MIN(id) FROM people_embeddings WHERE person_id = ?", (_pid,)).fetchone()[0]
+_c0.close()
+
 # The bug this replaces: the table keyed on person_id, so every further view
 # REPLACED the first. One stored face is one angle in one light, and standing
 # differently next visit read as the robot forgetting the person entirely.
@@ -588,6 +603,18 @@ check("later views are added, not substituted", _db2.count_embeddings(_pid), 6)
 for _i in range(30):
     _db2.add_embedding(_pid, _rng.standard_normal(512).astype(_np.float32))
 check("and bounded", _db2.count_embeddings(_pid), _db2.MAX_EMBEDDINGS_PER_PERSON)
+
+# The enrolment view is the anchor for somebody returning after a long gap. A
+# busy afternoon adds a dozen views of one angle, and evicting purely by age
+# would drop the face they were enrolled with -- so a visitor back in a year
+# would be matched only against how they stood last March.
+import sqlite3 as _sq  # noqa: E402
+
+_con = _sq.connect(_db2.MODELS.db_path)
+_ids = [r[0] for r in _con.execute(
+    "SELECT id FROM people_embeddings WHERE person_id = ? ORDER BY id", (_pid,))]
+_con.close()
+check("the enrolment view is never evicted", min(_ids), _first_id)
 check("the name is untouched throughout", _db2.get_person_name(_pid), "Regression Test")
 check(
     "note counts survive several faces",
@@ -597,7 +624,93 @@ check(
 _db2.delete_person(_pid)
 
 print()
-print("[16] audio from the wrong thread is refused, not silently interleaved")
+print("[16] every new face gets its own offer to be remembered")
+
+import numpy as _np2  # noqa: E402
+
+from demokit.registry import REGISTRY as _REG2  # noqa: E402
+
+_REG2.discover()
+# build() above rebinds demokit.runner.REGISTRY to a stub holding only the fake
+# demos, and that binding outlives the section that did it. This drives the
+# REAL Vision demo through the real runner, so it has to be put back first.
+import demokit.runner as _runner_mod2  # noqa: E402
+
+_runner_mod2.REGISTRY = _REG2
+_rng2 = _np2.random.default_rng(3)
+_FACES = {n: _rng2.standard_normal(512).astype(_np2.float32)
+          for n in ("alice", "bob", "carol", "dave")}
+
+
+class ManyFaces:
+    """A tracker showing whichever stranger `who` names, by their own vector."""
+
+    enabled = True
+
+    def __init__(self):
+        self.who = None
+        self.enrolled = []
+        self._face = self
+
+    def current(self, max_age_s=1.5):
+        return (None, object()) if self.who else (None, None)
+
+    def current_embedding(self, max_age_s=1.5):
+        return _FACES.get(self.who)
+
+    def enroll(self, name, face):
+        self.enrolled.append(name)
+        return len(self.enrolled)
+
+
+_caps = frozenset({"faces"})
+_vstate = RobotState()
+_vstate.set_demos(_REG2.dashboard_entries(_caps))
+_vstate.set_mode("vision")
+_vaudio, _vtracker = FakeAudio(), ManyFaces()
+_vrunner = DemoRunner(
+    audio=_vaudio, motion=FakeMotion(), tracker=_vtracker,
+    state=_vstate, capabilities=_caps,
+)
+
+
+def offered_to(who, answers, gap=True):
+    _vtracker.who = who
+    _vaudio._transcripts = list(answers)
+    _vaudio.said.clear()
+    for _ in range(8):
+        _vrunner.cycle()
+        if _vrunner._ctx:
+            _vrunner._ctx.store["present_since"] = time.monotonic() - 10
+            if gap:
+                _vrunner._ctx.store["offered_at"] = 0
+    return any("remember you by name" in line for line in _vaudio.said)
+
+
+check("a stranger is asked", offered_to("alice", ["no"]), True)
+# The point of the whole rule. This used to be False: one blanket ten-minute
+# silence covered everybody, because an unrecognised face has no id to hang
+# "already declined" on, so the second visitor of the afternoon was never asked.
+check("a DIFFERENT stranger is asked too", offered_to("bob", ["no"]), True)
+check("the same face is not asked twice", offered_to("alice", ["no"]), False)
+check("one who accepts is enrolled",
+      (offered_to("dave", ["yes", "my name is Dave", "yes"]), _vtracker.enrolled)[1], ["Dave"])
+
+_vrunner._ctx.store["offered_at"] = time.monotonic()
+check("back-to-back offers are deferred", offered_to("carol", ["no"], gap=False), False)
+
+# Answers to this demo's OWN questions are recorded as speech heard, so a
+# naive "has anybody spoken lately" test read a visitor declining as a
+# conversation in progress and silenced the next person's offer.
+_vrunner._ctx.store["offered_at"] = 0
+_vrunner._ctx.store["our_exchange_at"] = time.time() - 30
+_vstate.add("heard", "what is extended reality")
+check("held back while somebody is talking to it", offered_to("carol", ["no"]), False)
+_vstate._last_heard_at = time.time() - 60
+check("and asked once the room goes quiet", offered_to("carol", ["no"]), True)
+
+print()
+print("[17] audio from the wrong thread is refused, not silently interleaved")
 import threading  # noqa: E402
 
 ctx = DemoContext(
