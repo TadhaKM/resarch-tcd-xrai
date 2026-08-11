@@ -130,19 +130,21 @@ class Vision(Demo):
     # who says "let's dance" while standing in front of it should get the dance.
 
     def on_enter(self, ctx: DemoContext) -> None:
-        """Selected. One line naming what to watch for, then quiet.
+        """Selected. Says nothing; the head is the demonstration.
 
-        The demonstration is the head, and for a while this demo said nothing
-        at all on the theory that a head following you is self-evident. Watched
-        with visitors it is not: people do not know to look, and a robot that
-        silently tracks somebody reads as a robot doing nothing. One sentence
-        telling them what to try converts it into something they can test --
-        and testing it is the demonstration, which is why the line asks them to
-        move rather than explaining how detection works.
+        This used to open with "Watch my head. Move around, and I'll follow
+        you." -- stage directions for a thing the visitor can already see
+        happening. The head starts following the moment the demo is selected,
+        and "There you are." when somebody settles in front of it (see
+        _on_arriving) is a reaction rather than an instruction: it shows the
+        robot noticing them, which is the same information without the robot
+        telling anyone what to look at.
+
+        Whoever is running the demonstration can say "watch its head" in half
+        the time and to the right person. That is their line, not the robot's.
         """
         ctx.store["stage"] = None
         ctx.status("Vision: following faces.")
-        ctx.say("Watch my head. Move around, and I'll follow you.", "curious")
 
     def on_idle(self, ctx: DemoContext) -> IdleResult:
         tracker = ctx.tracker
