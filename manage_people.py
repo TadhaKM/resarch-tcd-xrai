@@ -34,7 +34,7 @@ def enroll_person(name: str) -> None:
             return
 
         person_id = db.create_person(name.strip())
-        db.save_embedding(person_id, face_id.embedding_for_face(detected))
+        db.add_embedding(person_id, face_id.embedding_for_face(detected))
         print(f"Enrolled {name.strip()!r} as person_id={person_id}.")
     finally:
         camera.close()

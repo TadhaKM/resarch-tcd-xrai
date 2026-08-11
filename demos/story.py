@@ -127,6 +127,8 @@ class Storyteller(Demo):
     label = "Storyteller"
     help = "Tells a short story on entering, on request, and every few minutes."
     order = 70
+    #: A story told warmly lands; a story told precisely is a report.
+    persona = "friendly"
     triggers = _TRIGGERS
 
     def on_enter(self, ctx: DemoContext) -> None:

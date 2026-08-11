@@ -386,9 +386,21 @@ class FaceIdentifier:
             logger.info("Rejected implausible name from speech: %r", name)
             return None
         person_id = db.create_person(clean)
-        db.save_embedding(person_id, self.embedding_for_face(face))
+        db.add_embedding(person_id, self.embedding_for_face(face))
         logger.info("Enrolled %r as person %d", clean, person_id)
         return person_id
+
+    def remember(self, person_id: int, face: DetectedFace) -> None:
+        """Store another view of a face already known to be this person.
+
+        What keeps somebody recognised. One stored face is one angle in one
+        light, and a visitor who comes back standing slightly differently
+        simply is not matched -- which reads as the robot having forgotten
+        them, though their name never went anywhere. Every confident sighting
+        adds to what it has, so recognition gets better with each visit rather
+        than depending on the day they gave their name.
+        """
+        db.add_embedding(person_id, self.embedding_for_face(face))
 
     @staticmethod
     def _square_crop(frame: np.ndarray, x: int, y: int, w: int, h: int) -> np.ndarray:

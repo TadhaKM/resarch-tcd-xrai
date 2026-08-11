@@ -202,6 +202,8 @@ class Welcome(Demo):
     label = "Welcome"
     help = "Greets a new group and explains the Hub, one line at a time."
     order = 20
+    #: Greeting a room of visitors. Warm is the register a welcome is in.
+    persona = "friendly"
     triggers = _WELCOME_REQUESTS
     #: Deliberately not ("faces",): this has to work on the robot's own CPU,
     #: where face detection is off. The camera makes the welcome better timed,

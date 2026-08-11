@@ -244,6 +244,11 @@ class Quiet(Demo):
 
 import brain.db as _db  # noqa: E402
 
+# Saved so the real ones can be put back. Replacing a module attribute lasts
+# for the rest of the file, and a later section testing the actual database
+# against the stub reported the name it had stored as missing.
+_REAL_DB = {"get_person_name": _db.get_person_name, "rename_person": _db.rename_person}
+
 _db.get_person_name = lambda person_id: "Ada" if person_id == 7 else None
 
 quiet = Quiet()
@@ -515,7 +520,82 @@ check(
 )
 
 print()
-print("[14] audio from the wrong thread is refused, not silently interleaved")
+print("[14] each demo has a manner, and the operator outranks all of them")
+
+from demokit.registry import REGISTRY as _REG  # noqa: E402
+
+_REG.discover()
+_wanted = {"welcome": "friendly", "story": "friendly", "about": "friendly",
+           "brainstorm": "professional"}
+for _demo_id in _REG.ids():
+    _demo = _REG.get(_demo_id)
+    check(
+        f"{_demo_id} runs as {_wanted.get(_demo_id) or 'default'}",
+        getattr(_demo, "persona", ""),
+        _wanted.get(_demo_id, ""),
+    )
+
+_st = RobotState()
+_st.set_demo_persona("friendly")
+check("a demo's manner applies when none is chosen", _st.effective_persona[0], "friendly")
+_st.set_persona("consultant")
+check("the operator's choice outranks it", _st.effective_persona[0], "consultant")
+_st.set_persona("")
+check("and Default hands it back to the demo", _st.effective_persona[0], "friendly")
+# The dropdown must keep reading Default, or an operator who chose nothing sees
+# whichever demo they happen to be in reported back as their own choice.
+check("the dropdown still shows the operator's choice", _st.snapshot()["persona"], "")
+check("with the live manner published separately",
+      _st.snapshot()["effective_persona"], "friendly")
+
+# A voice picked by hand has to survive walking between demos, or choosing one
+# is pointless -- the next demo switch would take it back.
+_before = _st.effective_persona[1]
+_st.set_demo_persona("professional")
+check("a demo switch does not disturb a hand-picked voice",
+      _st.effective_persona[1], _before)
+_st.set_persona("friendly")
+check("but the operator changing personality does",
+      _st.effective_persona[1] != _before, True)
+
+print()
+print("[15] a name, once learned, is never forgotten")
+
+import numpy as _np  # noqa: E402
+
+from brain import db as _db2  # noqa: E402
+
+# The stubs from [8] and [9] are done with; this section talks to the real one.
+for _name, _fn in _REAL_DB.items():
+    setattr(_db2, _name, _fn)
+
+_db2.init_db()
+_pid = _db2.create_person("Regression Test")
+_rng = _np.random.default_rng(11)
+_face = _rng.standard_normal(512).astype(_np.float32)
+_db2.add_embedding(_pid, _face)
+check("a face is stored on enrolment", _db2.count_embeddings(_pid), 1)
+
+# The bug this replaces: the table keyed on person_id, so every further view
+# REPLACED the first. One stored face is one angle in one light, and standing
+# differently next visit read as the robot forgetting the person entirely.
+for _i in range(5):
+    _db2.add_embedding(_pid, _face + _rng.standard_normal(512).astype(_np.float32) * 0.2)
+check("later views are added, not substituted", _db2.count_embeddings(_pid), 6)
+
+for _i in range(30):
+    _db2.add_embedding(_pid, _rng.standard_normal(512).astype(_np.float32))
+check("and bounded", _db2.count_embeddings(_pid), _db2.MAX_EMBEDDINGS_PER_PERSON)
+check("the name is untouched throughout", _db2.get_person_name(_pid), "Regression Test")
+check(
+    "note counts survive several faces",
+    [p for p in _db2.list_people() if p["person_id"] == _pid][0]["note_count"],
+    0,
+)
+_db2.delete_person(_pid)
+
+print()
+print("[16] audio from the wrong thread is refused, not silently interleaved")
 import threading  # noqa: E402
 
 ctx = DemoContext(

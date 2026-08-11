@@ -125,6 +125,8 @@ class About(Demo):
     label = "About Reachy"
     help = "Explains the robot to non-engineers, and what is actually running inside it."
     order = 30
+    #: Explaining itself to non-engineers, which is the friendly register's whole purpose.
+    persona = "friendly"
     #: Triggers are bare substrings matched against every transcript, whatever
     #: demo is running, so each one here has to be unmistakably a request to be
     #: told about the robot. "what are you" was not: it is one of the commonest

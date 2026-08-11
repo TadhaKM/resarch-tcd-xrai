@@ -76,12 +76,49 @@ def init_db() -> None:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS people_embeddings (
-                person_id INTEGER PRIMARY KEY REFERENCES people(id) ON DELETE CASCADE,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
                 embedding BLOB NOT NULL,
                 created_at TIMESTAMP
             )
             """
         )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_people_embeddings_person "
+            "ON people_embeddings(person_id)"
+        )
+
+        # Migration. The table used to key on person_id, which allowed exactly
+        # one face per person: whatever angle and light they happened to be in
+        # when they gave their name, kept forever. Nothing deleted their name --
+        # recognition simply stopped matching them, which from the visitor's
+        # side is the robot forgetting who they are. Rebuilt in place, keeping
+        # the embeddings already stored.
+        existing = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='people_embeddings'"
+        ).fetchone()
+        if existing and "person_id INTEGER PRIMARY KEY" in existing[0]:
+            logger.info("Migrating people_embeddings to allow several faces per person.")
+            conn.execute("ALTER TABLE people_embeddings RENAME TO people_embeddings_v1")
+            conn.execute(
+                """
+                CREATE TABLE people_embeddings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+                    embedding BLOB NOT NULL,
+                    created_at TIMESTAMP
+                )
+                """
+            )
+            conn.execute(
+                "INSERT INTO people_embeddings (person_id, embedding, created_at) "
+                "SELECT person_id, embedding, created_at FROM people_embeddings_v1"
+            )
+            conn.execute("DROP TABLE people_embeddings_v1")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_people_embeddings_person "
+                "ON people_embeddings(person_id)"
+            )
 
 
 def ensure_person(person_id: int, name: Optional[str] = None) -> None:
@@ -155,12 +192,12 @@ def list_people() -> list[dict[str, object]]:
                     p.id,
                     p.name,
                     p.created_at,
-                    CASE WHEN e.person_id IS NULL THEN 0 ELSE 1 END AS has_embedding,
+                    EXISTS(SELECT 1 FROM people_embeddings e WHERE e.person_id = p.id)
+                        AS has_embedding,
                     COUNT(n.id) AS note_count
                 FROM people p
-                LEFT JOIN people_embeddings e ON e.person_id = p.id
                 LEFT JOIN memory_notes n ON n.person_id = p.id
-                GROUP BY p.id, p.name, p.created_at, e.person_id
+                GROUP BY p.id, p.name, p.created_at
                 ORDER BY p.id ASC
                 """
             ).fetchall()
@@ -190,24 +227,56 @@ def delete_person(person_id: int) -> None:
         logger.exception("Failed to delete person_id=%s", person_id)
 
 
-def save_embedding(person_id: int, embedding: np.ndarray) -> None:
-    """Create or replace a person's face embedding."""
+#: Faces kept per person. A face recognised from one stored angle is a face
+#: recognised from one angle; several is what lets somebody be known standing
+#: where they happen to stand. Bounded because every stored face is compared
+#: against on every detection, and because a cap is what stops a slow drift of
+#: near-identical crops crowding out the varied ones.
+MAX_EMBEDDINGS_PER_PERSON = 12
+
+
+def add_embedding(person_id: int, embedding: np.ndarray) -> None:
+    """Remember another view of this person's face.
+
+    Adds rather than replaces. The previous version overwrote, so a person had
+    exactly one stored face for as long as they existed and being recognised
+    depended on standing the way they stood the day they gave their name.
+    """
     try:
         ensure_person(person_id)
         normalized = np.asarray(embedding, dtype=np.float32)
         with _write_lock, _connection() as conn:
             conn.execute(
-                """
-                INSERT INTO people_embeddings (person_id, embedding, created_at)
-                VALUES (?, ?, ?)
-                ON CONFLICT(person_id) DO UPDATE SET
-                    embedding = excluded.embedding,
-                    created_at = excluded.created_at
-                """,
+                "INSERT INTO people_embeddings (person_id, embedding, created_at) "
+                "VALUES (?, ?, ?)",
                 (person_id, normalized.tobytes(), _now()),
+            )
+            # Oldest first, so what survives is how they look now.
+            conn.execute(
+                """
+                DELETE FROM people_embeddings
+                WHERE person_id = ? AND id NOT IN (
+                    SELECT id FROM people_embeddings
+                    WHERE person_id = ? ORDER BY id DESC LIMIT ?
+                )
+                """,
+                (person_id, person_id, MAX_EMBEDDINGS_PER_PERSON),
             )
     except sqlite3.Error:
         logger.exception("Failed to save embedding for person_id=%s", person_id)
+
+
+def count_embeddings(person_id: int) -> int:
+    """How many views of this person's face are stored."""
+    try:
+        with _connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM people_embeddings WHERE person_id = ?", (person_id,)
+            ).fetchone()
+    except sqlite3.Error:
+        logger.exception("Failed to count embeddings for person_id=%s", person_id)
+        return 0
+    return int(row[0]) if row else 0
 
 
 def get_embeddings() -> list[tuple[int, np.ndarray]]:

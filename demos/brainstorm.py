@@ -179,6 +179,8 @@ class Brainstorm(Demo):
     label = "Business Brainstorming"
     help = "Interviews a visitor about an idea, then offers three directions back."
     order = 60
+    #: Facilitating somebody's business idea. Measured and specific is what makes the directions usable.
+    persona = "professional"
     #: Request-shaped, not topic-shaped. A bare "brainstorm" or "business idea"
     #: is ordinary vocabulary at a business school -- "we ran a brainstorm this
     #: morning", "students arrive with a business idea" -- and because this demo

@@ -109,8 +109,9 @@ wording, and how it holds its head. "Default" is its own manner.
 | **Friendly** | The robot's usual warm voice, quicker and more animated. Everyday comparisons |
 | **Consultant** | A lower male voice. Gives you the trade-off and asks what matters most |
 
-The 🔊 voice dropdown still works: pick a voice by hand and it keeps it until
-you change character, at which point that character's voice takes over again.
+The 🔊 voice dropdown still works, and it sticks: pick a voice by hand and the
+robot keeps it as you move between demonstrations. Only changing the 🎭
+character takes it back.
 
 This demo is where the difference is easiest to *show*, because it re-answers
 the **same question** as each character back to back — the only way a listener
@@ -155,6 +156,12 @@ check: *"Sarah. Did I get that right?"*
 **Nothing is saved until you say yes to that.** If it heard wrong, say so —
 *"no, it's Sara"* — and it checks the new one. It gets three goes, then leaves
 you alone rather than nagging.
+
+**It does not forget.** Names are kept on the laptop and survive restarts, and
+it keeps learning your face — every time it recognises you clearly, standing at
+a new angle or in different light, it stores that view too. So it recognises
+you more reliably the more often you're around, rather than only from the spot
+you happened to be standing the day you told it your name.
 
 Once it knows you, it greets you by name in every demo. If a wrong name ever
 slips through anyway, say *"Hey Reachy, that's not my name, it's Sarah"* any
