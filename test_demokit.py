@@ -687,6 +687,22 @@ def offered_to(who, answers, gap=True):
     return any("remember you by name" in line for line in _vaudio.said)
 
 
+# The reported fault: it kept deciding people had declined. Silence, a mumble,
+# and every natural way of agreeing that happens to contain a refusal word
+# ("why not", "no problem", "go on then") all came back as no.
+from demos.vision import _NO, _UNCLEAR, _YES, _read_answer  # noqa: E402
+
+for _said in ("yes", "yeah", "sure", "go on then", "why not", "no problem",
+              "i dont mind", "of course", "sounds good", "yes please"):
+    check(f"{_said!r} is a yes", _read_answer(_said), _YES)
+for _said in ("no", "no thanks", "id rather not", "maybe later", "another time"):
+    check(f"{_said!r} is a no", _read_answer(_said), _NO)
+for _said in ("", "um", "the weather is nice"):
+    # Not a refusal. Read as one, a visitor who said yes was told the robot
+    # would leave them alone, and nothing could tell "turned down" from
+    # "not heard".
+    check(f"{_said!r} is unclear, not a refusal", _read_answer(_said), _UNCLEAR)
+
 check("a stranger is asked", offered_to("alice", ["no"]), True)
 # The point of the whole rule. This used to be False: one blanket ten-minute
 # silence covered everybody, because an unrecognised face has no id to hang
@@ -708,6 +724,15 @@ _vstate.add("heard", "what is extended reality")
 check("held back while somebody is talking to it", offered_to("carol", ["no"]), False)
 _vstate._last_heard_at = time.time() - 60
 check("and asked once the room goes quiet", offered_to("carol", ["no"]), True)
+
+# Silence gets a second, plainer ask rather than being acted on as a refusal.
+_vrunner._ctx.store["offered_faces"].clear()
+_vrunner._ctx.store["offered_at"] = 0
+_vstate._last_heard_at = time.time() - 60
+_vtracker.enrolled.clear()
+offered_to("dave", ["", "yes", "my name is Sam", "yes"])
+check("silence is re-asked, not taken as no", any("was that a yes" in s for s in _vaudio.said), True)
+check("and a yes after it still enrols", _vtracker.enrolled, ["Sam"])
 
 print()
 print("[17] audio from the wrong thread is refused, not silently interleaved")

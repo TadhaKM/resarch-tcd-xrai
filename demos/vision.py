@@ -121,12 +121,41 @@ _ANSWER_WAIT_S = 5.0
 #: the first mishearing wastes their yes; a fourth attempt is badgering.
 _MAX_NAME_ROUNDS = 3
 
-#: Enough of an answer to act on, matched as whole words: "no" sits inside
-#: "know" and "now", and reading a no as a yes interrogates somebody who
-#: declined. A no anywhere in the answer wins, because "ok, no thanks" is a no.
-_YES_WORDS = frozenset({"yes", "yeah", "yep", "yup", "sure", "ok", "okay", "please", "alright"})
-_NO_WORDS = frozenset({"no", "nope", "nah", "not", "never", "rather"})
+#: Words that settle a yes/no question on their own, matched as whole words:
+#: "no" sits inside "know" and "now".
+_YES_WORDS = frozenset({
+    "yes", "yeah", "yep", "yup", "yah", "aye", "sure", "ok", "okay", "okey",
+    "please", "alright", "absolutely", "definitely", "certainly", "course",
+    "go", "do", "id", "love", "great", "good", "fine", "perfect",
+})
+_NO_WORDS = frozenset({"no", "nope", "nah", "not", "never", "rather", "dont", "skip"})
 _WORD_RE = re.compile(r"[a-z]+")
+
+#: Phrases that mean the opposite of the words in them, checked before any
+#: single word is. Every one of these was being read as a refusal: "why not"
+#: and "no problem" and "I don't mind" are agreement, and they all contain a
+#: word from _NO_WORDS. A visitor saying "go on then, why not" was told the
+#: robot would leave them alone.
+_YES_PHRASES = (
+    "why not", "no problem", "dont mind", "do not mind", "dont see why not",
+    "go on", "go ahead", "of course", "id like", "i would like", "sounds good",
+    "sure thing", "if you like", "if you want", "that would be nice",
+)
+
+#: And the reverse: a refusal whose words could read as agreement. "no thanks"
+#: is already caught by "no", but "maybe later" and "some other time" contain
+#: nothing from either list and would otherwise be unclear rather than a no.
+_NO_PHRASES = (
+    "no thanks", "no thank you", "rather not", "not now", "not right now",
+    "maybe later", "another time", "some other time", "im ok", "im good",
+    "im fine", "leave it",
+)
+
+#: What the robot does with an answer it could not read. Deliberately not a
+#: refusal: silence, a mumble, or a transcript the recogniser dropped all used
+#: to count as "no", which is how a visitor saying yes was told the robot would
+#: leave them alone. It asks once more instead, and only then lets it go.
+_YES, _NO, _UNCLEAR = "yes", "no", "unclear"
 
 #: Enrolment stages, held in ctx.store["stage"]. One bounded exchange per idle
 #: slice: each slice says one question and waits at most _ANSWER_WAIT_S for the
@@ -140,25 +169,38 @@ _CONFIRM = "confirm"
 _SEEING_PHRASES = ("see me", "seeing me", "see anyone", "can you see")
 
 
-def _is_yes(answer: str) -> bool:
-    """Whether an answer to a yes/no question was a yes.
+def _read_answer(answer: str) -> str:
+    """Read a yes/no answer as _YES, _NO, or _UNCLEAR.
 
-    Decided by whichever of yes and no comes FIRST, not by a no anywhere
-    overriding: "ok, no thanks" leads with a no and is one, but "sure, why not"
-    leads with a yes and is plainly agreement -- read the other way it declines
-    on the visitor's behalf and, because the offer is stamped before it is
-    made, does not ask again for ten minutes.
+    Three outcomes rather than two, and that is the whole point. This used to
+    return a bool, so everything it could not read -- silence, a mumble, an
+    answer the recogniser dropped, "go on then" -- came back as False and was
+    acted on as a refusal. A visitor who said yes got told the robot would
+    leave them alone, and the caller could not tell the difference between
+    being turned down and not being heard.
 
-    Anything with neither is treated as a no: silence, a shrug, or the
-    recognizer picking up the conversation behind the visitor. Wrong that way
-    costs an offer; wrong the other way presses a stranger for their name.
+    Whole phrases are checked before single words, because the phrases people
+    actually use to agree are full of refusal words: "why not", "no problem",
+    "I don't mind". Between single words the FIRST one wins -- "ok, no thanks"
+    leads with agreement but is plainly a refusal, and "sure, why not" is the
+    reverse -- so the phrase pass settles those before it matters.
     """
-    for word in _WORD_RE.findall(answer.lower()):
+    words = _WORD_RE.findall(answer.lower())
+    if not words:
+        return _UNCLEAR
+    flat = " ".join(words)
+    for phrase in _NO_PHRASES:
+        if phrase in flat:
+            return _NO
+    for phrase in _YES_PHRASES:
+        if phrase in flat:
+            return _YES
+    for word in words:
         if word in _YES_WORDS:
-            return True
+            return _YES
         if word in _NO_WORDS:
-            return False
-    return False
+            return _NO
+    return _UNCLEAR
 
 
 class Vision(Demo):
@@ -386,8 +428,18 @@ class Vision(Demo):
             wait_for_speech_s=_ANSWER_WAIT_S,
         )
         store[_OUR_EXCHANGE_AT] = time.time()
-        if not _is_yes(answer):
-            ctx.status("Name declined; not asking again for a while.")
+        verdict = _read_answer(answer)
+        if verdict is _UNCLEAR:
+            # Not heard is not the same as turned down. Asked plainly the
+            # second time, because "want me to?" answered with silence is
+            # usually somebody who did not realise it was their turn.
+            ctx.status(f"Unclear answer to the offer: {answer!r}")
+            answer = ctx.ask("Sorry -- was that a yes?", "curious",
+                             wait_for_speech_s=_ANSWER_WAIT_S)
+            store[_OUR_EXCHANGE_AT] = time.time()
+            verdict = _read_answer(answer)
+        if verdict is not _YES:
+            ctx.status(f"Name declined ({answer!r}); not asking this face again.")
             return IdleResult(listen_for=_LISTEN_S)
         store["stage"] = _ASK_NAME
         store["rounds"] = 0
@@ -433,8 +485,9 @@ class Vision(Demo):
         name = store.get("candidate") or ""
         answer = ctx.ask(f"{name}. Did I get that right?", "curious", wait_for_speech_s=_ANSWER_WAIT_S)
         store[_OUR_EXCHANGE_AT] = time.time()
+        verdict = _read_answer(answer)
 
-        if _is_yes(answer):
+        if verdict is _YES:
             store["stage"] = None
             self._enroll(ctx, tracker, name)
             return IdleResult(listen_for=_LISTEN_S)
