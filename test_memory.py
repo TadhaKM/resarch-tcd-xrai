@@ -6,10 +6,42 @@ Alice, consolidation past 15 notes) is visible.
 Uses the real Ollama-backed get_reply()/end_conversation() -- no audio, no
 daemon needed. Messages are fixed scripted strings standing in for what a
 person might say.
+
+Runs against a scratch database, never the robot's own. The fake person_ids
+below are 1-4, and those are real people on a robot that has been meeting
+visitors -- so this used to invent a work-stress history and a dentist
+appointment for whoever happened to be enrolled as person 2, silently, on a
+machine where the only way to notice was to go and read the table. Nothing here
+needs the live data, so it does not get to see it.
+
+    python test_memory.py                 # scratch db, safe
+    python test_memory.py --live-db       # the robot's own, if you mean it
 """
 
+import dataclasses
+import sys
+import tempfile
+from pathlib import Path
+
+import config
 from brain import db
-from brain.interface import end_conversation, get_reply
+
+if "--live-db" not in sys.argv:
+    # Rebound before anything opens a connection. brain/db.py resolves
+    # MODELS.db_path per call rather than caching a connection, so every module
+    # that reaches the database through it -- memory, long_term_memory,
+    # qa_cache -- follows this without knowing about it.
+    _scratch = Path(tempfile.mkdtemp(prefix="reachy-memtest-")) / "memory.db"
+    db.MODELS = dataclasses.replace(config.MODELS, db_path=_scratch)
+    # Needed here and not before: pointed at the robot's own database this
+    # script found the schema already built by the robot, so it never created
+    # one. An empty file has no tables, and every write failed with "no such
+    # table: people" -- logged per person and otherwise silent.
+    db.init_db()
+    print(f"Scratch database: {_scratch}")
+    print("(pass --live-db to use the robot's own.)\n")
+
+from brain.interface import end_conversation, get_reply  # noqa: E402
 
 PEOPLE = {
     1: "Alice",
