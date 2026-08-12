@@ -478,14 +478,14 @@ print("[13] the chosen personality is the robot's manner everywhere")
 from brain import qa_cache as _qa  # noqa: E402
 
 
-def brief_for(persona_id, demo_id="conversation", style=None):
+def brief_for(persona_id, demo_id="conversation", style=None, owns_persona=False):
     _seen.clear()
     st = RobotState()
     st.set_persona(persona_id)
     motion = FakeMotion()
     ctx = DemoContext(
         audio=FakeAudio(), motion=motion, tracker=None,
-        state=st, demo_id=demo_id, store={},
+        state=st, demo_id=demo_id, store={}, owns_persona=owns_persona,
     )
     ctx.reply("what is xr", style=style)
     return _seen[0], motion.expressions
@@ -498,8 +498,21 @@ check("a persona reaches every demo's prompt", "warmly" in brief.lower(), True)
 check("and leaves the body in its resting pose", poses[-1], "happy")
 brief, _ = brief_for("friendly", style="story")
 check("except a story, which has its own voice", "warmly" in brief.lower(), False)
-brief, _ = brief_for("friendly", demo_id="personality")
-check("and the personality demo, which has its own", "warmly" in brief.lower(), False)
+brief, _ = brief_for("friendly", demo_id="personality", owns_persona=True)
+check("and a demo that supplies its own", "warmly" in brief.lower(), False)
+# Declared by the demo, not checked for by name in the core. Keyed on the name,
+# renaming demos/personality.py silently stopped the exclusion matching and the
+# demo got two style briefs pulling against each other -- no error, just worse
+# answers, with nothing pointing at the cause.
+brief, _ = brief_for("renamed_to_anything", demo_id="renamed", owns_persona=True)
+check("whatever that demo is called", "warmly" in brief.lower(), False)
+from demokit.registry import REGISTRY as _REG0  # noqa: E402
+
+_REG0.discover()
+check("the flag lives on the Demo contract",
+      _REG0.get("personality").owns_persona, True)
+check("and no other demo claims it",
+      [d for d in _REG0.ids() if _REG0.get(d).owns_persona], ["personality"])
 
 a, _ = brief_for("friendly")
 b, _ = brief_for("consultant")
@@ -508,6 +521,17 @@ b, _ = brief_for("consultant")
 check("cached answers are per persona", _qa._context_digest(a) != _qa._context_digest(b), True)
 
 check("an unknown persona means none, not Professional", RobotState().set_persona("nonsense"), "")
+
+from brain.modes import DEFAULT_MODE  # noqa: E402
+
+# The state container is meant to know nothing about demos beyond the ids it is
+# handed, and its docstring says so -- then the next line used to name one.
+check("no demo is named in the default mode", DEFAULT_MODE, "")
+_boot = RobotState()
+_boot.set_demos(_REG0.dashboard_entries(frozenset()))
+check("a fresh boot takes the registry's first demo", _boot.mode, _REG0.default_id())
+check("and says nothing about it, since that is every boot",
+      any(e.text.startswith("Starting in") for e in _boot.history()), False)
 
 # Each persona speaks in a different voice, not just at a different pace. The
 # files are checked here rather than assumed: a persona naming a voice that is

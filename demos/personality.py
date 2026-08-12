@@ -230,6 +230,9 @@ class Personality(Demo):
     label = "AI Personality"
     help = "Re-answers the same question in each personality, back to back."
     order = 50
+    #: Sends its own, fuller brief (see _system_for), which the robot's
+    #: standing one-sentence manner would pull against. See Demo.owns_persona.
+    owns_persona = True
     triggers = _TRIGGERS
     #: Every question a visitor asks here is arbitrary text, so without this a
     #: question about dance studios or story writing would be read as another

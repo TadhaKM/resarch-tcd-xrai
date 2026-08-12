@@ -497,6 +497,7 @@ class DemoRunner:
             state=self._state,
             demo_id=demo.id,
             store=store,
+            owns_persona=getattr(demo, "owns_persona", False),
         )
         self._active_id, self._active_demo, self._ctx = wanted, demo, ctx
         # Applied before on_enter so the demo's first spoken line is already

@@ -140,12 +140,15 @@ class DemoContext:
         state: Any,
         demo_id: str,
         store: dict,
+        owns_persona: bool = False,
     ) -> None:
         self.audio = audio
         self.motion = motion
         self.tracker = tracker
         self.state = state
         self.demo_id = demo_id
+        #: Copied from the demo at construction; see Demo.owns_persona.
+        self.owns_persona = owns_persona
         #: Scratch space for this demo, keyed by demo id and kept for the life
         #: of the process -- it survives being switched away from and back to,
         #: which is what lets a demo remember that it has already introduced
@@ -311,10 +314,10 @@ class DemoContext:
         # prompt would replay a Professional answer to somebody who had just
         # switched to Friendly.
         #
-        # Two exclusions. A story swaps the whole system prompt for the
-        # storyteller's and has its own voice; and the personality demo passes
-        # its own, fuller brief, which this would fight with.
-        persona = self.persona() if style is None and self.demo_id != "personality" else None
+        # Two exclusions, neither of which names a demo. A story swaps the
+        # whole system prompt for the storyteller's and has its own voice; and
+        # a demo that supplies its own style brief says so itself.
+        persona = self.persona() if style is None and not self.owns_persona else None
         if persona is not None:
             from brain.personas import GLOBAL_STYLE_FRAME
 
@@ -482,6 +485,25 @@ class Demo(ABC):
     #: answer sequence, where a visitor's answer would otherwise be swallowed
     #: by another demo's trigger word.
     claims_utterances: ClassVar[bool] = False
+
+    #: The manner this demo asks to be run in, by persona id (see
+    #: brain/personas.py), or "" for the robot's own. A default, not a setting:
+    #: the operator's dropdown overrides it, and entering a demo snaps back to
+    #: it. A welcome is warmer than a brainstorm and neither should need saying
+    #: out loud, but whoever is standing there always gets the last word.
+    persona: ClassVar[str] = ""
+
+    #: Whether this demo supplies its own style brief and wants the robot's
+    #: standing manner kept out of its replies. Almost always False: the
+    #: personality demo sets it because it passes a fuller brief of its own,
+    #: and two style instructions in one prompt pull against each other.
+    #:
+    #: A flag rather than the core checking for a demo by name, which is what
+    #: it used to do. That broke three ways: renaming the file silently stopped
+    #: the exclusion matching, deleting it left a dead condition, and no other
+    #: demo could opt out without editing a core file -- the one thing adding a
+    #: demo is supposed never to require.
+    owns_persona: ClassVar[bool] = False
 
     def on_enter(self, ctx: DemoContext) -> None:
         """Called once when this demo is selected. Keep it short.

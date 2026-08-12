@@ -23,7 +23,14 @@ from typing import Optional
 #: module, so anything this module imports from the demo side would close an
 #: import cycle. Inverting it keeps RobotState a plain state container that
 #: knows nothing about demos beyond the ids it has been handed.
-DEFAULT_MODE = "conversation"
+#:
+#: Which is why this is empty rather than "conversation", as it was: naming a
+#: demo here contradicted the paragraph above it, in the file somebody reads to
+#: understand the design, and left a dangling default if that file were ever
+#: renamed. Empty means "not chosen yet" -- set_demos replaces it with the
+#: first real demo, and demokit.registry.default_id decides which that is by
+#: `order`, which is where that decision belongs.
+DEFAULT_MODE = ""
 
 #: How many events the dashboard can show. Old ones are dropped rather than
 #: kept forever -- this is a live view, not a transcript archive.
@@ -117,6 +124,7 @@ class RobotState:
         with self._lock:
             self._demos = list(entries)
             known = {e["id"] for e in self._demos}
+            was_unset = not self._mode
             current_missing = self._mode not in known
             first = self._demos[0]["id"] if self._demos else self._mode
         if current_missing and self._demos:
@@ -124,7 +132,12 @@ class RobotState:
             # start in something real than to sit in a mode nothing implements.
             with self._lock:
                 self._mode = first
-            self.add("status", f"Starting in {first}")
+            # Announced only when a mode that was actually chosen has gone
+            # missing, which is worth an operator's attention. Starting from no
+            # mode at all is every ordinary boot, and saying so every time
+            # would train them to ignore the line that matters.
+            if not was_unset:
+                self.add("status", f"Starting in {first}")
 
     def demos(self) -> list[dict]:
         with self._lock:

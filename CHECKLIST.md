@@ -195,19 +195,23 @@ likely — a checkmark from reading source would be a guess.
   lock guards it; the dashboard thread and the voice loop share only this
   object. Per-demo scratch space is handed to demos as `ctx.store`, keyed by
   demo id, rather than module globals.
-- [ ] **No demo-specific logic hardcoded into core files** — two real
-  instances, both small but both genuine:
-  - `demokit/base.py:317` — `self.demo_id != "personality"` inside
-    `DemoContext.reply`, excluding one named demo from the global persona
-    prompt. A core file naming a specific demo. Should be a class attribute on
-    `Demo` (e.g. `owns_persona = True`) that the personality demo sets.
-  - `brain/modes.py:26` — `DEFAULT_MODE = "conversation"`, a core constant
-    naming a demo id. Mostly harmless (the registry falls back by `order`
-    anyway, `registry.default_id()`), but it means deleting `conversation.py`
-    would leave a dangling default.
-  Not counted against this item, for the record: `style == "story"` in
-  `brain/interface.py:113` and `demokit/base.py:344` is a generic parameter any
-  demo may pass, not a demo id.
+- [x] **No demo-specific logic hardcoded into core files** — two instances
+  existed and both are fixed:
+  - `DemoContext.reply` excluded one demo by name (`demo_id != "personality"`)
+    from the global persona prompt. Now `Demo.owns_persona`, a class attribute
+    the demo declares about itself and the runner passes to the context. The
+    old form broke three ways: renaming the file silently stopped the exclusion
+    matching, deleting it left a dead condition, and no other demo could opt
+    out without editing a core file.
+  - `DEFAULT_MODE = "conversation"` in `brain/modes.py` named a demo three
+    lines below a comment promising that RobotState "knows nothing about demos
+    beyond the ids it has been handed". Now `""`, meaning not-yet-chosen;
+    `set_demos` takes the first real demo and `registry.default_id()` decides
+    which that is, by `order`.
+  Both verified: a grep of `demokit/`, `brain/modes.py`, `brain/interface.py`,
+  `brain/prompts.py`, `body/voice_loop.py` and `main.py` for every demo id now
+  returns only comments. `style == "story"` remains and is not a demo id — it
+  is a generic parameter any demo may pass.
 - [x] **Adding a 7th demo touches nothing else** — proven, not argued. One new
   file in `demos/` appeared as a fully registered demo (dashboard entry,
   trigger phrase, persona preset) and `git status` reported **no modifications
@@ -303,10 +307,10 @@ likely — a checkmark from reading source would be a guess.
 | 1. Architecture sanity | 3 | 0 | 0 |
 | 2. Core requirements | 5 | 0 | 0 |
 | 3. Required demonstrations | 20 | 1 | 0 |
-| 4. System design | 6 | 1 | 0 |
+| 4. System design | 7 | 0 | 0 |
 | 5. Visitor fit | 3 | 0 | 0 |
 | 6. Success criteria | 5 | 0 | 0 |
-| **Total** | **42** | **2** | **0** |
+| **Total** | **43** | **1** | **0** |
 
 "Partial" means the capability exists but does not meet the item as written.
 Nothing on this checklist is absent.
@@ -327,15 +331,11 @@ room with visitors, and the code can only show that the machinery is present.
    meet the spec as written. Either accept the closing question as the ending,
    or restore a summary — in which case make it model-written rather than the
    template that read a visitor's own words back at them.
-3. **Move the two demo ids out of the core** (4.6). `demo_id != "personality"`
-   in `demokit/base.py:317` becomes a `Demo` class attribute; `DEFAULT_MODE`
-   in `brain/modes.py:26` defers to `registry.default_id()`. Half an hour, and
-   it removes the only places where the framework knows a demo's name.
-4. **Decide what `service/` is for.** It is documented honestly as not
+3. **Decide what `service/` is for.** It is documented honestly as not
    deployed, but it is the kind of directory somebody later mistakes for live
    infrastructure. Either point it at `main.py` and real paths, or move it to
    `docs/` as a design note.
-5. **Tidy one bad database row.** Person 2 is enrolled as
+4. **Tidy one bad database row.** Person 2 is enrolled as
    `"Now That It's Hit"` — a mis-transcribed name from an early test, before
    enrolment asked for confirmation. `python manage_people.py` removes it.
 
