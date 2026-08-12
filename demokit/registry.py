@@ -168,6 +168,16 @@ class Registry:
             self._disabled.pop(demo.id, None)
         return True
 
+    def is_runtime(self, demo_id: str) -> bool:
+        """Whether this id was registered at runtime rather than found on disk.
+
+        Needed to tell "that name belongs to a demo in the code" from "that is
+        this very feature, already registered" -- which re-validating a stored
+        feature otherwise reports as a clash with itself.
+        """
+        with self._lock:
+            return demo_id in self._runtime
+
     def unregister(self, demo_id: str) -> bool:
         """Remove a demo that register() added. False for anything else."""
         with self._lock:

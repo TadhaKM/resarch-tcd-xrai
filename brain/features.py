@@ -312,10 +312,16 @@ def validate(feature: Feature, *, existing: Optional[list[Feature]] = None) -> l
 
     if not feature.id:
         problems.append("That name has no letters or numbers in it.")
-    elif REGISTRY.get(feature.id) is not None and feature.id not in {f.id for f in others}:
-        # A built-in demo already owns this id, so register() would refuse and
-        # the button would simply never appear.
+    elif REGISTRY.get(feature.id) is not None and not REGISTRY.is_runtime(feature.id):
+        # A demo from the code owns this id, so register() would refuse and the
+        # button would simply never appear. Runtime ids are excluded because
+        # one of them is this feature itself: re-validating a saved feature
+        # found its own registration and reported it as a clash.
         problems.append("That name clashes with one of the robot's own demos. Try another.")
+    elif any(f.id == feature.id for f in others):
+        # Two labels can differ and still slug to one id ("Cork visit" and
+        # "Cork visit!"), which the duplicate-label check above would miss.
+        problems.append("That name is too close to another feature's. Try a different one.")
 
     if len(others) >= MAX_FEATURES and feature.id not in {f.id for f in others}:
         problems.append(f"There are already {MAX_FEATURES} features. Delete one first.")

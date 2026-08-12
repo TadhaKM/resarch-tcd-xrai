@@ -492,6 +492,31 @@ def enable_feature(feature_id: str, req: EnabledRequest) -> JSONResponse:
     return JSONResponse({"ok": True, "live": REGISTRY.get(feature_id) is not None})
 
 
+#: Room for a draft. The standing llm_max_tokens is 140 -- enough for what the
+#: robot says out loud, nowhere near enough for five steps of JSON.
+_DRAFT_MAX_TOKENS = 900
+
+
+def _closed(text: str) -> str:
+    """A truncated JSON object with its brackets shut, for one more parse attempt.
+
+    Only ever a salvage attempt: the result is handed to json.loads like any
+    other candidate, so a guess that does not parse is discarded rather than
+    trusted.
+    """
+    trimmed = text.rstrip().rstrip(",")
+    # Cut back to the last complete step rather than trying to repair a
+    # half-written one. A reply cut off mid-sentence leaves both an unbalanced
+    # quote and a dangling key, and guessing at either produces a step whose
+    # text is a fragment -- which the robot would then say out loud.
+    last = trimmed.rfind("}")
+    if last != -1:
+        trimmed = trimmed[: last + 1]
+    closing = "]" * max(0, trimmed.count("[") - trimmed.count("]"))
+    closing += "}" * max(0, trimmed.count("{") - trimmed.count("}"))
+    return trimmed + closing
+
+
 class DraftRequest(BaseModel):
     messages: list = []
     steps: list = []
@@ -594,13 +619,24 @@ def draft_feature(req: DraftRequest) -> JSONResponse:
     # The model is told to end nothing with an emotion tag, but it is trained
     # by every other prompt in this robot to add one.
     text, _tag = extract_emotion_tag(raw)
-    fence = _re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, _re.S) or _re.search(r"(\{.*\})", text, _re.S)
+    # Three attempts, loosest last. A model that runs long leaves the closing
+    # fence off, and a draft that is 95% there is worth salvaging rather than
+    # showing somebody a bare ```json.
+    fence = (
+        _re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, _re.S)
+        or _re.search(r"```(?:json)?\s*(\{.*)", text, _re.S)
+        or _re.search(r"(\{.*\})", text, _re.S)
+    )
     draft = None
     if fence:
-        try:
-            parsed = _json.loads(fence.group(1))
-        except (ValueError, TypeError):
-            parsed = None
+        candidate = fence.group(1).strip()
+        parsed = None
+        for attempt in (candidate, _closed(candidate)):
+            try:
+                parsed = _json.loads(attempt)
+                break
+            except (ValueError, TypeError):
+                continue
         if isinstance(parsed, dict):
             blocks = features.parse_blocks(parsed.get("blocks"))
             if blocks:

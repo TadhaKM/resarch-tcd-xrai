@@ -55,15 +55,24 @@ def streaming_backends() -> tuple[Backend, ...]:
     return (PREFERRED,) if PREFERRED is FALLBACK else (PREFERRED, FALLBACK)
 
 
-def generate_response(messages: list[dict[str, str]]) -> str:
-    """Return raw model output. Expected to embed a trailing '[emotion: tag]' (see emotion.py)."""
+def generate_response(
+    messages: list[dict[str, str]], max_tokens: Optional[int] = None
+) -> str:
+    """Return raw model output. Expected to embed a trailing '[emotion: tag]' (see emotion.py).
+
+    max_tokens raises the default cap for one call, exactly as stream_response
+    does and for the same reason. The default is sized for a spoken reply of
+    one or two sentences, which is far too small for anything structured: a
+    caller asking for a JSON draft got the opening ```json fence and then
+    silence, because the budget ran out three tokens in.
+    """
     if PREFERRED is FALLBACK:
-        return PREFERRED.generate(messages)
+        return PREFERRED.generate(messages, max_tokens)
     try:
-        return PREFERRED.generate(messages)
+        return PREFERRED.generate(messages, max_tokens)
     except Exception as exc:
         logger.warning("%s failed (%s); answering with the local model", PREFERRED.name, exc)
-        return FALLBACK.generate(messages)
+        return FALLBACK.generate(messages, max_tokens)
 
 
 def stream_response(
