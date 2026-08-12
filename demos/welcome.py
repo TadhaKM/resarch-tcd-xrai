@@ -29,12 +29,8 @@ import time
 
 from brain import hub
 from demokit import Demo, DemoContext, IdleResult
+from demokit.base import split_sentences
 
-
-#: Mirrors the boundary rule in brain/interface.py, so a scripted line is
-#: chunked exactly the way a streamed LLM reply is. One definition of "a spoken
-#: line" for the whole robot; two would drift the moment either was tuned.
-_SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?])\s+")
 
 #: Words of a transcript, for tests that must not fire on a substring: "again"
 #: sits inside "against", and a bare substring match turned "what have you got
@@ -42,8 +38,9 @@ _SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?])\s+")
 _WORD_RE = re.compile(r"[a-z']+")
 
 
-def _spoken_lines(script: str) -> tuple[str, ...]:
-    return tuple(part.strip() for part in _SENTENCE_BOUNDARY_RE.split(script.strip()) if part.strip())
+#: The splitter moved to demokit/base.py when a second demo needed it, which is
+#: what the note here always said should happen rather than a copy being made.
+_spoken_lines = split_sentences
 
 
 #: Split once at import: the script is a constant, and its line count is the

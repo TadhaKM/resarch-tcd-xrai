@@ -777,7 +777,143 @@ _vrunner._active_demo.on_exit(_vrunner._ctx)
 check("a hold does not survive leaving the demo", _vstate.open_mic, False)
 
 print()
-print("[17] audio from the wrong thread is refused, not silently interleaved")
+print("[17] features built from the dashboard")
+
+import dataclasses as _dc  # noqa: E402
+import tempfile as _tf  # noqa: E402
+
+import config as _config  # noqa: E402
+from brain import features as _F  # noqa: E402
+from demokit.base import split_sentences as _split  # noqa: E402
+
+# A scratch database, so a test run never writes staff features into the
+# robot's own -- the same care test_memory.py takes.
+_F.db.MODELS = _dc.replace(_config.MODELS, db_path=Path(_tf.mkdtemp(prefix="reachy-feat-")) / "f.db")
+_F._init_features()
+
+# parse_blocks is the only thing standing between a hand-edited database row
+# and ctx.say, so it has to be total.
+check("bad JSON parses to nothing", _F.parse_blocks("not json"), [])
+check("a non-list too", _F.parse_blocks('{"not": "a list"}'), [])
+check("an unknown step is dropped", _F.parse_blocks('[{"kind":"EXPLODE"}]'), [])
+check("as is a SAY with no words", _F.parse_blocks('[{"kind":"SAY","text":"  "}]'), [])
+_coerced = _F.parse_blocks('[{"kind":"WAIT","seconds":9000},{"kind":"say","text":"Hi.","emotion":"zzz"}]')
+check("a silly wait is clamped", _coerced[0].seconds, _F.WAIT_SECONDS_RANGE[1])
+check("an unknown expression falls back", _coerced[1].emotion, "neutral")
+
+
+def _feature(label, trigger="", blocks=None):
+    rec = _F.Feature(label=label, help="h", trigger_phrase=_F.normalise_trigger(trigger),
+                     blocks=blocks if blocks is not None else [_F.Block(_F.SAY, text="Hello there.")])
+    rec.id = _F.slug_for(label)
+    return rec
+
+
+_REG0.discover()
+_bad = [
+    ("welcome", "too short to be safe"),
+    ("do the welcome speech", "already claimed by Welcome"),
+    ("goodbye everyone please", "contains a sleep phrase"),
+    ("can you do it", "nothing but filler words"),
+]
+for _phrase, _why in _bad:
+    check(f"rejected: {_why}", bool(_F.validate(_feature("T", _phrase))), True)
+check("accepted: a specific phrase",
+      _F.validate(_feature("Cork", "say hello to the cork group")), [])
+check("a leftover placeholder is rejected",
+      bool(_F.validate(_feature("P", "", [_F.Block(_F.SAY, text="Welcome [group].")]))), True)
+check("a step-less feature is rejected", bool(_F.validate(_feature("E", "", []))), True)
+# Not sanitised on purpose: the browser builds every label with textContent, so
+# stripping angle brackets would only break "Q&A with the Erasmus group".
+check("markup in a label is allowed through",
+      _F.validate(_feature("<script>alert(1)</script>", "")), [])
+
+print()
+print("[18] a feature plays one step per slice, and never goes deaf")
+
+from demos._stored import StoredFeature  # noqa: E402
+
+
+class CountingMotion(FakeMotion):
+    def __init__(self):
+        super().__init__()
+        self.dances = 0
+
+    def dance(self, **kw):
+        self.dances += 1
+
+
+def play(blocks, transcripts=(), tracker=None, slices=10):
+    rec = _F.Feature(id="custom_t", label="T", help="h", updated_at="v1", blocks=blocks)
+    demo = StoredFeature(rec)
+    audio, motion = FakeAudio(transcripts=list(transcripts)), CountingMotion()
+    ctx = DemoContext(audio=audio, motion=motion, tracker=tracker,
+                      state=RobotState(), demo_id="custom_t", store={})
+    demo.on_enter(ctx)
+    windows = [demo.on_idle(ctx).listen_for for _ in range(slices)]
+    return audio.said, motion.dances, windows, ctx
+
+
+said, dances, windows, _ = play([
+    _F.Block(_F.SAY, text="One. Two."),
+    _F.Block(_F.DANCE),
+    _F.Block(_F.ASK, text="Where from?", ai_reply=True),
+    _F.Block(_F.SAY, text="Lovely."),
+], transcripts=["Madrid"])
+check("a two-sentence step is spoken as two", said[:2], ["One.", "Two."])
+check("the whole sequence runs", said, ["One.", "Two.", "Where from?", "A reply.", "Lovely."])
+check("dance happened once", dances, 1)
+# The invariant the whole per-slice design exists for. Two zeros in a row is a
+# stretch during which DemoRunner.cycle never opens the microphone at all.
+check("never two silent slices in a row",
+      any(windows[i] == 0 and windows[i + 1] == 0 for i in range(len(windows) - 1)), False)
+check("never longer than the core allows", max(windows) <= 3.0, True)
+
+
+class Nobody:
+    enabled = True
+
+    def current(self, max_age_s=1.5):
+        return (None, None)
+
+
+_wait = [_F.Block(_F.WAIT, seconds=20), _F.Block(_F.SAY, text="There you are.")]
+said, _, _, _ = play(_wait)
+check("with no camera a wait is skipped", said, ["There you are."])
+said, _, _, ctx = play(_wait, tracker=Nobody(), slices=2)
+check("with nobody there it holds", said, [])
+ctx.store["waiting_since"] -= 999          # rather than actually waiting
+StoredFeature(_F.Feature(id="custom_t", label="T", updated_at="v1", blocks=_wait)).on_idle(ctx)
+check("and gives up rather than hanging", ctx.store["cursor"], 1)
+
+print()
+print("[19] a feature becomes a button without a restart")
+
+
+class Plain(Demo):
+    id, label, help, order = "plain", "Plain", "h", 10
+
+
+_live = Registry()
+_live._publish({"plain": Plain()})
+_rec = _F.Feature(id="custom_new", label="New One", help="h", updated_at="v1",
+                  blocks=[_F.Block(_F.SAY, text="Hi.")])
+check("registers into the live list", _live.register(StoredFeature(_rec)), True)
+check("and sorts after the code demos", _live.ids(), ["plain", "custom_new"])
+_shadow = _F.Feature(id="plain", label="Impostor", updated_at="v", blocks=[_F.Block(_F.SAY, text="x")])
+check("cannot shadow a demo from a file", _live.register(StoredFeature(_shadow)), False)
+check("the file's demo is untouched", _live.get("plain").label, "Plain")
+for _ in range(3):
+    _live.record_failure("custom_new")
+check("a failing feature is set aside", _live.is_available("custom_new", frozenset())[0], False)
+_live.register(StoredFeature(_rec))
+check("and editing it puts it back", _live.is_available("custom_new", frozenset())[0], True)
+check("unregister only touches stored ones", _live.unregister("plain"), False)
+check("but removes a stored one", _live.unregister("custom_new"), True)
+check("leaving the rest alone", _live.ids(), ["plain"])
+
+print()
+print("[20] audio from the wrong thread is refused, not silently interleaved")
 import threading  # noqa: E402
 
 ctx = DemoContext(

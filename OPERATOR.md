@@ -179,6 +179,31 @@ a room full of people.
 
 ---
 
+## Building your own features
+
+Open **Build a feature** on the dashboard to make your own button — most often
+a welcome for a particular group. Describe what you want in plain English and
+the assistant drafts the words; you edit them and press Save. **The button
+appears straight away. The robot does not need restarting.**
+
+A feature can say things, ask a question and answer the reply, dance, and wait
+until somebody is standing in front of it. That is all it can do, on purpose —
+it is why this is safe to hand to anyone.
+
+Pressed the wrong one mid-visit? **Disable** takes it off the dashboard and
+keeps the script. **Delete** removes it for good.
+
+Two honest notes. Features are **not reviewed** — anyone who can open the
+dashboard can add one, and the robot will say it to whoever is standing there,
+so put your name in the box. And if the dashboard is ever unreachable, a
+technical person can remove a bad one with
+`sqlite3 data/memory.db "DELETE FROM custom_features WHERE id='...'"` followed
+by a restart.
+
+Full instructions: `docs/CUSTOM_FEATURES.md`.
+
+---
+
 ## Web search — the 🌐 tick box
 
 **Off by default, and usually leave it off.**

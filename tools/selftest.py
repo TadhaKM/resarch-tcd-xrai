@@ -91,6 +91,18 @@ def check_demos() -> None:
     from demokit.registry import REGISTRY
 
     REGISTRY.discover()
+    # Stored features join the walk below, so a phrase that was legal when a
+    # staff member saved it and has since been claimed by a newly committed
+    # demo is caught here rather than during an open day.
+    try:
+        from demos._stored import load_into_registry
+
+        loaded, problems = load_into_registry()
+        report(PASS if not problems else WARN,
+               f"{loaded} feature(s) from the dashboard", "; ".join(problems))
+    except Exception as exc:
+        report(WARN, "features from the dashboard", str(exc))
+
     ids = REGISTRY.ids()
     report(PASS if ids else FAIL, f"{len(ids)} demo(s) discovered", ", ".join(ids))
 
@@ -129,6 +141,22 @@ def check_demos() -> None:
 
     report(PASS, "listen windows clamp at", f"{MAX_LISTEN_WINDOW_S}s")
     report(PASS, "emotion tags available", ", ".join(sorted(VALID_EMOTION_TAGS)))
+
+    # Re-validated rather than trusted: they passed on the day they were saved,
+    # against the demos that existed then.
+    try:
+        from brain import features as _features
+
+        stored = _features.list_features()
+        stale = []
+        for record in stored:
+            problems = _features.validate(record)
+            if problems:
+                stale.append(f"{record.label}: {problems[0]}")
+        report(PASS if not stale else FAIL,
+               f"{len(stored)} stored feature(s) still valid", "; ".join(stale))
+    except Exception as exc:
+        report(WARN, "stored features", str(exc))
 
 
 def check_assets() -> None:

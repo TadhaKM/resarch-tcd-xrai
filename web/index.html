@@ -118,6 +118,33 @@
   .chip.wake { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
   .dim { color: var(--dim); font-size: 13px; }
 
+  /* Feature builder. Closed by default: most sessions never open it, and the
+     dashboard's virtue is being readable at a glance. */
+  details.panel > summary { cursor: pointer; list-style: none; }
+  details.panel > summary::-webkit-details-marker { display: none; }
+  details.panel > summary::before { content: "\25B8 "; color: var(--dim); }
+  details.panel[open] > summary::before { content: "\25BE "; }
+  .feat { display: flex; align-items: baseline; gap: 8px; padding: 7px 4px;
+          border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .feat:last-child { border-bottom: none; }
+  .feat .name { font-weight: 600; }
+  .feat .dot { flex: none; }
+  .feat .spacer { flex: 1; }
+  .step { display: flex; gap: 8px; align-items: center; margin-bottom: 7px; flex-wrap: wrap; }
+  .step .kind { font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+                color: var(--dim); width: 52px; flex: none; }
+  .step input[type=text] { flex: 1; min-width: 180px; font: inherit; color: var(--text);
+        background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+  .step select, .step input[type=number] { font: inherit; color: var(--text);
+        background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+  .step button { font: inherit; cursor: pointer; color: var(--dim); background: var(--bg);
+        border: 1px solid var(--line); border-radius: 8px; padding: 4px 9px; }
+  ul.errors { color: var(--bad); font-size: 13.5px; margin: 10px 0 0; padding-left: 20px; }
+  ul.errors:empty { display: none; }
+  #feat-chat { margin-bottom: 8px; font-size: 13.5px; }
+  #feat-chat .said { color: var(--text); margin: 4px 0; }
+  #feat-chat .mine { color: var(--accent); margin: 4px 0; }
+
   #log { max-height: 58vh; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
   .row { display: flex; gap: 10px; padding: 6px 4px; border-radius: 6px; align-items: baseline; }
   .row .t { color: var(--dim); font-size: 11.5px; font-variant-numeric: tabular-nums; flex: none; }
@@ -176,6 +203,62 @@
     </div>
   </div>
 
+  <details class="panel" id="features">
+    <summary><h2 style="display:inline">Build a feature</h2> <span class="dim" id="feat-count"></span></summary>
+    <p class="dim" id="feat-intro">
+      Make a button that says something of your own &mdash; a welcome for a
+      particular group, say. It appears here straight away; the robot does not
+      need restarting.
+    </p>
+
+    <div id="feat-list"></div>
+
+    <div class="ctl-row" id="feat-actions">
+      <button id="feat-new" class="act" type="button">New feature</button>
+    </div>
+
+    <div id="feat-editor" hidden>
+      <div class="ctl-row">
+        <input id="feat-label" type="text" maxlength="40" placeholder="Button name, e.g. Cork school visit">
+        <input id="feat-by" type="text" maxlength="40" placeholder="Your name">
+      </div>
+      <div class="ctl-row">
+        <input id="feat-help" type="text" maxlength="120" placeholder="One line describing it (optional)">
+      </div>
+      <div class="ctl-row">
+        <input id="feat-trigger" type="text" maxlength="80"
+               placeholder="Phrase to say out loud to start it (optional)">
+        <select id="feat-persona" aria-label="Personality"></select>
+      </div>
+
+      <h2 style="margin-top:16px">Steps</h2>
+      <div id="feat-steps"></div>
+      <div class="ctl-row">
+        <button class="act" type="button" data-add="SAY">+ Say something</button>
+        <button class="act" type="button" data-add="ASK">+ Ask a question</button>
+        <button class="act" type="button" data-add="DANCE">+ Dance</button>
+        <button class="act" type="button" data-add="WAIT">+ Wait for someone</button>
+      </div>
+
+      <h2 style="margin-top:16px">Ask the assistant to draft it</h2>
+      <div id="feat-chat" class="dim">
+        Describe the group and it will write the words. You can edit anything
+        it writes before saving.
+      </div>
+      <div class="ctl-row">
+        <input id="feat-chat-text" type="text" maxlength="500"
+               placeholder="e.g. a welcome for 20 school students visiting from Cork">
+        <button id="feat-chat-send" class="act" type="button">Send</button>
+      </div>
+
+      <ul id="feat-errors" class="errors"></ul>
+      <div class="ctl-row" style="margin-top:12px">
+        <button id="feat-save" class="act" type="button">Save</button>
+        <button id="feat-cancel" class="act" type="button">Cancel</button>
+      </div>
+    </div>
+  </details>
+
   <div class="panel">
     <h2>Say any of these</h2>
     <div id="phrases"><span class="dim">loading&hellip;</span></div>
@@ -202,6 +285,16 @@
 
   const clock = ts => new Date(ts * 1000).toLocaleTimeString([], {hour12: false});
 
+  // One element, one class, text set as text. The whole defence against a
+  // staff-authored label or trigger phrase being interpreted as markup is
+  // that nothing on this page interpolates server data into innerHTML.
+  function el(tag, cls, text) {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+
   function renderModes(modes, active) {
     // Re-render whenever the demo list OR any demo's availability changes,
     // rather than latching after the first paint. Two things depend on it: the
@@ -219,10 +312,16 @@
         b.dataset.mode = m.id;
         b.type = "button";
         b.disabled = m.available === false;
-        const flag = m.available === false && m.note
-          ? `<div class="flag">Unavailable &mdash; ${m.note}</div>` : "";
-        b.innerHTML = `<div class="name">${m.label}</div>
-                       <div class="help">${m.help || ""}</div>${flag}`;
+        // Built element by element with textContent rather than interpolated
+        // into innerHTML. Every label and help line used to come from Python
+        // source, so markup in one was impossible; features written from this
+        // page put staff text here, on a dashboard with no login, which is the
+        // definition of a stored-XSS sink. See the same discipline at
+        // addRows() below, which has always done it this way for transcripts.
+        b.appendChild(el("div", "name", m.label));
+        b.appendChild(el("div", "help", m.help || ""));
+        if (m.available === false && m.note)
+          b.appendChild(el("div", "flag", "Unavailable — " + m.note));
         b.onclick = () => setMode(m.id);
         $("modes").appendChild(b);
       }
@@ -491,9 +590,14 @@
     try {
       const v = await (await fetch("/api/voices")).json();
       if (!v.available || !v.available.length) { sel.style.display = "none"; return; }
-      sel.innerHTML = v.available
-        .map(n => `<option value="${n}"${n === v.current ? " selected" : ""}>${pretty(n)}</option>`)
-        .join("");
+      // Fed by filenames rather than by anything staff type, so this was never
+      // exposed -- rewritten anyway, because it is the pattern somebody copies
+      // the next time they add a dropdown.
+      sel.textContent = "";
+      for (const n of v.available) {
+        const opt = new Option(pretty(n), n, false, n === v.current);
+        sel.appendChild(opt);
+      }
     } catch (e) { sel.style.display = "none"; return; }
     sel.onchange = async () => {
       try {
@@ -506,27 +610,252 @@
     };
   })();
 
+  // Feature builder. Everything a staff member types comes back through here,
+  // so nothing below interpolates a fetched value into markup -- see el().
+  (() => {
+    const panel = $("features");
+    if (!panel) return;
+    const listBox = $("feat-list"), editor = $("feat-editor"), stepsBox = $("feat-steps");
+    const errorsBox = $("feat-errors"), chatBox = $("feat-chat");
+    let meta = {emotions: ["neutral"], personas: [], limits: {}};
+    let editing = null, steps = [], chat = [];
+
+    const val = id => $(id).value.trim();
+
+    async function api(path, opts) {
+      const r = await fetch(path, opts);
+      let body = {};
+      try { body = await r.json(); } catch (e) { /* a 500 with no JSON body */ }
+      return {ok: r.ok, status: r.status, body};
+    }
+
+    function showErrors(list) {
+      errorsBox.textContent = "";
+      for (const e of list || []) errorsBox.appendChild(el("li", "", e));
+    }
+
+    // --- the saved list ---
+    async function refresh() {
+      const {body} = await api("/api/features");
+      if (body.emotions) meta = body;
+      const features = body.features || [];
+      $("feat-count").textContent = features.length
+        ? `${features.length} saved` : "none yet";
+      listBox.textContent = "";
+      if (body.available === false) {
+        listBox.appendChild(el("p", "dim", "The robot's database is unavailable, so features cannot be saved."));
+        return;
+      }
+      for (const f of features) {
+        const row = el("div", "feat");
+        const dot = el("span", "dot" + (f.live ? " on" : ""));
+        dot.title = f.live ? "On the dashboard now" : "Saved but not running";
+        row.appendChild(dot);
+        row.appendChild(el("span", "name", f.label));
+        if (f.trigger_phrase) row.appendChild(el("span", "chip", f.trigger_phrase));
+        row.appendChild(el("span", "spacer"));
+        row.appendChild(button("Try", () => setMode(f.id)));
+        row.appendChild(button("Edit", () => openEditor(f)));
+        row.appendChild(button(f.enabled ? "Disable" : "Enable", async () => {
+          await api(`/api/features/${f.id}/enabled`, json({enabled: !f.enabled}));
+          refresh();
+        }));
+        row.appendChild(button("Delete", async () => {
+          if (!confirm(`Delete "${f.label}"?`)) return;
+          await api(`/api/features/${f.id}`, {method: "DELETE"});
+          refresh();
+        }));
+        listBox.appendChild(row);
+      }
+    }
+
+    function button(text, onclick) {
+      const b = el("button", "act", text);
+      b.type = "button";
+      b.onclick = onclick;
+      return b;
+    }
+    const json = body => ({
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)
+    });
+
+    // --- the editor ---
+    function openEditor(f) {
+      editing = f || null;
+      $("feat-label").value = f ? f.label : "";
+      $("feat-help").value = f ? f.help : "";
+      $("feat-trigger").value = f ? f.trigger_phrase : "";
+      $("feat-by").value = f ? f.created_by : "";
+      const sel = $("feat-persona");
+      sel.textContent = "";
+      sel.appendChild(new Option("Default personality", ""));
+      for (const p of meta.personas || []) sel.appendChild(new Option(p.label, p.id));
+      sel.value = f ? f.persona : "";
+      steps = f ? f.blocks.map(b => Object.assign({}, b)) : [{kind: "SAY", text: "", emotion: "happy"}];
+      chat = [];
+      chatBox.textContent = "Describe the group and it will write the words. You can edit anything it writes before saving.";
+      showErrors([]);
+      renderSteps();
+      editor.hidden = false;
+    }
+
+    function renderSteps() {
+      stepsBox.textContent = "";
+      steps.forEach((s, i) => {
+        const row = el("div", "step");
+        row.appendChild(el("span", "kind", {SAY: "Says", ASK: "Asks", DANCE: "Dances", WAIT: "Waits"}[s.kind] || s.kind));
+
+        if (s.kind === "SAY" || s.kind === "ASK") {
+          const text = document.createElement("input");
+          text.type = "text";
+          text.maxLength = s.kind === "SAY" ? 400 : 200;
+          text.value = s.text || "";
+          text.placeholder = s.kind === "SAY" ? "What the robot says" : "What the robot asks";
+          text.oninput = () => { s.text = text.value; };
+          row.appendChild(text);
+
+          const emo = document.createElement("select");
+          for (const e of meta.emotions) emo.appendChild(new Option(e, e));
+          emo.value = s.emotion || "neutral";
+          emo.onchange = () => { s.emotion = emo.value; };
+          row.appendChild(emo);
+
+          if (s.kind === "ASK") {
+            const lab = el("label", "dim", "");
+            const cb = document.createElement("input");
+            cb.type = "checkbox";
+            cb.checked = !!s.ai_reply;
+            cb.onchange = () => { s.ai_reply = cb.checked; };
+            lab.appendChild(cb);
+            lab.appendChild(document.createTextNode(" answer back"));
+            row.appendChild(lab);
+          }
+        } else if (s.kind === "WAIT") {
+          const secs = document.createElement("input");
+          secs.type = "number";
+          const range = meta.limits.wait_range || [5, 60];
+          secs.min = range[0]; secs.max = range[1];
+          secs.value = s.seconds || 20;
+          secs.oninput = () => { s.seconds = parseInt(secs.value, 10) || 20; };
+          row.appendChild(secs);
+          row.appendChild(el("span", "dim", "seconds for someone to appear"));
+        } else {
+          row.appendChild(el("span", "dim", "a short dance"));
+        }
+
+        row.appendChild(el("span", "spacer"));
+        row.appendChild(button("↑", () => move(i, -1)));
+        row.appendChild(button("↓", () => move(i, 1)));
+        row.appendChild(button("✕", () => { steps.splice(i, 1); renderSteps(); }));
+        stepsBox.appendChild(row);
+      });
+    }
+
+    function move(i, by) {
+      const j = i + by;
+      if (j < 0 || j >= steps.length) return;
+      [steps[i], steps[j]] = [steps[j], steps[i]];
+      renderSteps();
+    }
+
+    for (const b of panel.querySelectorAll("[data-add]")) {
+      b.onclick = () => {
+        const kind = b.dataset.add;
+        steps.push(kind === "SAY" ? {kind, text: "", emotion: "happy"}
+                 : kind === "ASK" ? {kind, text: "", emotion: "curious", ai_reply: true}
+                 : kind === "WAIT" ? {kind, seconds: 20} : {kind});
+        renderSteps();
+      };
+    }
+
+    $("feat-new").onclick = () => openEditor(null);
+    $("feat-cancel").onclick = () => { editor.hidden = true; editing = null; };
+
+    $("feat-save").onclick = async () => {
+      const payload = {
+        label: val("feat-label"), help: val("feat-help"),
+        trigger_phrase: val("feat-trigger"), persona: $("feat-persona").value,
+        created_by: val("feat-by"), blocks: steps
+      };
+      const path = editing ? `/api/features/${editing.id}` : "/api/features";
+      const opts = json(payload);
+      if (editing) opts.method = "PUT";
+      const {ok, body} = await api(path, opts);
+      if (!ok) { showErrors(body.errors || ["Could not save that."]); return; }
+      showErrors(body.warnings || []);
+      editor.hidden = true; editing = null;
+      refresh();
+    };
+
+    // --- the assistant, which is an accelerator and not the only path ---
+    function addChat(who, text) {
+      if (chatBox.classList.contains("dim")) { chatBox.textContent = ""; chatBox.classList.remove("dim"); }
+      chatBox.appendChild(el("div", who, text));
+    }
+
+    $("feat-chat-send").onclick = async () => {
+      const said = val("feat-chat-text");
+      if (!said) return;
+      $("feat-chat-text").value = "";
+      addChat("mine", said);
+      chat.push({role: "user", content: said});
+      const btn = $("feat-chat-send");
+      btn.disabled = true; btn.textContent = "Thinking…";
+      try {
+        const {ok, body} = await api("/api/features/draft", json({messages: chat, steps}));
+        if (!ok) { addChat("said", body.error || "The assistant is unavailable. You can still build the steps by hand."); return; }
+        if (body.reply) { addChat("said", body.reply); chat.push({role: "assistant", content: body.reply}); }
+        if (body.draft) {
+          if (body.draft.label && !val("feat-label")) $("feat-label").value = body.draft.label;
+          if (body.draft.blocks && body.draft.blocks.length) {
+            steps = body.draft.blocks;
+            renderSteps();
+            addChat("said", "I have filled the steps in below — edit anything you like, then Save.");
+          }
+        }
+      } finally {
+        btn.disabled = false; btn.textContent = "Send";
+      }
+    };
+    $("feat-chat-text").addEventListener("keydown", e => {
+      if (e.key === "Enter") $("feat-chat-send").click();
+    });
+
+    panel.addEventListener("toggle", () => { if (panel.open) refresh(); }, false);
+    refresh();
+  })();
+
   // Fetched once: these change only when the keyword file is regenerated.
   (async () => {
     try {
       const p = await (await fetch("/api/phrases")).json();
-      const group = (lead, items, cls) => items.length
-        ? `<div class="phrase-group"><div class="lead">${lead}</div><div class="chips">` +
-          items.map(t => `<span class="chip ${cls}">${t}</span>`).join("") + `</div></div>`
-        : "";
+      // Returns a fragment, not a string. A demo label and its trigger phrases
+      // can now be written by staff from this page, so neither may be
+      // interpolated into markup -- see el() at the top.
+      const group = (lead, items, cls) => {
+        if (!items.length) return null;
+        const wrap = el("div", "phrase-group");
+        wrap.appendChild(el("div", "lead", lead));
+        const chips = el("div", "chips");
+        for (const t of items) chips.appendChild(el("span", "chip" + (cls ? " " + cls : ""), t));
+        wrap.appendChild(chips);
+        return wrap;
+      };
       // Capitalise the first letter only. .title()-style capitalisation would
       // render "tell me a story" as "Tell Me A Story", and this panel is read
       // aloud off the screen by visitors.
-      const cap = t => t[0].toUpperCase() + t.slice(1);
-      const demoGroups = (p.demos || [])
-        .map(d => group(`To switch to ${d.label}`, d.phrases.map(cap), ""))
-        .join("");
-      const html =
-        group("To wake it or start a question", p.wake, "wake") +
-        demoGroups +
-        group("To send it to sleep", p.sleep.map(cap), "");
-      $("phrases").innerHTML = html ||
-        '<span class="dim">Phrase list unavailable.</span>';
+      const cap = t => t ? t[0].toUpperCase() + t.slice(1) : t;
+      const groups = [group("To wake it or start a question", p.wake, "wake")];
+      for (const d of p.demos || [])
+        groups.push(group("To switch to " + d.label, d.phrases.map(cap), ""));
+      groups.push(group("To send it to sleep", p.sleep.map(cap), ""));
+
+      const panel = $("phrases");
+      panel.textContent = "";
+      const shown = groups.filter(Boolean);
+      if (shown.length) shown.forEach(g => panel.appendChild(g));
+      else panel.appendChild(el("span", "dim", "Phrase list unavailable."));
     } catch (e) {
       $("phrases").innerHTML = '<span class="dim">Phrase list unavailable.</span>';
     }

@@ -1,5 +1,10 @@
 """Copy me to demos/your_demo.py and edit. Underscore-prefixed files are skipped.
 
+If all you want is for the robot to say something of your own -- a welcome for
+a visiting group, say -- you do not need this file. Build it from the
+dashboard's "Build a feature" panel instead: no code, and it appears without a
+restart. This route is for when four fixed step kinds are not enough.
+
 The shortest useful demo is about six lines: a class, a label, and one hook.
 Everything below is optional -- delete what you do not need. Once the file
 exists, the demo appears in the dashboard the next time the robot starts.

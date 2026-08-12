@@ -44,6 +44,10 @@ class Registry:
         self._order: list[str] = []
         self._failures: dict[str, int] = {}
         self._disabled: dict[str, str] = {}
+        #: Ids that arrived after startup rather than from a file on disk --
+        #: features Hub staff wrote from the dashboard. Tracked so register()
+        #: and unregister() can refuse to touch anything that came from code.
+        self._runtime: set[str] = set()
         self._discovered = False
 
     # --- discovery -------------------------------------------------------
@@ -123,6 +127,60 @@ class Registry:
             self._demos = {d.id: d for d in ordered}
             self._order = [d.id for d in ordered]
             self._discovered = True
+
+    def register(self, demo: Demo) -> bool:
+        """Add or replace one already-built demo while the robot is running.
+
+        This is what lets a feature written from the dashboard become a button
+        without a restart. Everything downstream already copes: the loop
+        republishes dashboard_entries() every cycle, the browser re-renders on
+        a content change, and the runner rebuilds its trigger table on every
+        utterance. The registry was the only thing that latched.
+
+        False, and nothing changed, if the id belongs to a demo found on disk.
+        A stored feature must never shadow a committed one -- the code is the
+        thing that was reviewed.
+
+        Not a way to hot-reload code: discover() imports each module once and a
+        second call returns the same module object. This takes an instance
+        someone has already constructed.
+        """
+        with self._lock:
+            if demo.id in self._demos and demo.id not in self._runtime:
+                logger.error(
+                    "Refusing to register %r over a demo of the same name", demo.id
+                )
+                return False
+            merged = dict(self._demos)
+            merged[demo.id] = demo
+            # Rebuilt into locals and swapped whole, the way _publish does it:
+            # readers tolerate the dict being replaced between two calls, but
+            # not being mutated while one of them is iterating it.
+            ordered = sorted(merged.values(), key=lambda d: (d.order, d.label))
+            self._demos = {d.id: d for d in ordered}
+            self._order = [d.id for d in ordered]
+            self._runtime.add(demo.id)
+            # An edited feature starts clean. The version being replaced may
+            # have been set aside for failing three times, and the edit is
+            # usually the fix -- leaving it disabled means the operator changes
+            # the wording, nothing happens, and there is no obvious cure.
+            self._failures.pop(demo.id, None)
+            self._disabled.pop(demo.id, None)
+        return True
+
+    def unregister(self, demo_id: str) -> bool:
+        """Remove a demo that register() added. False for anything else."""
+        with self._lock:
+            if demo_id not in self._runtime:
+                return False
+            remaining = {i: d for i, d in self._demos.items() if i != demo_id}
+            ordered = sorted(remaining.values(), key=lambda d: (d.order, d.label))
+            self._demos = {d.id: d for d in ordered}
+            self._order = [d.id for d in ordered]
+            self._runtime.discard(demo_id)
+            self._failures.pop(demo_id, None)
+            self._disabled.pop(demo_id, None)
+        return True
 
     def ensure_discovered(self) -> None:
         with self._lock:

@@ -173,6 +173,18 @@ def run_forever(target: HardwareTarget) -> None:
     # anything. A demo that fails to import is logged and skipped here.
     capabilities = _capabilities(tracker)
     REGISTRY.discover()
+    # Features written from the dashboard, after the demos found on disk and
+    # before the list is published -- so a staff-written button is up by the
+    # time anyone can press anything, exactly like a committed demo. register()
+    # refuses to shadow a demo from a file, so this cannot displace one.
+    from demos._stored import load_into_registry
+
+    loaded, problems = load_into_registry()
+    for problem in problems:
+        STATE.add("error", f"Feature not loaded -- {problem}")
+    if loaded:
+        STATE.add("status", f"{loaded} feature(s) from the dashboard loaded.")
+    STATE.set_capabilities(capabilities)
     STATE.set_demos(REGISTRY.dashboard_entries(capabilities))
     STATE.set_voices(audio.available_voices(), audio.voice_name)
     # Whether searching is even possible: only the Anthropic backend can, so

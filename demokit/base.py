@@ -24,6 +24,7 @@ the listening -- the core can bound that; a demo cannot.
 
 import logging
 import math
+import re
 import threading
 import time
 from abc import ABC
@@ -45,6 +46,26 @@ MAX_LISTEN_WINDOW_S = 3.0
 
 #: Slice length for ctx.sleep, so a long pause still notices a mode change.
 _SLEEP_SLICE_S = 1.0
+
+#: Where one spoken line ends. Mirrors the boundary rule brain/interface.py
+#: uses to chunk a streamed reply, so a scripted line and a generated one are
+#: broken the same way. It lives here, in the leaf both demos and the core can
+#: import, because welcome.py's copy of it carries the warning that earned this
+#: placement: "One definition of a spoken line for the whole robot; two would
+#: drift the moment either was tuned."
+_SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def split_sentences(script: str) -> tuple[str, ...]:
+    """A script as the lines it should be spoken in, one per idle slice.
+
+    Speaking a long string in one call is what makes a robot deaf: nothing
+    consumes the microphone while it talks, so the whole script is a stretch
+    during which no wake word is heard and the operator cannot switch away.
+    """
+    return tuple(
+        part.strip() for part in _SENTENCE_BOUNDARY_RE.split((script or "").strip()) if part.strip()
+    )
 
 
 @dataclass(frozen=True)

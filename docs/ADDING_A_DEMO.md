@@ -1,5 +1,19 @@
 # Adding a demo
 
+## Two ways to add something
+
+**From the dashboard**, with no code and no restart: the *Build a feature*
+panel. A feature is a button plus a short list of steps -- say something, ask
+something, dance, wait for a face -- stored as data and played by
+`demos/_stored.py`. That is the right route for "welcome this particular
+group", and it is the one to point Hub staff at. See `docs/CUSTOM_FEATURES.md`.
+
+**A Python file**, described below: the whole `ctx` surface, anything you can
+write, and a restart to pick it up. That is the route when four step kinds are
+not enough.
+
+The rest of this document is the second one.
+
 Copy `demos/_template.py` to `demos/your_demo.py`, edit it, restart the robot.
 That is the whole procedure. Your demo appears on the dashboard and can be
 switched to live.

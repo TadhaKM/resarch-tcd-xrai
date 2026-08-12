@@ -85,6 +85,9 @@ class RobotState:
         #: when showing the contrast, where saying "switch personality" twice to
         #: reach the third one is a demonstration of patience.
         self._persona = ""
+        #: What the hardware can do, published once at startup. See
+        #: set_capabilities.
+        self._capabilities: frozenset = frozenset()
         #: Names greeted this session. See mark_greeted.
         self._greeted_names: set[str] = set()
         #: Bumped whenever the dashboard picks one, so the demo can tell an
@@ -211,6 +214,23 @@ class RobotState:
         """
         with self._lock:
             return self._persona, self._persona_seq
+
+    def set_capabilities(self, capabilities: frozenset) -> None:
+        """What this machine can do, so the web thread can rebuild the demo list.
+
+        Published once at startup. Saving a feature has to refresh the list
+        immediately rather than waiting up to three seconds for the next cycle,
+        and the web thread has no other way to learn whether face tracking is
+        available -- passing an empty set instead would report every
+        faces-requiring demo unavailable and flicker it back a cycle later.
+        """
+        with self._lock:
+            self._capabilities = frozenset(capabilities)
+
+    @property
+    def capabilities(self) -> frozenset:
+        with self._lock:
+            return self._capabilities
 
     def hold_open_mic(self, held: bool) -> None:
         """Keep the microphone open for one exchange, whatever the switch says.
