@@ -17,7 +17,7 @@ usual one is a welcome for a particular group:
 > **Asks** "What are you all studying?" — and answers whatever they say
 > **Dances**
 
-There are four kinds of step and no others:
+There are five kinds of step and no others:
 
 | Step | What it does |
 |---|---|
@@ -25,8 +25,14 @@ There are four kinds of step and no others:
 | **Asks** | Asks a question and listens. Tick *answer back* and the AI replies to whatever they say |
 | **Dances** | A short dance, about four seconds |
 | **Waits for someone** | Holds until a face is in view, so a welcome doesn't play to an empty room |
+| **Plays** | Hands the visit over to another demo &mdash; the tour, the quiz, the advisor |
 
 You can reorder steps with the arrows and remove them with ✕.
+
+**Plays** has to be the last step. Whatever it hands over to keeps the floor
+&mdash; the tour does not finish and come back &mdash; so anything after it
+would never run, and the editor refuses to save it. A feature cannot hand over
+to itself either; that would restart it forever in front of a group.
 
 ## Letting the assistant write it
 
@@ -68,6 +74,17 @@ ninety seconds.
 Everything the robot says is interruptible. Somebody can say "Hey Reachy" over
 the middle of your script and it will stop and listen to them, which is the
 behaviour you want in a room.
+
+## Keeping the dashboard tidy
+
+Once you have a few of these, the grid gets long. Press **Arrange** above the
+buttons and you can group them into folders — drag them by the handle, or use
+the *"Put … in"* dropdown that appears on each one, which is easier on a phone.
+Folders hold the robot's built-in demos too, not just yours.
+
+Grouping only changes how the buttons are **shown**. It never changes what a
+spoken phrase does, and it never changes what the robot starts up in. Full
+instructions are in `OPERATOR.md`.
 
 ## If something goes wrong
 

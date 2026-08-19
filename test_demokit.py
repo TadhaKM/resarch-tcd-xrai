@@ -69,6 +69,15 @@ class FakeAudio:
         # is what this check exists to notice.
         self.said.append(text)
 
+    def render(self, text, expressive=False, pace=None, variation=None):
+        # ctx.reply renders off-thread and plays on the loop thread; the fake
+        # carries the text through as the "chunks" so speak_rendered can record
+        # exactly what speak() would have.
+        return [text]
+
+    def speak_rendered(self, chunks, motion=None):
+        self.said.append(chunks[0])
+
 
 class FakeMotion:
     def __init__(self):
@@ -247,9 +256,14 @@ import brain.db as _db  # noqa: E402
 # Saved so the real ones can be put back. Replacing a module attribute lasts
 # for the rest of the file, and a later section testing the actual database
 # against the stub reported the name it had stored as missing.
-_REAL_DB = {"get_person_name": _db.get_person_name, "rename_person": _db.rename_person}
+_REAL_DB = {"get_person_name": _db.get_person_name, "rename_person": _db.rename_person,
+            "get_spoken_name": _db.get_spoken_name}
 
+# Both, because they answer different questions now: get_person_name is the
+# spelling (matching, display) and get_spoken_name is what the robot SAYS,
+# which a stored pronunciation overrides. ctx.person_name() reads the latter.
 _db.get_person_name = lambda person_id: "Ada" if person_id == 7 else None
+_db.get_spoken_name = lambda person_id: "Ada" if person_id == 7 else None
 
 quiet = Quiet()
 runner, state, audio, _ = build([quiet])
@@ -267,6 +281,7 @@ print("[9] a misheard name can be corrected out loud")
 
 _stored = {7: "Telaget"}
 _db.get_person_name = lambda person_id: _stored.get(person_id)
+_db.get_spoken_name = lambda person_id: _stored.get(person_id)
 _db.rename_person = lambda person_id, name: _stored.__setitem__(person_id, name)
 
 
@@ -414,6 +429,11 @@ import brain.interface as _bi  # noqa: E402
 # cost nothing.
 _seen = []
 
+# Held before anything overwrites it: sections [12] and [21] stub this module
+# attribute for the rest of the file, and section [27] needs to exercise the
+# REAL pipeline -- testing the stub is how a bug in it would go unseen.
+_real_stream_reply = _bi.stream_reply
+
 
 def _fake_stream(person_id, message, style=None, extra_system=None, cache=True, web=False):
     _seen.append(extra_system or "")
@@ -558,7 +578,8 @@ from demokit.registry import REGISTRY as _REG  # noqa: E402
 
 _REG.discover()
 _wanted = {"welcome": "friendly", "story": "friendly", "about": "friendly",
-           "brainstorm": "professional"}
+           "brainstorm": "professional", "advisor": "professional",
+           "quiz": "friendly"}
 for _demo_id in _REG.ids():
     _demo = _REG.get(_demo_id)
     check(
@@ -935,6 +956,1268 @@ t.start()
 t.join()
 check("RuntimeError raised off-thread", bool(error), True)
 check("and it explains why", "one thread owns the microphone" in (error[0] if error else "").lower(), True)
+
+print()
+print("[21] brainstorming follows the group instead of reading out a list")
+import demos.brainstorm as _bs  # noqa: E402
+
+# Every question after the opener is written by the model, so the thing worth
+# testing is what the model is given -- if the group's own words are not in
+# that prompt, the robot cannot be following them whatever it says back.
+_bs_calls = []
+
+
+def _bs_stream(person_id, message, style=None, extra_system=None, cache=True, web=False):
+    _bs_calls.append((message, extra_system or ""))
+    yield f"Reply {len(_bs_calls)}.", "curious"
+
+
+_bi.stream_reply = _bs_stream
+
+
+def _bs_session():
+    demo = _bs.Brainstorm()
+    audio, motion, st = FakeAudio(), FakeMotion(), RobotState()
+    ctx = DemoContext(
+        audio=audio, motion=motion, tracker=None, state=st,
+        demo_id="brainstorm", store={},
+    )
+    return demo, ctx, audio, st
+
+
+_bs_calls.clear()
+demo, ctx, audio, st = _bs_session()
+windows = []
+demo.on_enter(ctx)
+windows.append(demo.on_idle(ctx).listen_for)          # the fixed opener
+check("opens with the group invitation", audio.said[-1], _bs._OPENER)
+check("and holds the mic for the answer", st.open_mic, True)
+
+demo.on_utterance(ctx, "A booking app for dance studios in Dublin")
+check("the hold is released once they answer", st.open_mic, False)
+windows.append(demo.on_idle(ctx).listen_for)          # first generated question
+_message, _brief = _bs_calls[-1]
+check("their words are what the model answers", _message, "A booking app for dance studios in Dublin")
+check("and the session so far is in the prompt", "dance studios in Dublin" in _brief, True)
+check("labelled as a group, not one visitor", "The group:" in _brief, True)
+
+demo.on_utterance(ctx, "Studio owners taking bookings over WhatsApp right now")
+windows.append(demo.on_idle(ctx).listen_for)
+check("it is told not to ask the same thing twice", "Reply 1." in _bs_calls[-1][1], True)
+
+# A nod is not an answer. Without this a group agreeing with each other would
+# reach the directions having told the robot nothing.
+demo.on_utterance(ctx, "yeah")
+check("agreeing does not count as material", ctx.store["answers"], 2)
+windows.append(demo.on_idle(ctx).listen_for)
+
+demo.on_utterance(ctx, "They don't trust an app with their own calendar")
+windows.append(demo.on_idle(ctx).listen_for)
+check("the last question is aimed at the directions",
+      "last question before you give them ideas" in _bs_calls[-1][1], True)
+
+demo.on_utterance(ctx, "We would start with three studios in Dublin 8")
+check("four answers is enough to work with", ctx.store["answers"], 4)
+windows.append(demo.on_idle(ctx).listen_for)          # -> bridge
+windows.append(demo.on_idle(ctx).listen_for)          # "Right. Three directions."
+check("stops interviewing on substance, not on a question count",
+      ctx.store["stage"], _bs._GENERATE)
+check("and lets the mic go while it talks", st.open_mic, False)
+
+for _ in range(len(_bs._ORDINALS)):
+    windows.append(demo.on_idle(ctx).listen_for)
+check("three directions", len(ctx.store["directions"]), 3)
+check("built from the whole session, not from three slots",
+      "Dublin 8" in _bs_calls[-1][1], True)
+# The old version ended here. Ending on a question that is actually listened
+# for is what makes it a conversation rather than a lecture with a full stop.
+check("the session carries on afterwards", ctx.store["stage"], _bs._TALK)
+check("waiting on the closing question", ctx.store["awaiting"], True)
+check("mic open for the answer to it", st.open_mic, True)
+check("never two silent slices in a row",
+      any(windows[i] == 0 and windows[i + 1] == 0 for i in range(len(windows) - 1)), False)
+check("never longer than the core allows", max(windows) <= 3.0, True)
+
+check("never repeats its bridge line verbatim",
+      audio.said.count("Right. Three directions on that."), 1)
+
+# Keep talking after the directions and it works up to another set, rather
+# than sitting at a full stop for the rest of the visit.
+for line in ("Studios pay per booking, not monthly",
+             "Two of them said they'd switch tomorrow",
+             "The blocker is migrating their existing calendar",
+             "We could import from Google Calendar",
+             "Then it's a weekend of work, not a rewrite",
+             "Their receptionists are the ones who'd use it",
+             "They're on desktop, not phones",
+             "Cancellations are the real money",
+             "Half of them are no-shows"):
+    demo.on_utterance(ctx, line)
+    demo.on_idle(ctx)
+check("a second round is offered, not a full stop", ctx.store["stage"], _bs._BRIDGE)
+demo.on_idle(ctx)
+check("and it says so differently the second time",
+      audio.said[-1], "Right. Three more, on what you've just said.")
+
+demo.on_exit(ctx)
+check("leaving the demo always gives the mic back", st.open_mic, False)
+
+# "What do you think?" is the clearest instruction the robot gets all session.
+demo, ctx, audio, st = _bs_session()
+demo.on_enter(ctx)
+demo.on_idle(ctx)
+demo.on_utterance(ctx, "An app that books rehearsal rooms by the hour")
+check("asking for ideas early is taken as an instruction",
+      demo.on_utterance(ctx, "what do you think"), True)
+check("and goes straight to them", ctx.store["stage"], _bs._BRIDGE)
+
+# A room that has gone quiet with nothing said yet. It used to wait forever.
+demo, ctx, audio, st = _bs_session()
+demo.on_enter(ctx)
+quiet = []
+for _ in range(_bs._MAX_WAITS * (_bs._MAX_NUDGES + 1) + 2):
+    quiet.append(demo.on_idle(ctx).listen_for)
+check("a silent room is nudged, not interrogated",
+      audio.said.count(_bs._NUDGE), _bs._MAX_NUDGES)
+check("and eventually let go", ctx.store["stage"], _bs._DONE)
+check("without leaving the mic held open", st.open_mic, False)
+check("still never deaf while waiting", max(quiet) <= 3.0 and min(quiet) > 0, True)
+
+print()
+print("[22] the dashboard's folder layout is display-only, and never load-bearing")
+import dataclasses as _dc  # noqa: E402
+import tempfile as _tmp  # noqa: E402
+from pathlib import Path as _Path  # noqa: E402
+import brain.db as _db  # noqa: E402
+
+# Its own database file. This table is written by the tests below, and the live
+# one holds real enrolled people -- test_memory.py learned that the hard way.
+_db.MODELS = _dc.replace(_db.MODELS, db_path=_Path(_tmp.mkdtemp()) / "layout-test.db")
+import brain.layout as _lay  # noqa: E402
+import brain.settings as _setmod  # noqa: E402
+import brain.stats as _statmod  # noqa: E402
+import brain.study as _studymod  # noqa: E402
+
+# Every module that owns a table rebuilds it against the scratch database.
+# Without this the runner's own stats calls log "no such table" for the rest
+# of the run -- swallowed, so the tests still pass, which is exactly why it
+# would have gone unnoticed.
+for _mod, _init in ((_lay, "_init_layout"), (_setmod, "_init_settings"),
+                    (_statmod, "_init_stats"), (_studymod, "_init_study")):
+    _mod.db.MODELS = _db.MODELS
+    getattr(_mod, _init)()
+
+# Coercion is total: nothing below may raise, and nothing malformed may survive.
+check("bad JSON is nothing", _lay._coerce("{not json"), [])
+check("a non-list is nothing", _lay._coerce({"t": "f"}), [])
+check("a folder id we did not mint is dropped",
+      _lay._coerce([{"t": "f", "id": "../../etc", "name": "x"}]), [])
+check("a demo id with a path in it is dropped",
+      _lay._coerce([{"t": "i", "id": "../secrets"}]), [])
+check("a folder inside a folder is dropped",
+      _lay._coerce([{"t": "f", "id": "f_00000001",
+                     "items": [{"t": "f", "id": "f_00000002"}]}])[0]["items"], [])
+check("the same button cannot appear twice",
+      [e["id"] for e in _lay._coerce([{"t": "i", "id": "dance"}, {"t": "i", "id": "dance"}])],
+      ["dance"])
+check("a nameless folder is named, not dropped",
+      _lay._coerce([{"t": "f", "id": "f_00000001", "name": "   "}])[0]["name"], "Folder")
+check("a very long name is clamped",
+      len(_lay._coerce([{"t": "f", "id": "f_00000001", "name": "n" * 400}])[0]["name"]),
+      _lay.MAX_FOLDER_NAME_CHARS)
+check("the document is bounded", len(_lay._coerce([{"t": "i", "id": f"d{i}"} for i in range(500)])),
+      _lay.MAX_ROOT_ENTRIES)
+
+# An id for a demo that is not running is KEPT. Registry.discover() skips a
+# module that fails to import, so "missing" is routinely a syntax error
+# somebody will fix this afternoon -- reaping here would silently wipe an
+# arrangement that took half an hour to build on a phone.
+check("an id for a demo that is not loaded is kept, not reaped",
+      _lay._coerce([{"t": "i", "id": "demo_that_failed_to_import"}]),
+      [{"t": "i", "id": "demo_that_failed_to_import"}])
+
+_shape = [{"t": "f", "id": "f_0a1b2c3d", "name": "Schools", "items": ["welcome", "about"]},
+          {"t": "i", "id": "dance"}]
+_st, _doc, _ = _lay.write(_shape, 0)
+check("a layout saves", (_st, _doc["rev"]), ("ok", 1))
+_st2, _doc2, _ = _lay.write([{"t": "i", "id": "dance"}], 0)
+check("a stale write is refused", _st2, "stale")
+check("and the refusal carries the winner's layout so it can be rebased",
+      len(_doc2["items"]), 2)
+_st3, _doc3, _ = _lay.write(_shape, _doc["rev"])
+check("the revision only ever goes up", _doc3["rev"] > _doc["rev"], True)
+check("too many folders is refused with a reason",
+      _lay.write([{"t": "f", "id": "f_%08x" % i, "name": "n"} for i in range(13)],
+                 _doc3["rev"])[0], "invalid")
+
+# Deleting a feature must drop its placement: slug_for derives the id from the
+# label, so a feature written months later with a similar name inherits the id
+# -- and would inherit a place inside somebody's collapsed folder.
+_lay.forget("welcome")
+_after, _ = _lay.read()
+check("deleting a feature drops its placement",
+      [e for e in _after["items"] if e["t"] == "f"][0]["items"], ["about"])
+_rev_before = _after["rev"]
+_lay.forget("welcome")
+check("and forgetting it twice writes nothing", _lay.read()[0]["rev"], _rev_before)
+check("reset empties it", _lay.reset()["items"], [])
+
+# THE INVARIANT THE WHOLE FEATURE RESTS ON. registry.default_id() returns
+# _order[0], which is the demo the robot boots into and falls back to. If a
+# layout could reorder that, a staff member tidying the grid on a Tuesday would
+# change what the robot starts in on Wednesday, and nothing would say so.
+_REG3 = Registry()
+_REG3.discover()
+_before_ids = _REG3.ids()
+_before_default = _REG3.default_id()
+_lay.write([{"t": "f", "id": "f_0a1b2c3d", "name": "Anything",
+             "items": list(_before_ids)}], _lay.read()[0]["rev"])
+check("a layout never reorders the registry", _REG3.ids(), _before_ids)
+check("and never changes the demo the robot boots into", _REG3.default_id(), _before_default)
+
+# With no layout at all the dashboard is the one that shipped: every button,
+# flat, in the robot's own order. Anything that makes the layout NECESSARY for
+# the grid to render breaks the property that makes this safe to ship.
+_lay._available = False
+check("an unavailable layout reads as empty, never raises", _lay.read(), ({"rev": 0, "items": []}, False))
+check("and writing says so rather than failing", _lay.write([], 0)[0], "unavailable")
+check("and forgetting is a silent no-op", _lay.forget("welcome"), None)
+_lay._available = True
+
+_state = RobotState()
+_state.set_demos([{"id": "welcome", "label": "W", "help": "", "available": True, "note": ""}],
+                 {"rev": 7, "items": [], "available": True})
+check("the layout rides the poll the dashboard already makes",
+      _state.snapshot()["layout"], {"rev": 7, "items": [], "available": True})
+_state.refresh_demo_availability(
+    [{"id": "welcome", "label": "W", "help": "", "available": False, "note": "failed 3 times"}])
+check("and a refresh that carries no layout leaves it alone",
+      _state.snapshot()["layout"]["rev"], 7)
+
+print()
+print("[23] the dashboard never puts a robot string into markup")
+_page = (_Path(__file__).resolve().parent / "web" / "index.html").read_text(encoding="utf-8")
+_code = "\n".join(
+    line for line in _page.splitlines()
+    if not line.strip().startswith(("//", "*", "/*"))
+)
+# Folder names are the fourth staff-authored, unauthenticated, stored string on
+# this page. The whole defence is that no server value is ever interpolated
+# into markup -- so the sink simply may not appear outside a comment.
+check("no innerHTML sink outside a comment", ".innerHTML" in _code, False)
+check("no outerHTML either", ".outerHTML" in _code, False)
+check("no document.write", "document.write(" in _code, False)
+# Offline: the robot is routinely on a hotspot, and a CDN font or script that
+# fails to load would take the operator's dashboard with it. The SVG and XHTML
+# namespace URIs are excluded by name -- they are constants passed to
+# createElementNS, never fetched by any browser, and a check that cannot tell
+# them from a CDN link is one somebody silences rather than fixes.
+_NAMESPACES = ("http://www.w3.org/2000/svg", "http://www.w3.org/1999/xhtml",
+               "http://www.w3.org/1999/xlink")
+_fetchable = _page
+for _ns in _NAMESPACES:
+    _fetchable = _fetchable.replace(_ns, "")
+for _proto in ("https://", "http://", "//cdn", "@import"):
+    check(f"nothing loaded from {_proto}", _proto in _fetchable, False)
+check("the safe-area insets can actually resolve", "viewport-fit=cover" in _page, True)
+check("both themes are declared, not just one",
+      _page.count('data-theme="dark"') >= 1 and "prefers-color-scheme: dark" in _page, True)
+check("motion is opt-out", "prefers-reduced-motion" in _page, True)
+
+print()
+print("[24] the stylesheet survives being read the way a browser reads it")
+import re  # noqa: E402
+
+# This section exists because of one shipped bug, and it is worth stating
+# plainly. A comment in the token block said "override the --l-*/--d-* pairs".
+# CSS comments do not nest and have no escape: the star-slash inside that glob
+# ENDED the comment, and the rest of the sentence plus the entire :root block
+# after it went to the parser as garbage and was discarded. Every design token
+# vanished, and the dashboard rendered as serif text on a black page with no
+# cards at all. Every check in section [23] passed, because they all searched
+# the file as TEXT. So this one strips comments the way a browser does, and
+# then insists the rules that matter still exist.
+_raw = re.search(r"<style>(.*?)</style>", _page, re.S).group(1)
+
+
+def _decomment(css):
+    """Strip comments the way a parser does: the FIRST star-slash closes."""
+    out, i = [], 0
+    while True:
+        start = css.find("/*", i)
+        if start == -1:
+            out.append(css[i:])
+            return "".join(out)
+        out.append(css[i:start])
+        close = css.find("*/", start + 2)
+        if close == -1:            # unterminated: the rest of the file is comment
+            return "".join(out)
+        out.append(" ")
+        i = close + 2
+
+
+_css = _decomment(_raw)
+
+# A comment terminator anywhere but the end of its line is the shape of the bug.
+_early = [ln for ln, line in enumerate(_raw.splitlines(), 1)
+          if "*/" in line and line.split("*/", 1)[1].strip()]
+check("no comment closes mid-line", _early, [])
+
+# What is left between one rule's } and the next rule's { must look like a
+# selector. Leaked prose does not, which is what makes this catch the general
+# case rather than only the star-slash spelling of it.
+_between, _depth, _buf, _loose = [], 0, [], []
+for _ch in _css:
+    if _ch == "{":
+        if _depth == 0:
+            _loose.append("".join(_buf).strip())
+        _depth += 1
+        _buf = []
+    elif _ch == "}":
+        _depth = max(0, _depth - 1)
+        _buf = []
+    elif _depth == 0:
+        _buf.append(_ch)
+_tail = "".join(_buf).strip()
+_SELECTOR = re.compile(r"^[\w\s.#:,()\[\]=\"'>+~*@-]+$")
+_junk = [s[:60] for s in _loose if s and not _SELECTOR.match(s)]
+check("nothing but selectors between rules", _junk, [])
+check("no text left dangling after the last rule", _tail, "")
+check("braces balance after comments are stripped", _css.count("{"), _css.count("}"))
+
+# The rules that, if they go missing, produce exactly the page that shipped.
+check("the type ramp survives", "--fs-lead:" in _css, True)
+check("the geometry survives", "--tap:" in _css, True)
+check("the light mapping survives", "--bg: var(--l-bg)" in _css, True)
+check("the dark mapping survives", _css.count("--bg: var(--d-bg)"), 2)
+check("body still gets a font", re.search(r"body\s*\{[^}]*font:", _css) is not None, True)
+check("cards still get a background", re.search(r"\.panel\s*\{[^}]*background:", _css) is not None, True)
+check("a mode key still gets its face", re.search(r"\.mode\s*\{[^}]*--key-bg:", _css) is not None, True)
+
+# The list a <select> opens is a separate surface that inherits the control's
+# colours, and pill selects are deliberately transparent so they sit flush
+# inside their pill. Without colours of its own the open menu drew near-white
+# text on the platform's white canvas, and every option except the highlighted
+# one was invisible in dark mode -- the personality menu read as "Default" and
+# then a tall empty white box.
+_opt = re.search(r"select option[^{]*\{([^}]*)\}", _css)
+check("the open select menu is coloured, not inherited",
+      bool(_opt) and "background-color:" in _opt.group(1) and "color:" in _opt.group(1), True)
+check("and it uses theme tokens, so it follows the palette",
+      bool(_opt) and "var(--" in _opt.group(1), True)
+
+# Two keys held on each other become a folder. Three numbers have to agree for
+# that to behave, and they live in three files, so they are checked rather than
+# trusted: the dwell the script waits for and the dwell the ring draws must be
+# the same length, or the ring finishes before the gesture arms and people let
+# go early; and the folder cap the browser refuses at must match the one the
+# robot refuses at, or the gesture fails after the drag instead of before it.
+_js_ms = re.search(r"MERGE_MS\s*=\s*(\d+)", _page)
+_css_ms = re.search(r"--merge-ms:\s*(\d+)ms", _page)
+check("the grouping dwell and the ring that draws it agree",
+      (_js_ms and _js_ms.group(1), _css_ms and _css_ms.group(1)),
+      (_css_ms and _css_ms.group(1), _css_ms and _css_ms.group(1)))
+_js_max = re.search(r"MAX_FOLDERS\s*=\s*(\d+)", _page)
+check("the browser's folder cap matches the robot's",
+      int(_js_max.group(1)) if _js_max else None, _lay.MAX_FOLDERS)
+check("the grouping target is drawn", ".mode.is-merge" in _css, True)
+
+print()
+print("[25] every colour theme is legible, in both light and dark")
+# The design's premise is that a staff member reads this from arm's length in a
+# glass atrium with a group waiting. That is a claim about contrast ratios, so
+# it is measured rather than eyeballed -- and it is measured for every palette,
+# so adding a sixth cannot quietly ship an unreadable one.
+_style = re.sub(r"/\*.*?\*/", " ", re.search(r"<style>(.*?)</style>", _page, re.S).group(1), flags=re.S)
+
+
+def _tokens(selector):
+    m = re.search(re.escape(selector) + r"\s*\{(.*?)\n\s*\}", _style, re.S)
+    return dict(re.findall(r"--([a-z0-9-]+)\s*:\s*(#[0-9a-fA-F]{6})\s*;", m.group(1))) if m else {}
+
+
+def _lum(c):
+    def chan(v):
+        v = int(c[v:v + 2], 16) / 255
+        return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+    r, g, b = chan(1), chan(3), chan(5)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _ratio(a, b):
+    hi, lo = max(_lum(a), _lum(b)), min(_lum(a), _lum(b))
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def _hue(c):
+    r, g, b = (int(c[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    hi, lo = max(r, g, b), min(r, g, b)
+    if hi == lo:
+        return 0.0
+    d = hi - lo
+    h = ((g - b) / d) % 6 if hi == r else ((b - r) / d + 2 if hi == g else (r - g) / d + 4)
+    return h * 60
+
+
+_base = _tokens(":root")
+_names = [""] + re.findall(r':root\[data-palette="([a-z]+)"\]', _style)
+check("five colour themes", len(set(_names)), 5)
+check("and a swatch for each", len(set(re.findall(r'data-palette-set="([a-z]*)"', _page))), 5)
+
+_PAIRS = [("text", "panel", 7.0), ("text", "bg", 7.0), ("text-2", "panel", 4.5),
+          ("dim", "panel", 4.5), ("dim", "bg", 4.5), ("accent-ink", "accent", 4.5),
+          ("accent", "panel", 4.5), ("accent", "panel-2", 4.5), ("accent", "accent-soft", 4.5),
+          ("ok", "ok-soft", 4.5), ("warn", "warn-soft", 4.5), ("bad", "bad-soft", 4.5),
+          ("heard", "panel-2", 4.5), ("said", "panel", 4.5)]
+# These four wash the SAME state bar seconds apart -- Listening, Speaking,
+# Asleep, Offline. Two of them at the same lightness and a similar hue is a
+# state bar that has stopped saying what the robot is doing, which is the one
+# thing it exists for.
+_STATE = ["accent", "ok", "warn", "bad"]
+
+for _pal in sorted(set(_names)):
+    _over = _tokens(f':root[data-palette="{_pal}"]') if _pal else {}
+    for _mode in ("l", "d"):
+        _t = {k[2:]: v for k, v in list(_base.items()) + list(_over.items())
+              if k.startswith(_mode + "-")}
+        _low = [f"{a} on {b} {_ratio(_t[a], _t[b]):.1f}"
+                for a, b, floor in _PAIRS if a in _t and b in _t and _ratio(_t[a], _t[b]) < floor]
+        _near = [f"{a}/{b}" for i, a in enumerate(_STATE) for b in _STATE[i + 1:]
+                 if a in _t and b in _t
+                 and abs(_lum(_t[a]) - _lum(_t[b])) < 0.05
+                 and min(abs(_hue(_t[a]) - _hue(_t[b])), 360 - abs(_hue(_t[a]) - _hue(_t[b]))) < 40]
+        _label = (_pal or "trinity") + " / " + ("light" if _mode == "l" else "dark")
+        check(f"{_label}: contrast", _low, [])
+        check(f"{_label}: states tell apart", _near, [])
+
+# Every themeable colour must exist in BOTH modes and be wired to a live token,
+# or a palette silently inherits the base for whatever it forgot.
+_pairs = {n for n in re.findall(r"--([ld]-[a-z0-9-]+)\s*:", _style)}
+_mapped = set(re.findall(r"--([a-z0-9-]+)\s*:\s*var\(--[ld]-", _style))
+check("every per-mode colour is wired to a live token",
+      sorted({n[2:] for n in _pairs} - _mapped - {"sw"}), [])
+check("the palettes are defined once, not once per mode",
+      _style.count("--l-bg:"), len(set(_names)))
+
+print()
+print("[26] the robot knows what Trinity teaches, and knows what it must not say")
+import brain.courses as _co  # noqa: E402
+
+check("every taught masters is there", len(_co.PROGRAMMES), 13)
+check("no two share a key", len({p.key for p in _co.PROGRAMMES}), len(_co.PROGRAMMES))
+check("no two share a name", len({p.name for p in _co.PROGRAMMES}), len(_co.PROGRAMMES))
+check("each one can be asked for", [p.key for p in _co.PROGRAMMES if not p.terms], [])
+check("each one says who it is for", [p.key for p in _co.PROGRAMMES if not p.who_for], [])
+
+# The questions a prospective student actually asks, standing in the building.
+# The confusable pairs are the point: there are two marketing MScs and four
+# finance-ish ones, and telling them apart is the whole job.
+_ASKED = [
+    ("is there a risk management masters", ["MSc in Financial Risk Management"]),
+    ("a supply chain management masters", ["MSc in Operations and Supply Chain Management"]),
+    ("do you do a management masters", ["MSc in Management"]),
+    ("I have an arts degree can I still apply", ["MSc in Management"]),
+    ("whats the difference between the marketing ones",
+     ["MSc in Marketing", "MSc in Digital Marketing Strategy"]),
+    ("digital marketing strategy", ["MSc in Digital Marketing Strategy"]),
+    ("tell me about the finance masters", ["MSc in Finance"]),
+    ("law and finance", ["MSc in Law and Finance"]),
+    ("can I do accounting without an accounting degree", ["MSc in Accounting and Analytics"]),
+    ("I want to start a company", ["MSc in Entrepreneurship and Innovation"]),
+    ("sustainability masters", ["MSc in Responsible Business and Sustainability"]),
+    ("human resource management", ["MSc in Human Resource Management"]),
+    ("international management", ["MSc in International Management"]),
+]
+for _q, _want in _ASKED:
+    check(f"asked: {_q}", sorted(p.name for p in _co.matches(_q)), sorted(_want))
+
+# Nothing else may pull a prospectus into the prompt. Every one of these is a
+# real utterance from another demo, and a robot that answers "set a timer" with
+# a masters programme has made every other demo worse.
+for _quiet in ("what is the weather", "set a timer for five minutes", "tell me a story",
+               "lets brainstorm a business idea", "can you dance", "what is your name",
+               "who runs the hub", "how does your camera work"):
+    check(f"quiet: {_quiet}", _co.brief(_quiet), "")
+
+# Asked in general, it must offer to narrow rather than recite thirteen titles.
+_gen = _co.brief("what postgraduate courses do you have")
+check("a general question gets the list, not one programme", bool(_gen) and not _co.matches("what postgraduate courses do you have"), True)
+check("and is told not to read it all out", "not list all thirteen" in _gen.lower() or "do not list" in _gen.lower(), True)
+
+# THE PART THAT MATTERS MOST. These change every year, and the person asking is
+# deciding whether they can afford to come.
+_detail = _co.brief("tell me about the finance masters")
+for _forbidden in ("fee", "deadline", "entry requirement", "scholarship", "ranking"):
+    check(f"refuses to state the {_forbidden}", _forbidden in _co.REFUSALS.lower(), True)
+check("and the refusal rides with every answer", _co.REFUSALS in _detail, True)
+_numbers = re.findall(r"[€$£]\s?\d|\d{4,}", " ".join(p.block() for p in _co.PROGRAMMES))
+check("no prices or years are baked into the facts", _numbers, [])
+
+# Cost control: the standing list is in the base prompt on EVERY turn, so it
+# has to stay small next to hub.GROUNDING's ~830 tokens.
+import brain.hub as _hub  # noqa: E402
+check("the standing list stays cheap", len(_co.STANDING) // 4 < 300, True)
+check("and detail only arrives when asked for", len(_co.brief("what is the weather")), 0)
+check("a detailed answer stays under a third of the grounding",
+      len(_detail) < len(_hub.GROUNDING), True)
+
+print()
+print("[27] the reply pipeline starts speaking as early as it safely can")
+import brain.interface as _iface  # noqa: E402
+import brain.llm as _llm  # noqa: E402
+
+# stream_reply is exercised for real, against a scripted backend, with its
+# memory side effects stubbed -- the earlier sections stub stream_reply itself,
+# which is exactly why nothing so far would have caught a bug in it.
+class _ScriptedBackend:
+    name = "scripted"
+    supports_web = False
+
+    def __init__(self, pieces, fail_after=None):
+        self._pieces = pieces
+        self._fail_after = fail_after
+
+    def stream(self, messages, max_tokens=None, web=False):
+        for i, piece in enumerate(self._pieces):
+            if self._fail_after is not None and i >= self._fail_after:
+                raise RuntimeError("backend died")
+            yield piece
+
+
+def _run_stream(*backends):
+    _held = (_llm.streaming_backends, _iface.memory.get_history,
+             _iface.long_term_memory.get_context, _iface.memory.remember_turn)
+    remembered = []
+    _llm.streaming_backends = lambda: backends
+    _iface.memory.get_history = lambda pid: []
+    _iface.long_term_memory.get_context = lambda pid: ""
+    _iface.memory.remember_turn = lambda pid, m, r: remembered.append(r)
+    try:
+        out = list(_real_stream_reply(0, "a question", cache=False))
+    finally:
+        (_llm.streaming_backends, _iface.memory.get_history,
+         _iface.long_term_memory.get_context, _iface.memory.remember_turn) = _held
+    return out, remembered
+
+# A long opening sentence is flushed at its first clause break, so the voice
+# starts while the model is still writing the rest of the sentence. Streamed
+# in small pieces the way a real backend delivers tokens -- handed the whole
+# sentence in one piece, the ordinary sentence flush wins, which is also
+# correct and also covered below.
+_long_opener = ("The Hub runs across three different strands of work here, ",
+                "covering ", "immersive learning and research. Second sentence. [emotion: happy]")
+_out, _rem = _run_stream(_ScriptedBackend(_long_opener))
+check("a long opener starts speaking at the clause",
+      _out[0][0], "The Hub runs across three different strands of work here,")
+check("the rest of the sentence follows",
+      _out[1][0], "covering immersive learning and research.")
+check("nothing is lost or doubled",
+      _rem, ["The Hub runs across three different strands of work here, covering "
+             "immersive learning and research. Second sentence."])
+check("the closing emotion still lands", _out[-1][1], "happy")
+_whole, _ = _run_stream(_ScriptedBackend(
+    ("The Hub runs across three different strands of work here, covering "
+     "immersive learning and research. [emotion: neutral]",)))
+check("the same sentence arriving whole is spoken whole",
+      [t for t, _ in _whole if t],
+      ["The Hub runs across three different strands of work here, covering "
+       "immersive learning and research."])
+
+# A short reply never clause-splits -- the flush exists for long openers only.
+_out2, _ = _run_stream(_ScriptedBackend(("Yes, it does. [emotion: neutral]",)))
+check("a short reply is spoken whole", [t for t, _ in _out2 if t], ["Yes, it does."])
+
+# THE FAILOVER RULE, now with clauses in it: once ANY words have been spoken --
+# a clause counts exactly as a sentence does -- a dying backend must not let
+# the other model start a different answer over the top of them.
+_dies_talking = _ScriptedBackend(
+    ("A long opening clause that runs well past sixty characters, easily, ", "boom"),
+    fail_after=1)
+_out3, _ = _run_stream(_dies_talking, _ScriptedBackend(("Fallback answer. [emotion: neutral]",)))
+_spoken3 = [t for t, _ in _out3 if t]
+check("a backend that dies after the clause does not restart the answer",
+      any("Fallback" in t for t in _spoken3), False)
+check("but the clause that was spoken stands",
+      _spoken3[0].startswith("A long opening clause"), True)
+
+# And a backend that dies BEFORE anything was spoken still fails over silently.
+_out4, _ = _run_stream(_ScriptedBackend(("x",), fail_after=0),
+                       _ScriptedBackend(("Fallback answer. [emotion: neutral]",)))
+check("a backend that dies silent is replaced silently",
+      [t for t, _ in _out4 if t], ["Fallback answer."])
+
+# The Anthropic prompt-cache split: the standing prompt is the cached block,
+# per-turn material is not, and an unrecognised prompt caches nothing rather
+# than wrongly caching something that varies.
+from brain.llm_backends import _system_blocks  # noqa: E402
+from brain.prompts import base_prompts, build_messages as _bm  # noqa: E402
+check("every standing prompt is exported for the cache split", len(base_prompts()), 3)
+_blocks = _system_blocks(_bm("", [], "hi", extra_system="PERSONA")[0]["content"])
+check("the standing prompt is the cached block",
+      "cache_control" in _blocks[0] and len(_blocks) == 2, True)
+check("per-turn material is not cached", "cache_control" in _blocks[-1], False)
+check("an unknown prompt caches nothing",
+      _system_blocks("something else entirely"), [{"type": "text", "text": "something else entirely"}])
+# The API rejects an empty text block outright, and the long-term-memory
+# summariser builds its request with no system prompt at all -- so "" must
+# come back as no blocks, which the call sites turn into omitting the
+# parameter entirely.
+check("no system prompt means no blocks, not an empty one", _system_blocks(""), [])
+check("nor for whitespace", _system_blocks("  \n "), [])
+
+# The warm request must be tiny and must carry the real standing prompt --
+# priming the cache with anything else would prime the wrong prefix.
+from brain.llm_backends import OllamaBackend  # noqa: E402
+class _RecordingClient:
+    def __init__(self): self.calls = []
+    def chat(self, **kw): self.calls.append(kw); return {"message": {"content": ""}}
+_ob = OllamaBackend()
+_ob._client = _RecordingClient()
+_ob.warm(_bm("", [], "hello"))
+check("warm asks for one token", _ob._client.calls[0]["options"]["num_predict"], 1)
+check("warm keeps the model resident", _ob._client.calls[0]["keep_alive"], -1)
+check("warm sends the real standing prompt",
+      _ob._client.calls[0]["messages"][0]["content"].startswith("You are Reachy Mini"), True)
+check("every ollama call carries the widened context window",
+      _ob._options(None)["num_ctx"] >= 4096 and _ob._options(300)["num_ctx"] >= 4096, True)
+check("a caller's token cap still wins", _ob._options(300)["num_predict"], 300)
+
+# The speculative Whisper wrapper: its one job is to be safely joinable
+# whatever happened inside it, because listen() must join a stale decode
+# before starting a fresh one on the shared recognizer.
+from body.audio_io import _EarlyDecode  # noqa: E402
+import numpy as _np  # noqa: E402
+_ed = _EarlyDecode(lambda s: "the transcript", _np.zeros(4), "the transcript")
+check("an early decode returns its result", _ed.result(), "the transcript")
+check("and reports done afterwards", _ed.done, True)
+_boom = _EarlyDecode(lambda s: (_ for _ in ()).throw(RuntimeError("x")), _np.zeros(4), "p")
+check("a decode that blows up still joins, as empty", _boom.result(), "")
+
+# Barge-in THROUGH the render-ahead pipeline. The first live interruption after
+# the pipeline shipped raised NameError out of the abandon-drain instead of
+# Interrupted -- the guard ate it as a demo failure and the visitor's turn was
+# lost. The pipeline's cleanup path is exactly the code only an interruption
+# reaches, so it is exercised here the way a visitor exercises it: by talking
+# over the first sentence.
+_pipe_audio = FakeAudio(interrupt_after={0})
+_pipe_state = RobotState()
+_pipe_ctx = DemoContext(audio=_pipe_audio, motion=FakeMotion(), tracker=None,
+                        state=_pipe_state, demo_id="t", store={})
+_held_sr = _bi.stream_reply
+_bi.stream_reply = lambda *a, **k: iter(
+    [("First sentence.", "thinking"), ("Never spoken.", "thinking"), ("", "happy")])
+try:
+    _pipe_ctx.reply("q")
+    check("an interruption mid-reply raises Interrupted", "did not raise", "Interrupted")
+except Interrupted:
+    check("an interruption mid-reply raises Interrupted", "Interrupted", "Interrupted")
+except Exception as exc:
+    check("an interruption mid-reply raises Interrupted", type(exc).__name__, "Interrupted")
+finally:
+    _bi.stream_reply = _held_sr
+check("what was spoken before the interruption stands", _pipe_audio.said, ["First sentence."])
+check("and the speaking flag was not left set", _pipe_state.snapshot()["speaking"], False)
+
+print()
+print("[28] operator choices survive, and the robot knows what day it is online")
+import brain.settings as _set  # noqa: E402
+
+# The kv store, against the scratch DB the layout section already installed.
+_set.db.MODELS = _db.MODELS
+_set._init_settings()
+check("a choice saves and loads", (_set.put("voice", "en_GB-alba-medium"),
+                                   _set.get("voice")), (True, "en_GB-alba-medium"))
+check("absence is the default, not an error", _set.get("nothing", "fallback"), "fallback")
+check("a runaway value is clamped", len(_set.get("voice")) <= 200 and _set.put("k", "x" * 999)
+      and len(_set.get("k")), 200)
+_set._available = False
+check("unavailable degrades to defaults", _set.get("voice", "d"), "d")
+check("and swallows writes", _set.put("voice", "x"), False)
+_set._available = True
+
+# The runner persists a voice only when it actually applied, and the voice
+# loop restores it at startup -- the restart cycle in miniature.
+class _VoiceAudio(FakeAudio):
+    def __init__(self):
+        super().__init__()
+        self.voice_name = "en_US-amy-medium"
+    def set_voice(self, name):
+        ok = name != "en_XX-broken"
+        if ok:
+            self.voice_name = name
+        return ok
+
+_va = _VoiceAudio()
+_vr, _vs, _, _ = build([Chatty()])
+_vr._audio = _va
+_vs.request("voice", "en_GB-alba-medium")
+_vr.cycle()
+check("an applied voice is spoken and persisted",
+      (_va.voice_name, _set.get("voice")), ("en_GB-alba-medium", "en_GB-alba-medium"))
+_set.put("voice", "en_XX-broken")
+_va2 = _VoiceAudio()
+saved = _set.get("voice")
+if saved and saved != _va2.voice_name and not _va2.set_voice(saved):
+    pass  # the voice_loop path: a missing saved voice falls back with a note
+check("a saved voice that cannot load falls back", _va2.voice_name, "en_US-amy-medium")
+
+# The web prompt knows the date; the offline one must not, because offline
+# answers are cached by qa_cache with no date in the key -- a date there would
+# freeze into an answer replayed on the wrong day.
+import time as _time  # noqa: E402
+from brain.prompts import _base_prompt as _bp  # noqa: E402
+_today = _time.strftime("%A %d %B %Y")
+check("online, the robot knows today's date", _today in _bp(True), True)
+check("and is told to anchor news searches on it",
+      "put today's date in the query" in _bp(True), True)
+check("offline, the date stays out of the cacheable prompt", _today in _bp(False), False)
+
+# The dashboard keeps trying for the voice list instead of hiding on the first
+# empty answer -- the once-only fetch is how voices became unselectable while
+# personalities worked.
+_page2 = (_Path(__file__).resolve().parent / "web" / "index.html").read_text(encoding="utf-8")
+check("the voice dropdown retries until the list arrives",
+      "setInterval(syncVoices" in _page2, True)
+check("and never hides itself permanently", 'sel.style.display = "none"' in _page2, False)
+
+print()
+print("[29] a misheard trigger phrase still starts the feature it meant")
+from demokit.runner import _word_stream as _ws, contains_phrase as _cp, fuzzy_contains as _fc  # noqa: E402
+
+# The transcripts Whisper actually produced, live, for one staff-written
+# trigger. Whisper has no hotword biasing, so proper nouns in triggers WILL
+# keep arriving like this -- and the robot already forgives its own name
+# ("Ricky" wakes it), so a feature's phrase gets the same tolerance.
+_TRIGGER = "welcome the erasmus group"
+for _heard in ("Welcome to your irisimus group",
+               "Welcome the de-arass misgroup",
+               "Welcome the Erasmus group.",
+               # The first mangling to arrive AFTER the matcher shipped -- it
+               # fired live, first try, and stays here so it always will.
+               "Welcome to your raspous group"):
+    check(f"fires on: {_heard}",
+          _cp(_ws(_heard), _TRIGGER) or _fc(_ws(_heard), _TRIGGER), True)
+
+# And the sentences that must NOT drag a group into a welcome nobody asked for.
+for _heard in ("welcome everyone to the hub today",
+               "you're all welcome here",
+               "the erasmus programme is great",          # topic, not the request
+               "can you dance for the group",
+               "what a great group of people",
+               # The two that broke the single-threshold design: both scored AT
+               # or ABOVE the mangled real trigger on whole-window similarity.
+               # What keeps them quiet is the word-evidence gate -- nothing in
+               # them resembles "erasmus".
+               "we should welcome the new group",
+               "a warm welcome to this group"):
+    check(f"quiet on: {_heard}", _fc(_ws(_heard), _TRIGGER), False)
+
+# Short triggers never match approximately -- one mishearing away from
+# everything is why features.py refuses short phrases outright.
+check("a two-word trigger is exact-only", _fc(_ws("lets dance everybody"), "lets dance"), False)
+check("but a longer built-in gets the tolerance",
+      _fc(_ws("let us brainstorm together"), "help me brainstorm") or
+      _fc(_ws("help me brain storm"), "help me brainstorm"), True)
+
+# Through the runner: the mangled transcript switches to the feature, and an
+# exact match on one trigger beats a resemblance to another.
+class _Erasmus(Demo):
+    id, label, help = "custom_erasmus", "Erasmus welcome", "h"
+    triggers = ("welcome the erasmus group",)
+    def on_idle(self, ctx):
+        return IdleResult(listen_for=1.0)
+
+_er = _Erasmus()
+_r29, _s29, _a29, _ = build([Chatty(), _er])
+_s29.set_mode("chatty")
+_r29.cycle()
+_r29._dispatch(*_r29._active(), "Welcome to your irisimus group", 0)
+check("the mangled phrase still switches to the feature", _s29.mode, "custom_erasmus")
+
+print()
+print("[30] the clock is answered from the clock, not the model")
+import demos.conversation as _conv  # noqa: E402
+import re as _re30  # noqa: E402
+
+_t = _conv._clock_answer("hey reachy what time is it")
+check("a time question gets a spoken time", bool(_t) and _t.startswith("It's "), True)
+check("and never a 24-hour reading", bool(_re30.search(r"\b(1[3-9]|2[0-3])\b", _t)), False)
+_d = _conv._clock_answer("what day is it today")
+check("a date question gets the day and date", bool(_d) and "It's " in _d, True)
+for _not_clock in ("tell me a story about time", "sometimes I wonder",
+                   "what time does the hub open", "set a timer for five minutes",
+                   "do you like dates"):
+    check(f"left to the model: {_not_clock}", _conv._clock_answer(_not_clock), "")
+
+print()
+print("[31] the new demos, the playlist step, and what they refuse to do")
+_st, _sy = _statmod, _studymod
+import demos._stored as _storedmod  # noqa: E402
+import demos.quiz as _quiz  # noqa: E402
+import demos.greetings as _greet  # noqa: E402
+
+# --- visit stats: aggregate, and NOT tied to a person ---
+# Measured as a DELTA, not against zero: the runner counts its own dispatches,
+# and earlier sections in this file drive real turns through it. An absolute
+# assertion here passes only by accident of ordering.
+_before = _st.day()
+_was_turns = _before["counts"].get("turns", 0)
+_was_questions = len(_before["questions"])
+_st.bump("turns"); _st.bump("turns"); _st.bump("demo:quiz")
+_st.note_question("What is the AI XR Hub?"); _st.note_question("what is the ai xr hub")
+_today = _st.day()
+check("turns are counted", _today["counts"].get("turns", 0) - _was_turns, 2)
+check("demos are counted separately", _today["demos"].get("quiz"), 1)
+_hub_q = [q for q in _today["questions"] if q["question"] == "what is the ai xr hub"]
+check("the same question asked twice counts twice",
+      _hub_q[0]["asked"] if _hub_q else 0, 2)
+check("and is stored once, punctuation and case folded",
+      len(_today["questions"]) - _was_questions, 1)
+_st._available = False
+check("stats unavailable still returns a usable day", _st.day()["counts"], {})
+check("and swallows writes", _st.bump("turns"), None)
+_st._available = True
+
+# --- the study: consent is a gate, not a label ---
+_sy.stop()
+_sy.start("friendly")
+_sy.record("said before consent", "reply", 1.0)
+check("nothing is recorded before consent", _sy.summary()["turns"], 0)
+_sy.consent(True)
+_sy.record("said after consent", "reply", 1.0)
+check("and recorded after it", _sy.summary()["turns"], 1)
+_session = _sy.status()["session"]
+check("a session id is random, not a person id", len(_session) >= 16, True)
+_sy.consent(False)
+_sy.record("said after withdrawal", "reply", 1.0)
+check("declining stops the session outright", _sy.running(), False)
+check("and nothing more is recorded", _sy.summary()["turns"], 1)
+check("withdrawing deletes rather than flags", _sy.withdraw(_session), 1)
+check("leaving nothing behind", _sy.summary()["turns"], 0)
+_sy.stop()
+check("research mode is OFF unless deliberately started", _sy.running(), False)
+# The table must not be able to hold a person. Checked structurally, because
+# this is the property an ethics reviewer would ask about.
+with _db._connection() as _conn:
+    _cols = {r[1] for r in _conn.execute("PRAGMA table_info(study_turns)")}
+check("no person, name or face column exists",
+      sorted(_cols & {"person_id", "name", "face", "embedding"}), [])
+
+# The variables an analysis actually needs. Added after the first sessions were
+# recorded, so the ALTER TABLE migration in _init_study has to have run -- on a
+# database from before the change, CREATE TABLE IF NOT EXISTS does nothing and
+# every insert naming these columns would fail. In a module contracted never to
+# raise, that failure looks exactly like a study that records nothing.
+check("persona, first_word_s and backend columns exist",
+      sorted(_cols & {"persona", "first_word_s", "backend"}),
+      ["backend", "first_word_s", "persona"])
+
+_sy.start("armA")
+_sy.consent(True)
+_sy.record("q", "a", 9.5, persona="professional", first_word_s=1.25, backend="anthropic")
+with _db._connection() as _conn:
+    _row = _conn.execute(
+        "SELECT condition, persona, latency_s, first_word_s, backend FROM study_turns "
+        "WHERE session = ? ORDER BY id DESC LIMIT 1", (_sy.status()["session"],)
+    ).fetchone()
+check("the free-text condition is kept", _row[0], "armA")
+check("and the persona is recorded separately", _row[1], "professional")
+# Two timings, deliberately. latency_s is the whole turn INCLUDING the time
+# spent speaking, so it grows with the length of the answer; first_word_s is
+# what the participant actually waited. Recording only the first meant a long
+# reply was indistinguishable from a slow model.
+check("turn length and responsiveness are both kept", (_row[2], _row[3]), (9.5, 1.25))
+check("and which model answered", _row[4], "anthropic")
+check("this test cleans up after itself", _sy.withdraw(_sy.status()["session"]), 1)
+_sy.stop()
+
+# --- PLAY: a feature can hand the visit to another demo ---
+_play_ok = _F.Feature(id="custom_tour", label="Tour", blocks=_F.parse_blocks([
+    {"kind": "SAY", "text": "Welcome."}, {"kind": "PLAY", "demo": "welcome"}]))
+check("a handover step validates", _F.validate(_play_ok, existing=[]), [])
+_play_mid = _F.Feature(id="custom_bad", label="Bad", blocks=_F.parse_blocks([
+    {"kind": "PLAY", "demo": "welcome"}, {"kind": "SAY", "text": "never runs"}]))
+check("but only as the last step", any("last step" in p for p in _F.validate(_play_mid, existing=[])), True)
+_play_self = _F.Feature(id="custom_loop", label="Loop", blocks=_F.parse_blocks([
+    {"kind": "SAY", "text": "hi"}, {"kind": "PLAY", "demo": "custom_loop"}]))
+check("and never itself", any("loop forever" in p for p in _F.validate(_play_self, existing=[])), True)
+
+# It actually switches, and advances past itself so it cannot loop.
+_pl_reg = Registry()
+_pl_reg._publish({d.id: d for d in [Chatty(), Dancer()]})
+import demokit.runner as _rmod  # noqa: E402
+_held_reg = _rmod.REGISTRY
+_rmod.REGISTRY = _pl_reg
+import demokit.registry as _regmod  # noqa: E402
+_held_regmod = _regmod.REGISTRY
+_regmod.REGISTRY = _pl_reg
+try:
+    _pl_state = RobotState()
+    _pl_state.set_demos([{"id": d.id, "label": d.label, "help": "", "available": True, "note": ""}
+                         for d in (Chatty(), Dancer())])
+    _pl_state.set_mode("chatty")
+    _pl_ctx = DemoContext(audio=FakeAudio(), motion=FakeMotion(), tracker=None,
+                          state=_pl_state, demo_id="custom_tour", store={})
+    _feature = _storedmod.StoredFeature(_F.Feature(
+        id="custom_tour", label="Tour",
+        blocks=_F.parse_blocks([{"kind": "PLAY", "demo": "dancer"}])))
+    _feature.on_enter(_pl_ctx)
+    _feature.on_idle(_pl_ctx)
+    check("a handover switches the robot", _pl_state.mode, "dancer")
+    check("and advances past itself, so it cannot loop", _pl_ctx.store["cursor"], 1)
+    _missing = _storedmod.StoredFeature(_F.Feature(
+        id="custom_gone", label="Gone",
+        blocks=_F.parse_blocks([{"kind": "PLAY", "demo": "not_installed"}])))
+    _gone_ctx = DemoContext(audio=FakeAudio(), motion=FakeMotion(), tracker=None,
+                            state=_pl_state, demo_id="custom_gone", store={})
+    _missing.on_enter(_gone_ctx)
+    _missing.on_idle(_gone_ctx)
+    check("a handover to a demo that is gone is skipped, not fatal",
+          _gone_ctx.store["cursor"], 1)
+finally:
+    _rmod.REGISTRY = _held_reg
+    _regmod.REGISTRY = _held_regmod
+
+# --- quiz: loose answer matching, and the decoys ---
+check("a shouted answer counts", _quiz._is_right("um is it extended reality", ("extended reality",)), True)
+check("so does one word of it", _quiz._is_right("REALITY", ("extended reality", "reality")), True)
+check("a wrong answer does not", _quiz._is_right("virtual reality goggles", ("trinity", "dublin")), False)
+check("every question has an answer and a fact",
+      [q[0] for q in _quiz._QUESTIONS if not q[1] or not q[2]], [])
+
+# --- greetings: bounded to greeting, never to listening ---
+check("a language is recognised by its own name", _greet._requested("say hello in espanol"), "spanish")
+check("and by the English name", _greet._requested("greet them in german"), "german")
+check("an unrelated sentence asks for nothing", _greet._requested("what is the weather"), "")
+for _key, (_name, _lines, _voice) in _greet._LANGUAGES.items():
+    check(f"{_key} hands back to English",
+          any("english" in ln.lower() or "inglés" in ln.lower() or "anglais" in ln.lower()
+              or "englisch" in ln.lower() or "inglese" in ln.lower() for ln in _lines), True)
+
+# --- the advisor refuses what it must ---
+import demos.advisor as _adv  # noqa: E402
+_ab = _adv._brief({"background": "history", "draw": "writing", "technical": "not technical"})
+check("the advisor sees the whole catalogue",
+      all(p.name in _ab for p in _co.PROGRAMMES), True)
+check("and is told never to say whether they would get in",
+      "whether they would be accepted" in _ab, True)
+check("nor to quote a fee or a deadline",
+      "never quote a fee" in _ab and "deadline" in _ab, True)
+check("it names one or two, not a fixed number", "ONE or TWO" in _ab, True)
+check("and is warned about the restricted programmes",
+      "ONLY for non-business" in _ab, True)
+
+print()
+print("[32] a face the robot knows is not asked for its name again")
+import body.face_tracker as _ftmod  # noqa: E402
+import demos.vision as _vis  # noqa: E402
+import numpy as _npf  # noqa: E402
+import threading as _thr  # noqa: E402
+
+# The live failure, exactly: one dropped frame between two confident matches.
+# 11:32:46 matched person 1 at 0.80, 11:32:48 scored 0.58 and the robot asked
+# a visitor it knew for their name, 11:33:06 matched at 0.91.
+_tk = _ftmod.FaceTracker.__new__(_ftmod.FaceTracker)
+_tk._lock = _thr.Lock()
+_good = _npf.array([1.0, 0.1, 0.2], dtype=_npf.float32)
+_blurred = _npf.array([0.72, 0.30, 0.18], dtype=_npf.float32)   # same face, poor frame
+_stranger = _npf.array([0.05, 1.0, 0.0], dtype=_npf.float32)    # somebody else
+_tk._known_id, _tk._known_embedding, _tk._known_at = 1, _good, time.monotonic()
+check("a poor frame of a known face keeps their identity", _tk._hold_identity(_blurred), 1)
+check("a different face never inherits it", _tk._hold_identity(_stranger), None)
+_tk._known_at = time.monotonic() - (_ftmod._IDENTITY_HOLD_S + 5)
+check("and the hold expires once they are long gone", _tk._hold_identity(_blurred), None)
+# The threshold RELATIONSHIP is the thing the first attempt got backwards, so
+# it is asserted rather than left as a number somebody could "tidy up".
+from config import MODELS as _CFG  # noqa: E402
+check("the hold threshold sits below the recognition bar, not above",
+      _ftmod._SAME_PERSON_THRESHOLD < _CFG.face_match_threshold, True)
+check("but well above where two different people score",
+      _ftmod._SAME_PERSON_THRESHOLD > 0.42, True)
+
+# The streak guard, which is what makes this robust without trusting a number.
+class _FlickerTracker:
+    """Recognises, drops one frame, recognises again -- the observed pattern."""
+
+    enabled = True
+
+    def __init__(self, ids):
+        self._ids = list(ids)
+        self.face = object()
+
+    def current(self, max_age_s=3.0):
+        got = self._ids.pop(0) if self._ids else None
+        return got, self.face
+
+    def current_embedding(self, max_age_s=3.0):
+        return _npf.array([1.0, 0.0, 0.0], dtype=_npf.float32)
+
+    def last_score(self):
+        return 0.58
+
+
+_vdemo = _vis.Vision()
+_vstate = RobotState()
+_vaudio = FakeAudio()
+_vctx = DemoContext(audio=_vaudio, motion=FakeMotion(), tracker=_FlickerTracker([1, 1, None, 1, 1]),
+                    state=_vstate, demo_id="vision", store={})
+_vctx.store["present_since"] = time.monotonic() - 60   # already settled
+for _ in range(5):
+    _vdemo.on_idle(_vctx)
+check("one dropped frame never triggers an offer", _vaudio.said, [])
+
+# A genuinely new face still gets asked, once the streak is real.
+_vctx2 = DemoContext(audio=FakeAudio(), motion=FakeMotion(),
+                     tracker=_FlickerTracker([None] * 8),
+                     state=RobotState(), demo_id="vision", store={})
+_vctx2.store["present_since"] = time.monotonic() - 60
+_streaks = []
+for _ in range(_vis._UNKNOWN_BEFORE_OFFER - 1):
+    _vdemo.on_idle(_vctx2)
+    _streaks.append(_vctx2.store.get("unknown_streak"))
+check("an unknown face is not asked immediately either", _vctx2.store.get("stage"), None)
+
+# The gate that finally fixed it live: a face scoring in the middle band is
+# somebody the robot probably knows, seen badly -- not a stranger. Both live
+# failures sat there (0.47 and 0.58) while genuinely different people measured
+# 0.33 to 0.39.
+class _ScoredTracker(_FlickerTracker):
+    def __init__(self, score):
+        super().__init__([None] * 20)
+        self._score = score
+    def last_score(self):
+        return self._score
+
+for _score, _should_offer in ((0.58, False), (0.47, False), (0.35, True), (0.10, True)):
+    _sa = FakeAudio()
+    _sc = DemoContext(audio=_sa, motion=FakeMotion(), tracker=_ScoredTracker(_score),
+                      state=RobotState(), demo_id="vision", store={})
+    _sc.store["present_since"] = time.monotonic() - 60
+    for _ in range(_vis._UNKNOWN_BEFORE_OFFER + 2):
+        _vdemo.on_idle(_sc)
+    _asked = any("remember you by name" in line for line in _sa.said)
+    check(f"score {_score}: {'asks' if _should_offer else 'stays quiet'}", _asked, _should_offer)
+
+# And the escape hatch, which is what makes that caution safe.
+class _SeenTracker(_ScoredTracker):
+    def current(self, max_age_s=3.0):
+        return None, self.face
+_ha = FakeAudio()
+_hc = DemoContext(audio=_ha, motion=FakeMotion(), tracker=_SeenTracker(0.58),
+                  state=RobotState(), demo_id="vision", store={})
+check("but somebody can still ask to be remembered",
+      _vdemo.on_utterance(_hc, "hey, remember me"), True)
+check("and that starts the name exchange", _hc.store.get("stage"), _vis._ASK_NAME)
+check("the streak builds while it stays unrecognised", _streaks[-1], _vis._UNKNOWN_BEFORE_OFFER - 1)
+
+print()
+print("[33] a demo started by voice answers the phrase that started it")
+# The runner hands the utterance to the demo its trigger just selected, and if
+# that demo declines it, the turn falls through to the conversation model --
+# so TWO demos answer one sentence. Live: "quiz us" got "Right, 4 questions,
+# shout the answers" and then, over the top, "Fun idea! Want me to quiz you on
+# the AI XR Hub, or something related to picking between those two Master's
+# programmes?" -- fifteen seconds of the robot talking to itself before
+# question one. Three demos had it; this walks every demo so a fourth cannot.
+_REG4 = Registry()
+_REG4.discover()
+
+
+class _QuietAudio(FakeAudio):
+    """Speaks into the void, and never has a transcript to offer."""
+
+    def listen(self, wait_for_speech_s=None):
+        return ""
+
+
+_fell_through = []
+for _did in _REG4.ids():
+    _d = _REG4.get(_did)
+    if _d is None or not _d.triggers:
+        continue
+    _st4 = RobotState()
+    _st4.set_demos([{"id": _did, "label": _d.label, "help": "", "available": True, "note": ""}])
+    _c4 = DemoContext(audio=_QuietAudio(), motion=FakeMotion(), tracker=None,
+                      state=_st4, demo_id=_did, store={})
+    try:
+        _d.on_enter(_c4)
+        _handled = bool(_d.on_utterance(_c4, f"hey reachy {_d.triggers[0]}"))
+    except Exception:
+        _handled = False
+    if not _handled:
+        _fell_through.append(_did)
+check("no demo lets its own trigger reach the conversation model", _fell_through, [])
+
+print()
+print("[34] a capability switched on mid-visit actually lets its demo run")
+# The split brain this closes: the dashboard published one capability set and
+# DemoRunner held another, frozen at construction. Live, research mode showed
+# "Research session" as available, the operator pressed it, and the runner
+# refused with "study is unavailable (needs study)" and bounced straight back
+# to Conversation -- which looked like research mode turning itself off.
+class _NeedsStudy(Demo):
+    id, label, help = "needs_study", "Needs study", "h"
+    requires = ("study",)
+
+    def on_idle(self, ctx):
+        return IdleResult(listen_for=1.0)
+
+
+_cap_reg = Registry()
+_cap_reg._publish({d.id: d for d in [Chatty(), _NeedsStudy()]})
+import demokit.runner as _capmod  # noqa: E402
+import demokit.registry as _capregmod  # noqa: E402
+_held = (_capmod.REGISTRY, _capregmod.REGISTRY)
+_capmod.REGISTRY = _capregmod.REGISTRY = _cap_reg
+try:
+    _cs = RobotState()
+    _cs.set_demos([{"id": d.id, "label": d.label, "help": "", "available": True, "note": ""}
+                   for d in (Chatty(), _NeedsStudy())])
+    _cr = DemoRunner(audio=FakeAudio(), motion=FakeMotion(), tracker=None,
+                     state=_cs, capabilities=frozenset())
+    check("a demo needing a capability is refused without it",
+          _cap_reg.is_available("needs_study", _cr._live_capabilities())[0], False)
+    _cs.set_capability("study", True)
+    check("switching it on makes the demo runnable",
+          _cap_reg.is_available("needs_study", _cr._live_capabilities())[0], True)
+    check("and the runner sees it without being rebuilt",
+          "study" in _cr._live_capabilities(), True)
+    _cs.set_capability("study", False)
+    check("switching it off takes it away again",
+          _cap_reg.is_available("needs_study", _cr._live_capabilities())[0], False)
+    check("hardware capabilities are untouched by the switch",
+          _cs.set_capability("study", True) >= {"study"}, True)
+
+    # THE PATH THAT ACTUALLY FAILED, twice. The first fix patched the trigger
+    # lookup and missed _active(), which is what runs when an operator PRESSES
+    # the button -- so the demo stayed unreachable from the dashboard while
+    # being reachable by voice. Driving a real cycle is the only check that
+    # covers both; asserting on is_available alone is what let it through.
+    _cs.set_capability("study", True)
+    _cs.set_mode("needs_study")
+    _cr.cycle()
+    check("pressing the button actually enters the demo", _cs.mode, "needs_study")
+    _cs.set_capability("study", False)
+    _cs.set_mode("needs_study")
+    _cr.cycle()
+    check("and without the capability it falls back instead", _cs.mode, "chatty")
+finally:
+    _capmod.REGISTRY, _capregmod.REGISTRY = _held
+
+print()
+print("[35] a consent answer is read in the language people consent in")
+# Found live, and it made the whole research feature unusable: the consent
+# question was answered "I consent to be recorded" and the robot replied "I'll
+# take that as a no". The general yes/no reader was written for "want me to
+# remember you?" and holds no word from a consent form -- not "consent", not
+# "agree", not "take part" -- so the clearest consent there is scored unclear.
+from demos.study import _explicit_consent as _ec  # noqa: E402
+from demos.vision import _read_answer as _ra  # noqa: E402
+
+for _text, _want in (
+    ("I consent to be recorded.", "yes"),
+    ("I consent", "yes"),
+    ("I agree", "yes"),
+    ("I am happy to take part", "yes"),
+    ("count me in", "yes"),
+    ("yeah go on then", "yes"),          # the old reader still works
+    ("yes", "yes"),
+    ("no thanks", "no"),
+    ("I would rather not take part", "no"),
+    ("Everything", "unclear"),           # the live mis-transcription
+):
+    check(f"{_text!r} reads as {_want}", _ec(_text) or _ra(_text), _want)
+
+# THE ONE THIS FILE MUST NEVER GET WRONG. "I do not consent to be recorded"
+# contains "consent to", so a yes-list checked before the no-list reads an
+# explicit refusal as agreement and starts recording somebody who just said no.
+for _refusal in ("I do not consent to be recorded", "I do not consent",
+                 "I don't consent to that", "please do not record me"):
+    check(f"{_refusal!r} is a refusal", _ec(_refusal) or _ra(_refusal), "no")
+
+# Explicit consent can be honoured after the asking stops, so a misheard
+# answer is recoverable -- but ONLY the consent-form wording. A bare "yes"
+# later in a conversation is answering something else and must never start a
+# recording, so _explicit_consent has to stay silent on it.
+check("a bare 'yes' is not explicit consent", _ec("yes"), "")
+check("a bare 'yeah sure' is not explicit consent", _ec("yeah sure"), "")
+check("but 'I consent' is", _ec("I consent"), "yes")
+
+print()
+print("[36] a misheard consent answer is asked again; silence still ends it")
+# Driven through the real demo rather than asserted on the reader, because the
+# live failure was in the FLOW, not the vocabulary: one unreadable answer ended
+# the exchange, and the participant's actual consent arrived at a robot that
+# had stopped asking. The store is stubbed so no test can reach the real
+# research table.
+import demos.study as _sd  # noqa: E402
+
+
+class _FakeStudyStore:
+    def __init__(self):
+        self.consents, self.records, self.on = [], [], True
+
+    def running(self):
+        return self.on
+
+    def status(self):
+        return {"session": "testsession"}
+
+    def consent(self, ok):
+        self.consents.append(bool(ok))
+
+    def record(self, said, replied, latency):
+        self.records.append((said, replied))
+
+    def withdraw(self):
+        return 0
+
+
+def _run_consent(transcripts, slices=7):
+    """Drive Study from on_enter through the consent decision."""
+    fake = _FakeStudyStore()
+    held, _sd.store = _sd.store, fake
+    try:
+        demo = _sd.Study()
+        runner, st, aud, _ = build([Chatty(), demo], transcripts=list(transcripts))
+        st.set_capability("study", True)
+        st.set_mode(demo.id)
+        for _ in range(slices):
+            runner.cycle()
+        return fake, aud.said, demo, runner, st
+    finally:
+        _sd.store = held
+
+
+_f, _said, _d, _rn, _stt = _run_consent(["Everything", "still nonsense"])
+# PROVE THE FLOW RAN before trusting anything below. Two of the checks here are
+# "this was NOT said", which pass just as happily when the demo never started
+# -- and a hook that raises is absorbed by the runner's guard, so a broken demo
+# looks like a quiet one. This file has already shipped one whole test section
+# that passed while exercising nothing; these three lines are the price of not
+# doing it twice.
+check("the consent notice was actually read out",
+      any(_sd._SCRIPT[0] in s for s in _said), True)
+check("and the question was actually asked",
+      any(_sd._ASK in s for s in _said), True)
+check("a misheard answer is not booked as a refusal on the spot",
+      _f.consents, [False])
+check("it asked a second time before deciding",
+      any(_sd._REASK in s for s in _said), True)
+
+_f2, _said2, _, _, _ = _run_consent([])          # nobody says anything
+check("silence: the question was still asked",
+      any(_sd._ASK in s for s in _said2), True)
+check("silence is still a refusal", _f2.consents, [False])
+check("and silence is NOT re-asked -- that would be pestering",
+      any(_sd._REASK in s for s in _said2), False)
+
+_f3, _said3, _, _, _ = _run_consent(["I consent to be recorded."])
+check("consent: the question was still asked",
+      any(_sd._ASK in s for s in _said3), True)
+check("consent-form wording is accepted", _f3.consents, [True])
+check("and it did not need a second ask",
+      any(_sd._REASK in s for s in _said3), False)
 
 print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")

@@ -67,18 +67,142 @@ shows everything the robot hears and says, and it's how you switch between
 demonstrations. You can open it on your phone too — see the bottom of this
 page.
 
-Along the top:
+Under the title is one wide bar saying what the robot is doing right now, in
+words: **Starting up**, **Ready**, **Listening**, **Speaking**, **Asleep**, or
+**Robot offline**. It changes colour with the state, so you can read it from
+across a room without putting your glasses on. Asleep is normal, not a fault —
+say "Hey Reachy" and it wakes.
+
+Below that is the **Mode** grid. The demonstration that is running is the one
+solid coloured block on the page; everything else stays plain. That is the
+whole design: one glance, one colour, one answer.
+
+The 🔊 volume slider stays on the surface, because "they can't hear it at the
+back" is the one thing you actually change mid-visit. Everything else is behind
+**⚙ Settings** (on a laptop it's just open all the time):
 
 | What you see | What it means |
 |---|---|
-| A green dot | Connected and working |
 | 🧠 with a model name | Which AI is answering, and whether it's on the laptop or online |
 | 🌐 **Web search** | Off by default. Tick it to let Reachy look things up — see below |
 | 🎤 **Open mic** | Off by default. Tick it and follow-up questions don't need "Hey Reachy" — see below |
 | 🎭 dropdown | The robot's manner **everywhere** — its speaking voice, its wording, how it holds its head. "Default" is its own |
-| 🔊 slider | Speaker volume |
-| A dropdown | Which voice it speaks in — four to choose from |
+| 🔊 dropdown | Which voice it speaks in — four to choose from |
+| 🌗 **Appearance** | Light, dark, or Auto to follow the phone |
+| 🎨 **Colour** | Five colour themes — tap a dot. See below |
 | **Clear answers** | Makes it forget answers it has memorised. Only needed if it keeps repeating something wrong |
+
+### The new demos
+
+**Which masters fits me?** — say *"which masters"*. Three questions, then it
+names **one or two** programmes and why each, in three short sentences. It
+knows all thirteen taught masters in real detail (modules, accreditations, who
+each one is actually open to) and it will **refuse** fees, deadlines, entry
+requirements and whether somebody would get in — those change yearly and
+belong to you, not to a robot. It finishes by sending them to you for exactly
+those things.
+
+**Quiz the group** — say *"quiz us"*. Four questions about the Hub and AI,
+shouted answers accepted loosely, keeps score. Built for school groups, who
+want a turn rather than a talk. Shuffled each time, so the second group of the
+day gets a different order.
+
+**Greet in another language** — say *"say hello in Spanish"* (or French,
+German, Italian, Irish). Greeting only: it says hello, one true sentence, then
+hands back to English, because it cannot *understand* those languages and must
+never appear to. Drop a native piper voice into `models/tts/` and it uses it.
+
+**Research session** — only appears when Research mode is switched on. See
+below.
+
+### Scripting a whole visit
+
+A feature can now finish by handing over to another demo — a **Plays** step.
+So one button can welcome the group, then hand to the tour, or to the quiz.
+It has to be the last step (whatever it hands to keeps the floor), and it
+cannot hand to itself.
+
+### After a visit: how it went
+
+Open **How the visit went**. Turns taken, which demos ran, and the questions
+people actually asked, per day. It is counted as it happens and it is
+**aggregate only** — no names, and no link between a question and a person.
+
+### Research mode
+
+For Professor Berry's HRI work. Switch it on and the **Research session** demo
+appears; run that and the robot explains what is being recorded and asks the
+participant, out loud, before anything is kept. No names, no faces, no person
+ids — just the condition, what was said, and the timing. Saying no ends the
+session; *"delete my data"* deletes it outright at any point.
+
+**It is not ethics approval.** Trinity requires approval before collecting data
+from participants. This only makes the robot able to do it properly once you
+have that. It is also off after every restart, on purpose.
+
+### Colour themes
+
+Under ⚙ Settings there is a row of coloured dots. Tap one and the whole page
+changes. Each works in light and dark, so **Appearance** and **Colour** are
+separate choices you can mix.
+
+| | |
+|---|---|
+| **Trinity** | The Hub's blue. The default |
+| **Violet** | Quieter, violet-tinted greys |
+| **Teal** | Slate and water |
+| **Rose** | Warm greys with a magenta accent |
+| **High contrast** | Pure white or true black, heavy borders, the strongest colours. For a sunny atrium, or if the others are too soft to read |
+
+Both choices are remembered **on that device only** — your phone and the
+laptop can look different, and changing them affects nobody else. Everything
+that is a fact about the *robot* — the folders, the switches, the personality —
+is shared instead.
+
+Whichever you pick, one rule holds: **a solid block of colour means the demo
+that is running, and nothing else on the page is ever solid.** That is why
+Reachy's own colours never move around — you can always find what's going by
+looking for the one filled-in button.
+
+### Tidying the buttons into folders
+
+With twenty-odd buttons the grid gets long. Press **Arrange** above the grid
+and you can group them — *School visits*, *Open day*, whatever suits you.
+
+- **Drop one button on another to group them**, the way you make a folder on a
+  phone. Drag by the handle, hold it over the middle of another button for a
+  moment until a ring closes around it and it says *Release to group*, then let
+  go. You get a new folder with both buttons in it, and it asks you to name it.
+  Dragging *across* other buttons never groups anything — you have to stop on
+  one and wait, which is what makes it safe to drag things about.
+- **+ New folder** makes an empty one and asks for a name straight away.
+- **Move a button**: drag it by the handle on its left. On a phone, a strip of
+  folders appears along the bottom while you drag — just let go over one.
+- **No dragging needed.** Every button grows a *"Put … in"* dropdown while you
+  are arranging. One tap, pick the folder, done. Use this on a phone; it is
+  faster and it cannot go wrong.
+- **Keyboard**: Tab to a handle, press Enter to pick the button up, then the
+  arrow keys move it (left and right move it in and out of folders), Enter
+  drops it and Escape puts it back.
+- Tap a folder's arrow to **collapse** it. The demonstration that is *running*
+  always stays visible, even inside a collapsed folder.
+- **Deleting a folder never deletes a button** — they move back to the grid.
+- Press **Done** when you have finished. If you walk away it lets go by itself
+  after a minute and a half, so nobody ever finds a dashboard whose buttons
+  won't start anything.
+
+While you are arranging, pressing a button does **not** start it. That is
+deliberate: a thumb that slides slightly must never launch a demonstration in
+front of fifteen students.
+
+The arrangement lives on the robot, so it survives a restart and everyone
+looking at the dashboard sees the same one. It is only how the buttons are
+*shown* — it never changes what the robot starts up in, or what any spoken
+phrase does.
+
+> **Got in a mess?** There is no undo. Ask a technical person to run
+> `curl -X DELETE http://localhost:8080/api/layout`, or just delete the folders
+> one at a time — the buttons all come back.
 
 ---
 
@@ -124,14 +248,21 @@ re-answers straight away; saying *"switch personality"* still works too.
 > It won't explain itself first. That's deliberate: the point is that visitors
 > *hear* the difference, and being told what to expect gives away the ending.
 
-**Business Brainstorming** — say *"let's brainstorm"*. It asks the visitor three
-questions about their idea, then gives three directions they could take it, and
-ends by asking which they'd test first. Genuinely good with business-school
+**Business Brainstorming** — say *"let's brainstorm"*. It talks an idea through
+with whoever is standing there, writing each question from what they've just
+said rather than working down a list, then gives three directions they could
+take it and keeps talking afterwards. Genuinely good with business-school
 groups because they participate rather than watch.
-> Let a visitor drive this one. It asks the questions.
+> Let them drive this one. Point it at a group, not one person — it opens by
+> saying any of them can answer, and it holds the microphone open while it's
+> waiting, so nobody has to say "hey Reachy" before answering a question it
+> just asked them.
 >
-> If you want their answers read back, say *"summarise that"* — it won't do it
-> unprompted.
+> It works out when to stop asking and start suggesting. If a group wants to
+> skip ahead, any of them can say *"what do you think?"*
+>
+> For a summary of where the idea got to, say *"summarise that"* — it won't do
+> it unprompted, because the group is usually still talking.
 
 ### The rest
 
@@ -251,6 +382,12 @@ Connect the phone to the same WiFi as the laptop, then type the address the
 black window prints when it starts — something like `http://10.19.4.73:8080`.
 
 Handy when you're standing with visitors and the laptop is across the room.
+
+The page is built for the phone rather than squeezed onto it: the buttons go to
+one full-width column, the settings fold away behind ⚙, and everything you tap
+is at least a fingertip across. Two people can have it open at once — the
+folders, the switches and the personality are shared, because there is only one
+robot. Only light-or-dark is per device.
 
 ---
 

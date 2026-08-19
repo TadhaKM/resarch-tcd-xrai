@@ -148,27 +148,35 @@ likely — a checkmark from reading source would be a guess.
 
 ### F. Business Brainstorming Mode
 - [x] **Standalone module** — `demos/brainstorm.py`
-- [x] **Asks structured questions to guide the session** — `_QUESTIONS`
-  (`brainstorm.py:59`): the idea or problem, who it is for ("one kind of
-  person, not everybody"), and what makes it different or what the constraint
-  is.
-- [x] **Helps generate/refine ideas interactively, not a static script** — the
-  three directions are generated per session from the visitor's own answers
-  (`_direction_brief`, `brainstorm.py:119`), one model call per idle slice, each
-  told to differ from the ones already given. `claims_utterances = True` so a
-  visitor's answer reaches this demo before any other demo's trigger word.
-- [ ] **Produces a summary at the end of the session** — **no longer
-  automatic.** The recap still exists (`_recap_lines`, `_recap_now`) but now
-  only runs when a visitor asks for it by saying "summarise that". The session
-  ends on a closing question instead: "Which of those would you test first, and
-  what's the cheapest way to find out?" (`brainstorm.py:355-363`).
-  This is a deliberate change made at your request — the automatic recap read
-  back the visitor's own two-word answers in a template ("It's for everybody",
-  "What makes it different, or what's in the way: It's cool") and sounded
-  broken. Flagged rather than ticked because the spec asks for a summary at the
-  end and the robot no longer volunteers one. Restoring it is a two-line change
-  if the spec is what matters; the better fix is a model-written summary rather
-  than the old template.
+- [x] **Asks structured questions to guide the session** — structured by goal
+  rather than by script. `_facilitator_brief` tells the model the session needs
+  three things — what the idea is, who specifically it is for, what makes it
+  hard or different — and it writes each question from what has actually been
+  said, going after whichever is thinnest. The fixed `_QUESTIONS` list it
+  replaced asked all three in order regardless, which meant asking "who is it
+  for?" to a group who had just spent a minute explaining exactly that.
+- [x] **Helps generate/refine ideas interactively, not a static script** — every
+  robot turn is generated from the running transcript (`_transcript`,
+  `_facilitator_brief`), one model call per idle slice. It picks up the group's
+  own words, answers a question they put back to it, and moves to directions on
+  substance (`_ENOUGH_ANSWERS` turns carrying content) rather than after a fixed
+  number of questions. The three directions are then built from the whole
+  session (`_direction_brief`), each told to differ from the ones already given,
+  and the conversation continues afterwards instead of stopping.
+  `claims_utterances = True` so an answer reaches this demo before any other
+  demo's trigger word. Written for a group: turns are labelled "The group",
+  and the microphone is held open while a question of the robot's is
+  outstanding (`_hold`), so four people can just answer.
+- [ ] **Produces a summary at the end of the session** — **on request, not
+  automatically.** Say "summarise that" and it now gives a model-written summary
+  of the session (`_summary_brief`) — which is what the previous pass of this
+  checklist recommended over the old template. The session itself still ends on
+  a question rather than a conclusion: "Which of those would you test first, and
+  what's the cheapest way to find out?"
+  Still flagged rather than ticked, because the spec asks for a summary at the
+  end and the robot does not volunteer one. That remains your call: the reason
+  it does not is that the group is usually still talking, and a robot that
+  summarises over the top of them ends a session they had not finished.
 
 ## 4. System Design Requirements
 
@@ -328,9 +336,10 @@ room with visitors, and the code can only show that the machinery is present.
    list is likely to bite you on an open day as hard as an untested cold
    start.
 2. **Decide about the brainstorming summary** (3F). The only item that does not
-   meet the spec as written. Either accept the closing question as the ending,
-   or restore a summary — in which case make it model-written rather than the
-   template that read a visitor's own words back at them.
+   meet the spec as written. The summary is now model-written and good; the
+   open question is only whether the robot should volunteer it. Either accept
+   the closing question as the ending, or have it summarise unprompted once the
+   group goes quiet after the directions.
 3. **Decide what `service/` is for.** It is documented honestly as not
    deployed, but it is the kind of directory somebody later mistakes for live
    infrastructure. Either point it at `main.py` and real paths, or move it to

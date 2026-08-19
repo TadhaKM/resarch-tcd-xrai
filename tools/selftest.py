@@ -123,7 +123,13 @@ def check_demos() -> None:
             if owner != demo_id:
                 problems.append(f"trigger {phrase!r} already claimed by {owner}")
         for need in demo.requires:
-            if need not in ("faces",):
+            # "faces" is hardware -- whether MediaPipe runs on this machine.
+            # "study" is a switch an operator flips for an afternoon, and the
+            # research demo is gated on it so it greys itself out with a reason
+            # rather than being reachable by accident during an open day. Both
+            # are resolved by _live_capabilities in web/server.py and
+            # body/voice_loop.py, which must agree with this list.
+            if need not in ("faces", "study"):
                 problems.append(f"unknown requirement {need!r}")
         report(PASS if not problems else FAIL, f"contract: {demo_id}", "; ".join(problems))
 
@@ -157,6 +163,52 @@ def check_demos() -> None:
                f"{len(stored)} stored feature(s) still valid", "; ".join(stale))
     except Exception as exc:
         report(WARN, "stored features", str(exc))
+
+    # The dashboard's folder arrangement. Reported, never failed on: an id the
+    # layout holds for a demo that is not loaded is usually a module with a
+    # syntax error in it, which is exactly the thing worth noticing the day
+    # BEFORE an open day -- and the arrangement itself is display-only, so a
+    # stale id cannot break anything.
+    try:
+        from brain import layout as _layout
+
+        doc, available = _layout.read()
+        if not available:
+            report(WARN, "dashboard layout", "unavailable; the grid will show every button flat")
+        else:
+            placed, folders = set(), 0
+            for entry in doc["items"]:
+                if entry["t"] == "f":
+                    folders += 1
+                    placed.update(entry["items"])
+                else:
+                    placed.add(entry["id"])
+            known = set(REGISTRY.ids())
+            missing = sorted(placed - known)
+            report(PASS, f"{folders} folder(s) on the dashboard",
+                   f"{len(missing)} placed id(s) not loaded: {', '.join(missing)}" if missing else "")
+    except Exception as exc:
+        report(WARN, "dashboard layout", str(exc))
+
+    # What the robot will tell a prospective student. Checked before a visit
+    # rather than during one: this is the material most likely to have gone
+    # stale since it was written, and the person it is said to is deciding
+    # where to spend a year.
+    try:
+        from brain import courses
+
+        thin = [p.key for p in courses.PROGRAMMES if not p.study and not p.careers]
+        report(PASS, f"{len(courses.PROGRAMMES)} taught masters known",
+               f"{len(thin)} with no modules or careers yet: {', '.join(thin)}" if thin else "")
+        # The refusals are the safety property, so they are asserted rather
+        # than reported: a build that lost them would have the robot quoting
+        # a fee it made up.
+        missing = [w for w in ("fee", "deadline", "entry requirement", "scholarship")
+                   if w not in courses.REFUSALS.lower()]
+        report(PASS if not missing else FAIL, "refuses fees, deadlines and entry requirements",
+               f"missing: {', '.join(missing)}" if missing else "")
+    except Exception as exc:
+        report(WARN, "taught masters", str(exc))
 
 
 def check_assets() -> None:

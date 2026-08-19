@@ -55,6 +55,33 @@ phrase wakes it. Asking it to dance dances immediately, no LLM involved.
   detection/tracking (`face.py`, `face_tracker.py`), motion (`motion.py`),
   and the main loop (`voice_loop.py`).
 - `web/` -- the dashboard (FastAPI + one static page, no build step).
+
+  Three rules it is worth knowing before editing `web/index.html`:
+
+  1. **No server string ever reaches `innerHTML`.** The page has no login and
+     staff author feature labels, trigger phrases and folder names on it, so
+     everything dynamic is built with `el(tag, cls, text)`, `.textContent`,
+     `.setAttribute` or `new Option(text, value)`. `test_demokit.py` [23] fails
+     the build if the sink reappears.
+  2. **Nothing is fetched from the network.** No CDN, no web font, no remote
+     image -- the robot is routinely on a hotspot or offline, and a stylesheet
+     that fails to load takes the operator's dashboard with it. Same test
+     section enforces this.
+  3. **Colours are declared once, as `--l-*` / `--d-*` pairs.** One mapping
+     block near the top of the stylesheet decides which set is live; that
+     mapping is written twice (the media query answers "the device says dark",
+     the attribute answers "the operator chose dark", and each has to be able
+     to win) but it is palette-agnostic, so it is written twice no matter how
+     many palettes exist.
+
+     **Adding a palette** is therefore one `:root[data-palette="name"]` block
+     overriding only what differs from the base, one `.sw[data-palette-set=…]`
+     swatch colour, one button in the settings tray, and one entry in the
+     literal list in the `<head>` pre-paint script. `test_demokit.py` [24]
+     then measures it: every palette is checked in both modes for WCAG
+     contrast at fourteen pairs, and for whether the four colours that share
+     the state bar -- Listening, Speaking, Asleep, Offline -- can still be told
+     apart. It found two real collisions in the palettes shipped before it.
 - `config.py` -- `HardwareTarget` (SIMULATION / ROBOT / ROBOT_REMOTE) and
   `ModelConfig`. `REACHY_TARGET` selects the target; `REACHY_HOST` overrides
   the robot address.
@@ -124,6 +151,20 @@ is actually active.
 ## Hardware findings (why parts of this code look the way they do)
 
 Learned on the real robot; each is documented at the relevant code site.
+
+- **Latency is fought by overlapping, not by trimming.** The endpoint's 1.5s
+  of trailing silence is a deliberate safety margin (0.8s clipped people
+  mid-question -- see `_build_recognizer`), so instead of shrinking it, the
+  work that used to run *after* it now runs *inside* it: Whisper starts
+  decoding speculatively once the transcript has been stable for 0.45s
+  (`_EarlyDecode`), piper synthesizes the next chunk while the current one
+  plays (`_speak_local`), a long opening sentence starts speaking at its
+  first clause break (`interface._FIRST_CLAUSE_CHARS`), the local model is
+  loaded and its prompt prefilled at startup rather than in front of the
+  first visitor (`llm.warm_in_background` -- the cold start measured 30-53s),
+  and the cloud path caches its standing prompt across turns
+  (`llm_backends._system_blocks`). `grep "first words in"` and
+  `grep "whisper ("` in the live log to see what each turn actually cost.
 
 - **One `ReachyMini` connection, shared.** A `media_backend="no_media"`
   connection makes the SDK call `release_media()` -- a *daemon-wide*
