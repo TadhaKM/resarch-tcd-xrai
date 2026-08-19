@@ -77,6 +77,14 @@ class Backend(ABC):
         which is the same answer the robot gave before the feature existed.
         """
 
+    def warm(self, messages: Messages) -> None:
+        """Do whatever makes the FIRST real request fast. Default: nothing.
+
+        Cloud backends have nothing useful to do here -- their prompt cache
+        expires in minutes, so priming it at startup buys the first visitor
+        nothing. The local model is the one with a cold start worth killing.
+        """
+
 
 class OllamaBackend(Backend):
     """The local model. Always the fallback, so it must never need the network."""
@@ -85,7 +93,14 @@ class OllamaBackend(Backend):
 
     def __init__(self) -> None:
         self._client = Client(host=MODELS.ollama_host, timeout=_LOCAL_TIMEOUT_S)
-        self._default_options = {"num_predict": MODELS.llm_max_tokens}
+        # num_ctx: Ollama's default context is 2048 tokens, and the standing
+        # prompt alone -- hub grounding, capabilities, the course list -- runs
+        # ~1500 before any history or the question arrives. Past the window,
+        # Ollama silently drops tokens from the FRONT, i.e. the system prompt's
+        # opening rules, and every such request also misses the prompt-prefix
+        # cache and re-prefills from scratch. 4096 fits the prompt with room
+        # for a conversation, at a memory cost this size of model doesn't feel.
+        self._default_options = {"num_predict": MODELS.llm_max_tokens, "num_ctx": 4096}
         # Ollama unloads an idle model after 5 minutes by default; a cold
         # reload on this hardware costs ~30+ seconds on top of generation
         # (measured: 53s cold vs 21s warm for a similar reply). -1 keeps it
@@ -93,7 +108,25 @@ class OllamaBackend(Backend):
         self._keep_alive = -1
 
     def _options(self, max_tokens: Optional[int]) -> dict[str, int]:
-        return self._default_options if max_tokens is None else {"num_predict": max_tokens}
+        if max_tokens is None:
+            return self._default_options
+        return {**self._default_options, "num_predict": max_tokens}
+
+    def warm(self, messages: Messages) -> None:
+        """Load the model and prefill the standing prompt, before anyone asks.
+
+        The first turn of a visit used to pay the whole cold start in front of
+        the first visitor. Asking for a single token now does that work at
+        startup instead -- and because it is sent with the REAL system prompt,
+        Ollama's prompt-prefix cache is left holding the standing prompt's KV,
+        so the first genuine question prefills only its own words.
+        """
+        self._client.chat(
+            model=MODELS.ollama_model,
+            messages=messages,
+            options={**self._default_options, "num_predict": 1},
+            keep_alive=self._keep_alive,
+        )
 
     def generate(self, messages: Messages, max_tokens: Optional[int] = None) -> str:
         response = self._client.chat(
@@ -132,6 +165,40 @@ def _split_system(messages: Messages) -> tuple[str, Messages]:
     return system, rest
 
 
+def _system_blocks(system: str) -> list[dict]:
+    """The system prompt as content blocks, with the standing part cacheable.
+
+    The standing prompt -- capabilities, delivery rules, the Hub grounding,
+    the course list -- is well over a thousand tokens and identical on every
+    turn; what varies (a persona, a retrieved course brief, what is remembered
+    about this person) is appended after it. cache_control on the static block
+    lets the API reuse its processed form across turns instead of re-reading
+    it each time, which is a chunk off time-to-first-token and most of the
+    input cost. If the prompt starts with nothing we recognise, one plain
+    block: wrongly caching a prefix that varies would MISS every turn and
+    quietly cost more than caching nothing.
+
+    [] for no system prompt at all, and the caller must then OMIT the
+    parameter: the API rejects an empty text block outright ("text content
+    blocks must be non-empty" -- found the hard way by the long-term-memory
+    summariser, which builds its request without one).
+    """
+    from brain.prompts import base_prompts
+
+    if not system.strip():
+        return []
+    for base in base_prompts():
+        if system.startswith(base):
+            blocks: list[dict] = [
+                {"type": "text", "text": base, "cache_control": {"type": "ephemeral"}}
+            ]
+            tail = system[len(base):].strip()
+            if tail:
+                blocks.append({"type": "text", "text": tail})
+            return blocks
+    return [{"type": "text", "text": system}]
+
+
 def _cloud_max_tokens(max_tokens: Optional[int]) -> int:
     return max_tokens if max_tokens is not None else MODELS.cloud_max_tokens
 
@@ -163,11 +230,12 @@ class AnthropicBackend(Backend):
 
     def generate(self, messages: Messages, max_tokens: Optional[int] = None) -> str:
         system, rest = _split_system(messages)
+        blocks = _system_blocks(system)
         response = self._client.messages.create(
             model=MODELS.anthropic_model,
             max_tokens=_cloud_max_tokens(max_tokens),
-            system=system,
             messages=rest,
+            **({"system": blocks} if blocks else {}),
         )
         return "".join(block.text for block in response.content if block.type == "text")
 
@@ -176,10 +244,12 @@ class AnthropicBackend(Backend):
     ) -> Iterator[str]:
         system, rest = _split_system(messages)
         extra = {"tools": _WEB_SEARCH_TOOL} if web else {}
+        blocks = _system_blocks(system)
+        if blocks:
+            extra["system"] = blocks
         with self._client.messages.stream(
             model=MODELS.anthropic_model,
             max_tokens=_cloud_max_tokens(max_tokens),
-            system=system,
             messages=rest,
             **extra,
         ) as stream:

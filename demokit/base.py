@@ -24,6 +24,7 @@ the listening -- the core can bound that; a demo cannot.
 
 import logging
 import math
+import queue
 import re
 import threading
 import time
@@ -328,6 +329,20 @@ class DemoContext:
             )
             system = f"{system}\n\n{known}" if system else known
 
+        # What Trinity teaches, but only when the turn is actually about it.
+        # Retrieved per turn rather than carried in the base prompt: thirteen
+        # masters programmes in full is several times hub.GROUNDING, on a local
+        # model with a 140-token reply budget, for something most turns never
+        # ask about. brief() returns "" for the ordinary case and costs nothing.
+        # Here rather than in one demo so that Conversation, About and a
+        # staff-written feature's question all answer a prospective student the
+        # same way -- which is what they will get if they ask twice.
+        from brain import courses
+
+        study = courses.brief(message)
+        if study:
+            system = f"{system}\n\n{study}" if system else study
+
         # The robot's standing manner, layered on the same way. Deliberately
         # here rather than in prompts.py's base prompt: extra_system is what
         # brain/qa_cache.py digests into its key, so a persona that rides here
@@ -351,23 +366,102 @@ class DemoContext:
         # None means "whatever the operator has the dashboard switch set to",
         # which is what every demo wants; a demo can still force it either way.
         use_web = self.state.web_search if web is None else web
-        for sentence, tag in stream_reply(
-            person_id, message, style=style, extra_system=system, cache=cache, web=use_web
-        ):
-            final_tag = tag
-            if not sentence:
-                continue
-            # Checked between sentences, not within: cutting the robot off
-            # mid-word reads as a fault, mid-sentence reads as responsive.
-            self._stop_if_switched()
-            spoken.append(sentence)
-            # say() checks for an interruption itself. A visitor can take the
-            # floor back here without waiting for a thirty-second story to
-            # finish: their words were captured while this sentence played.
-            self.say(
-                sentence, tag, expressive=style == "story",
-                pace=pace, variation=variation,
+
+        # THE PIPELINE. A producer thread pulls the model's stream and renders
+        # each sentence to audio; this thread -- the one that owns the speaker
+        # -- plays them back to back. Before this, each sentence was generated,
+        # then synthesized, then played, then the next one begun, and the seams
+        # were audible: measured live at 6-8 seconds between sentence STARTS,
+        # of which a second or more was pure dead air between sentences. Now
+        # generation and synthesis happen while the previous sentence is still
+        # coming out of the speaker, so the only gap left is the one piper puts
+        # there deliberately.
+        #
+        # The queue is small on purpose: an interruption abandons at most a
+        # couple of rendered sentences, and the producer never runs the whole
+        # reply ahead of what the room has actually heard.
+        #
+        # Interruption and switching still land between sentences, on THIS
+        # thread, exactly as before -- the producer only generates and renders,
+        # and rendering is the one AudioIO method documented as safe off the
+        # loop thread (see AudioIO.render).
+        feed: queue.Queue = queue.Queue(maxsize=3)
+        abandon = threading.Event()
+
+        def _offer(item) -> bool:
+            """Put unless the reply has been abandoned. The short timeout is
+            what lets a producer blocked on a full queue notice abandonment --
+            without it, one drain on the consumer side was not enough, and the
+            thread sat generating into a conversation that had moved on."""
+            while not abandon.is_set():
+                try:
+                    feed.put(item, timeout=0.2)
+                    return True
+                except queue.Full:
+                    continue
+            return False
+
+        def _produce() -> None:
+            last_tag = "neutral"
+            gen = stream_reply(
+                person_id, message, style=style, extra_system=system, cache=cache, web=use_web
             )
+            try:
+                for sentence, tag in gen:
+                    last_tag = tag
+                    if abandon.is_set():
+                        # Close inside the generator's own machinery: it raises
+                        # GeneratorExit at the yield, so stream_reply unwinds
+                        # without recording a reply the room never heard.
+                        gen.close()
+                        return
+                    if not sentence:
+                        continue
+                    chunks = self.audio.render(
+                        sentence, expressive=style == "story", pace=pace, variation=variation
+                    )
+                    if not _offer(("say", sentence, tag, chunks)):
+                        gen.close()
+                        return
+                _offer(("end", last_tag))
+            except Exception as exc:  # pragma: no cover - surfaced on the loop thread
+                _offer(("error", exc))
+
+        producer = threading.Thread(target=_produce, name="reply-render", daemon=True)
+        producer.start()
+        try:
+            while True:
+                item = feed.get()
+                if item[0] == "end":
+                    final_tag = item[1]
+                    break
+                if item[0] == "error":
+                    raise item[1]
+                _kind, sentence, tag, chunks = item
+                # Checked between sentences, not within: cutting the robot off
+                # mid-word reads as a fault, mid-sentence reads as responsive.
+                self._stop_if_switched()
+                spoken.append(sentence)
+                self.state.add("said", sentence)
+                self.state.set_flags(speaking=True)
+                self.motion.express(tag)
+                self.audio.speak_rendered(chunks, motion=self.motion)
+                self.state.set_flags(speaking=False)
+                # A visitor can take the floor back here without waiting for a
+                # thirty-second story: their words were captured while this
+                # sentence played.
+                self._stop_if_interrupted(sentence)
+        except BaseException:
+            # Switched away, interrupted, or a real error: the producer must
+            # stop generating into a conversation that has moved on. It may be
+            # blocked on the full queue, so drain space for it to notice.
+            abandon.set()
+            while True:
+                try:
+                    feed.get_nowait()
+                except queue.Empty:
+                    break
+            raise
         self.motion.express_move(final_tag)
         # Leave the body in the persona's resting pose. Without this a reply
         # ends on whatever the last sentence's tag was -- in practice
@@ -463,13 +557,18 @@ class DemoContext:
         None covers three different things that all mean "do not use a name":
         face features are off, nobody is in view, or the person in view has
         never told the robot who they are.
+
+        This is the name to SAY -- a pronunciation the visitor gave the robot
+        wins over the spelling, because that is what it is for. Anything that
+        needs the real spelling (matching a correction, showing it on the
+        dashboard) should read db.get_person_name directly.
         """
         person_id = self.person_id()
         if not person_id:
             return None
         from brain import db
 
-        return db.get_person_name(person_id)
+        return db.get_spoken_name(person_id)
 
     def status(self, text: str) -> None:
         """Note something on the dashboard without speaking it."""

@@ -2,6 +2,7 @@
 
 import logging
 import re
+import time
 from typing import Iterator
 
 from . import llm, long_term_memory, memory, qa_cache
@@ -13,12 +14,55 @@ logger = logging.getLogger(__name__)
 
 _SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?])\s+")
 
+#: When the OPENING sentence runs past this many characters with no end in
+#: sight, it is flushed to the speaker at a clause break instead of waited out.
+#: Time-to-first-words is set by the first flush, and models writing a long
+#: opener ("That's a great question about the Hub's three research strands,
+#: which...") used to hold the robot silent for the whole sentence. A comma is
+#: a place a person would breathe, so piper starting there sounds like pacing,
+#: not a glitch. First sentence only: mid-reply, speech is already ahead of
+#: generation and splitting buys nothing.
+_FIRST_CLAUSE_CHARS = 60
+_CLAUSE_BREAK_RE = re.compile(r"(?<=,)\s+|(?<=;)\s+|\s+(?=--\s)")
+
 #: Token budget for a story. The word limit in the storyteller prompt is a
 #: nudge, not a control -- asked for eighty words it writes closer to two
 #: hundred whatever the phrasing -- so this is what actually bounds the
 #: length, sized above what it really produces plus the emotion tag. Erring
 #: high on purpose: a story that stops mid-sentence is worse than a long one.
 _STORY_MAX_TOKENS = 280
+
+#: Timing for the most recent reply, for callers that need to MEASURE the turn
+#: rather than just hear it -- demos/study.py, which was recording the wall
+#: time around ctx.reply() and therefore recording how long the answer took to
+#: SPEAK. A ten-word reply and a hundred-word reply from the same model looked
+#: like a fast robot and a slow one.
+#:
+#: A module global rather than a return value because stream_reply is a
+#: generator consumed sentence by sentence by the speaking pipeline: there is
+#: no single return to hang this on, and the caller has already moved on to
+#: playing audio by the time the last sentence arrives. Replies happen one at a
+#: time on the voice-loop thread, so there is nothing to race with.
+_LAST_TURN = {"first_word_s": 0.0, "backend": ""}
+
+
+def _reset_turn_stats() -> None:
+    _LAST_TURN["first_word_s"] = 0.0
+    _LAST_TURN["backend"] = ""
+
+
+def _mark_first_words(elapsed: float, backend_name: str) -> None:
+    _LAST_TURN["first_word_s"] = float(elapsed)
+    _LAST_TURN["backend"] = backend_name or ""
+
+
+def last_turn_stats() -> dict:
+    """Time to first spoken words, and which backend produced them.
+
+    A copy: the caller must not be able to edit the live record, and the next
+    turn overwrites this one.
+    """
+    return dict(_LAST_TURN)
 
 
 def get_reply(person_id: int, message: str) -> tuple[str, str]:
@@ -87,6 +131,12 @@ def stream_reply(
     if style is None:
         cached = qa_cache.lookup(message, extra_system) if cache else None
         if cached is not None:
+            # A replayed answer has no model latency at all. Labelled rather
+            # than left at the default so a study can tell "answered instantly
+            # from cache" apart from "never got a first sentence away", which
+            # are the same zero otherwise.
+            _reset_turn_stats()
+            _mark_first_words(0.0, "cache")
             # Reconstructed with the tag the model originally ended on, so the
             # loop below is the same text-shape the live path splits: N
             # sentences tagged "thinking", then the real tag on a final pair
@@ -116,6 +166,11 @@ def stream_reply(
     buffer = ""
     raw_parts: list[str] = []
     spoken_a_sentence = False
+    asked_at = time.monotonic()
+    # Cleared per turn so a turn whose backend never produced a first sentence
+    # reports nothing, rather than silently inheriting the previous turn's
+    # timing -- which in a study would read as a fast reply that never happened.
+    _reset_turn_stats()
 
     for attempt, backend in enumerate(backends):
         # Reset per attempt: a failed backend's partial words must not be
@@ -131,9 +186,29 @@ def stream_reply(
                     candidate, _ = extract_emotion_tag(buffer[: match.end()])
                     buffer = buffer[match.end() :]
                     if candidate:
+                        if not spoken_a_sentence:
+                            _mark_first_words(time.monotonic() - asked_at, backend.name)
+                            logger.info("first words in %.2fs (%s)", time.monotonic() - asked_at, backend.name)
                         spoken_a_sentence = True
                         yield candidate, "thinking"
                     match = _SENTENCE_BOUNDARY_RE.search(buffer)
+                # A long opening sentence is flushed at its first clause break
+                # rather than waited out -- see _FIRST_CLAUSE_CHARS. Only before
+                # anything has been spoken: this exists purely to start the
+                # voice sooner, and it also marks the turn as mid-utterance so
+                # a backend failure after this point can no longer restart the
+                # answer with the other model over the top of it, exactly as a
+                # full sentence would have.
+                if not spoken_a_sentence and len(buffer) >= _FIRST_CLAUSE_CHARS:
+                    clause = _CLAUSE_BREAK_RE.search(buffer)
+                    if clause:
+                        candidate, _ = extract_emotion_tag(buffer[: clause.end()])
+                        buffer = buffer[clause.end() :]
+                        if candidate:
+                            _mark_first_words(time.monotonic() - asked_at, backend.name)
+                            logger.info("first words in %.2fs (%s, clause)", time.monotonic() - asked_at, backend.name)
+                            spoken_a_sentence = True
+                            yield candidate, "thinking"
             break
         except Exception as exc:
             last_attempt = attempt == len(backends) - 1

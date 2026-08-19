@@ -20,6 +20,7 @@ from, so the STT/KWS decode loops aren't duplicated per mode.
 
 import logging
 import re
+import threading
 import time
 from typing import Any, Iterator, Optional
 
@@ -232,6 +233,69 @@ def _build_whisper() -> Optional[sherpa_onnx.OfflineRecognizer]:
     except Exception as exc:
         logger.warning("Whisper unavailable (%s) -- using the streaming model.", exc)
         return None
+
+
+#: How long the streaming transcript must sit unchanged before Whisper starts
+#: decoding it EARLY, while the endpoint rule is still counting silence. The
+#: endpoint needs rule2_min_trailing_silence (1.5s) of quiet before it fires,
+#: and that window used to be pure dead air with the whole utterance already
+#: captured -- Whisper then ran AFTER it, serially, adding its own second or
+#: two. Starting the decode a beat into the silence hides almost all of
+#: Whisper's cost inside a wait that exists anyway. Short enough to finish
+#: before the endpoint on ordinary answers; long enough that a mid-sentence
+#: breath does not launch decodes that get thrown away.
+_EARLY_DECODE_AFTER_S = 0.45
+
+
+class _EarlyDecode:
+    """One speculative Whisper decode, begun before the endpoint fires.
+
+    Started on a snapshot of the captured audio once the streaming transcript
+    has been stable for _EARLY_DECODE_AFTER_S. Valid only if the transcript is
+    STILL the same when the endpoint fires -- the streaming model is already
+    the authority on whether speech has ended (it is what fires the endpoint),
+    so "no new words since the snapshot" is its own judgement that the snapshot
+    covered everything said. If more words arrived, the result is discarded and
+    the ordinary post-endpoint decode runs exactly as it always did.
+
+    A stale decode is ABANDONED, never joined: it finishes on its own thread,
+    writes a result nothing reads, and is garbage-collected. Waiting for one
+    was tried first and measured worse than never speculating -- a decode of
+    half a question, still running at the endpoint, held up the full decode
+    behind it. Concurrent decodes on the shared recognizer are safe because
+    onnxruntime sessions support concurrent Run calls; the cost is brief CPU
+    contention, which is cheaper than any amount of serial waiting.
+    """
+
+    def __init__(self, decode, samples: np.ndarray, partial: str) -> None:
+        self.partial = partial
+        self.started = time.monotonic()
+        self._result = ""
+        self._done = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run, args=(decode, samples), name="whisper-early", daemon=True
+        )
+        self._thread.start()
+
+    def _run(self, decode, samples: np.ndarray) -> None:
+        try:
+            self._result = decode(samples)
+        except Exception:
+            # _transcribe_whisper already never raises; this is for anything
+            # else a future caller passes. "" makes listen() fall back to the
+            # ordinary decode, which is the same answer arriving later.
+            logger.exception("Early Whisper decode failed")
+        finally:
+            self._done.set()
+
+    @property
+    def done(self) -> bool:
+        return self._done.is_set()
+
+    def result(self) -> str:
+        """The transcript, waiting for the decode if it is still running."""
+        self._done.wait()
+        return self._result
 
 
 def _build_spotter() -> sherpa_onnx.KeywordSpotter:
@@ -876,6 +940,39 @@ class AudioIO:
         partial = ""
         captured: list[np.ndarray] = []
         started = time.monotonic()
+        #: When the partial last gained words, and the speculative decode of
+        #: the audio so far. See _EarlyDecode: the point is that Whisper runs
+        #: DURING the endpoint's trailing-silence wait instead of after it.
+        last_change = started
+        early: Optional[_EarlyDecode] = None
+
+        def best_transcript(streaming_text: str) -> str:
+            """Whisper's transcript by the cheapest route, else the streaming one."""
+            if self._whisper is None or not captured:
+                return streaming_text
+            better = ""
+            route = "after endpoint"
+            if early is not None and early.partial == partial:
+                better = early.result()
+                route = "during silence"
+            # A STALE early decode -- launched on a mid-question pause, then
+            # invalidated when they kept talking -- is simply abandoned, not
+            # joined. The first cut waited for it before decoding afresh, which
+            # made a pause mid-question SLOWER than before speculation existed
+            # (observed live: a half-question decode still running at the
+            # endpoint added its remnant to the full 3.3s decode). Running the
+            # fresh decode alongside the dying one is safe: onnxruntime
+            # sessions are thread-safe for concurrent Run calls -- it is how
+            # sherpa's own concurrent servers use one recognizer -- and the
+            # stale thread writes only its own _result, which nothing reads.
+            if not better:
+                decode_started = time.monotonic()
+                better = self._transcribe_whisper(np.concatenate(captured))
+                route = f"after endpoint, {time.monotonic() - decode_started:.2f}s"
+            if better:
+                logger.info("  whisper (%s): %s", route, better)
+                return better
+            return streaming_text
         # Bounded for the same reason wait_for_wake_word is: this returns only
         # when the recognizer declares an endpoint, and an endpoint needs
         # frames. If the daemon's media session drops, _mic_frames yields
@@ -894,6 +991,7 @@ class AudioIO:
             current = self._recognizer.get_result(stream).strip()
             if current != partial:
                 partial = current
+                last_change = time.monotonic()
                 logger.info("  [%5.1fs] hearing: %s", time.monotonic() - started, partial)
                 # Streamed to the dashboard so words appear as they are spoken,
                 # which is what makes a mishearing visible as it happens rather
@@ -902,6 +1000,22 @@ class AudioIO:
 
             if self._whisper is not None:
                 captured.append(frame)
+                # Speech has paused. Start Whisper on what is in hand while the
+                # endpoint rule keeps counting silence -- if they resume, the
+                # changed partial invalidates this and a fresh speculation
+                # replaces it the next time the transcript settles. The stale
+                # thread is dropped, not joined: concurrent decodes are safe
+                # (see best_transcript above), and waiting for a doomed decode
+                # of half a question was measured costing more than never
+                # speculating at all.
+                if (
+                    partial
+                    and time.monotonic() - last_change >= _EARLY_DECODE_AFTER_S
+                    and (early is None or early.partial != partial)
+                ):
+                    early = _EarlyDecode(
+                        self._transcribe_whisper, np.concatenate(captured), partial
+                    )
 
             if wait_for_speech_s is not None and not partial:
                 if time.monotonic() - started >= wait_for_speech_s:
@@ -919,29 +1033,23 @@ class AudioIO:
                 self._recognizer.reset(stream)
 
                 # The streaming model still runs the turn -- it is what detects
-                # that speech has ended -- but Whisper re-decodes the captured
-                # audio for the answer, because it is markedly better on live
-                # far-field speech. Its result is preferred only when it found
-                # something; an empty Whisper result on audio the streaming
-                # model did transcribe is far more likely a decode failure than
-                # genuine silence.
-                if self._whisper is not None and captured:
-                    better = self._transcribe_whisper(np.concatenate(captured))
-                    if better:
-                        logger.info("  whisper: %s", better)
-                        return better
-                return text
+                # that speech has ended -- but Whisper's transcript answers,
+                # because it is markedly better on live far-field speech. The
+                # decode usually already ran during the trailing silence (see
+                # _EarlyDecode); its result counts only if no words arrived
+                # after its snapshot, which is the recognizer's own judgement
+                # that the snapshot covered everything said. A transcript the
+                # streaming model produced but Whisper returned "" for is far
+                # more likely a decode failure than genuine silence, so the
+                # streaming text still backstops it.
+                return best_transcript(text)
 
         # Fell out of the loop: the deadline passed without an endpoint. Return
         # the best transcript so far rather than nothing -- a long answer that
         # ran past the ceiling is still worth answering, and an empty string
         # here would look to the caller like silence.
         logger.warning("Listening hit the %.0fs ceiling without an endpoint.", _MAX_UTTERANCE_S)
-        if self._whisper is not None and captured:
-            better = self._transcribe_whisper(np.concatenate(captured))
-            if better:
-                return better
-        return self._recognizer.get_result(stream).strip()
+        return best_transcript(self._recognizer.get_result(stream).strip())
 
     def speak(
         self,
@@ -958,33 +1066,14 @@ class AudioIO:
         voice a character of its own -- see _voice_config -- and take
         precedence, since a caller that named both meant them.
         """
-        if pace is not None or variation is not None:
-            syn_config = _voice_config(pace if pace is not None else 1.0,
-                                       variation if variation is not None else 0.667)
-        elif expressive:
-            # The storyteller's voice is the point of that demo, and it is both
-            # slower AND more varied than any persona -- so a persona must not
-            # quietly replace it.
-            syn_config = _STORY_SYNTHESIS
-        else:
-            # Hooked here rather than in DemoContext.say because this is the
-            # only place that also covers the runner's own lines, which speak
-            # through AudioIO directly. An explicit pace or variation still
-            # wins above: the personality demo passes its own.
-            persona = personas.active(STATE.persona[0])
-            syn_config = (
-                _voice_config(persona.pace, persona.variation)
-                if persona is not None
-                else _CHAT_SYNTHESIS
-            )
-        voice, _name = self._speaking_voice()
+        chunks = self._render_stream(text, expressive=expressive, pace=pace, variation=variation)
         if motion is not None:
             motion.begin_speech()
         try:
             if self.target.mode == "robot":
-                self._speak_robot(text, motion, syn_config, voice)
+                self._speak_robot(chunks, motion)
             else:
-                self._speak_local(text, motion, syn_config, voice)
+                self._speak_local(chunks, motion)
         finally:
             if motion is not None:
                 motion.end_speech()
@@ -1001,10 +1090,87 @@ class AudioIO:
             # re-prompt being decoded as somebody's name.
             self._mic_fresh = False
 
-    def _speak_local(
-        self, text: str, motion: Optional[Any], syn_config: SynthesisConfig, voice: Any = None
-    ) -> None:
-        for chunk in (voice or self._voice).synthesize(text, syn_config=syn_config):
+    def _synthesis_config(
+        self,
+        expressive: bool = False,
+        pace: Optional[float] = None,
+        variation: Optional[float] = None,
+    ) -> SynthesisConfig:
+        """How this line should sound, resolved exactly as speak() always has."""
+        if pace is not None or variation is not None:
+            return _voice_config(pace if pace is not None else 1.0,
+                                 variation if variation is not None else 0.667)
+        if expressive:
+            # The storyteller's voice is the point of that demo, and it is both
+            # slower AND more varied than any persona -- so a persona must not
+            # quietly replace it.
+            return _STORY_SYNTHESIS
+        # Resolved here rather than in DemoContext.say because this is the only
+        # place that also covers the runner's own lines, which speak through
+        # AudioIO directly. An explicit pace or variation still wins above.
+        persona = personas.active(STATE.persona[0])
+        return (
+            _voice_config(persona.pace, persona.variation)
+            if persona is not None
+            else _CHAT_SYNTHESIS
+        )
+
+    def _render_stream(self, text, expressive=False, pace=None, variation=None):
+        syn_config = self._synthesis_config(expressive, pace, variation)
+        voice, _name = self._speaking_voice()
+        return voice.synthesize(text, syn_config=syn_config)
+
+    def render(
+        self,
+        text: str,
+        expressive: bool = False,
+        pace: Optional[float] = None,
+        variation: Optional[float] = None,
+    ) -> list:
+        """Synthesize a line WITHOUT playing it. Pure CPU, no audio hardware.
+
+        The one AudioIO method deliberately callable off the voice-loop thread:
+        DemoContext.reply renders sentence N+1 on a worker while sentence N is
+        still coming out of the speaker, which is what removed the second or
+        two of dead air between every pair of spoken sentences. Only one
+        renderer runs at a time (reply's worker), so piper's session is never
+        entered concurrently -- and playback of what this returns still happens
+        on the loop thread, through speak_rendered, under the ordinary rules.
+        """
+        return list(self._render_stream(text, expressive=expressive, pace=pace, variation=variation))
+
+    def speak_rendered(self, chunks: list, motion: Optional[Any] = None) -> None:
+        """Play chunks render() produced. Loop thread only, like speak()."""
+        if motion is not None:
+            motion.begin_speech()
+        try:
+            if self.target.mode == "robot":
+                self._speak_robot(chunks, motion)
+            else:
+                self._speak_local(chunks, motion)
+        finally:
+            if motion is not None:
+                motion.end_speech()
+            # Same bookkeeping as speak(): the mic heard the robot's own voice,
+            # so the spotter stream and freshness flag are both stale now.
+            self._kws_stream = None
+            self._mic_fresh = False
+
+    def _speak_local(self, chunks, motion: Optional[Any]) -> None:
+        """Play chunks as they are synthesized, synthesizing ahead of playback.
+
+        sd.play returns immediately, so pulling the NEXT chunk from the
+        generator before waiting on the current one means piper works while the
+        speaker plays -- the old wait-then-synthesize order put an audible gap
+        between every pair of piper's chunks, and the whole utterance took
+        synthesis time PLUS playback time instead of whichever is longer.
+        Motion is fed at each chunk's playback turn, not at synthesis, so the
+        head still moves with what is coming out of the speaker.
+        """
+        playing = False
+        for chunk in chunks:
+            if playing:
+                sd.wait()
             if motion is not None:
                 motion.feed_speech_audio(chunk.audio_float_array)
             sd.play(
@@ -1012,11 +1178,11 @@ class AudioIO:
                 samplerate=chunk.sample_rate,
                 device=self.target.audio_output_device,
             )
+            playing = True
+        if playing:
             sd.wait()
 
-    def _speak_robot(
-        self, text: str, motion: Optional[Any], syn_config: SynthesisConfig, voice: Any = None
-    ) -> None:
+    def _speak_robot(self, chunks, motion: Optional[Any]) -> None:
         """Stream synthesized audio to the robot, keeping its buffer ahead.
 
         Pushing a chunk and then sleeping for exactly that chunk's duration
@@ -1031,7 +1197,7 @@ class AudioIO:
         started = time.monotonic()
         pushed_s = 0.0
 
-        for chunk in (voice or self._voice).synthesize(text, syn_config=syn_config):
+        for chunk in chunks:
             if motion is not None:
                 motion.feed_speech_audio(chunk.audio_float_array)
             audio = _resample(chunk.audio_float_array, chunk.sample_rate, output_rate)

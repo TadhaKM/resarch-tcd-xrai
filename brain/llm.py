@@ -55,6 +55,42 @@ def streaming_backends() -> tuple[Backend, ...]:
     return (PREFERRED,) if PREFERRED is FALLBACK else (PREFERRED, FALLBACK)
 
 
+def warm_in_background() -> None:
+    """Start the local model loading now, so the first visitor never pays for it.
+
+    The cold numbers are in OllamaBackend.warm's docstring: ~30s of model load
+    on top of generation, which used to land on whoever asked the first
+    question of the day. A daemon thread because startup must not block on it
+    -- if a real question arrives mid-warm, Ollama simply queues it behind the
+    one-token warm request and the visitor waits a moment, not half a minute.
+    """
+    import threading
+    import time
+
+    def _go() -> None:
+        # The REAL standing prompt, so the prefix cache ends up holding
+        # exactly what the first genuine request will send. Imported lazily:
+        # prompts pulls in the hub and course material, and llm.py is
+        # imported by things that never generate.
+        from .prompts import build_messages
+
+        messages = build_messages("", [], "hello")
+        backends = [PREFERRED] if PREFERRED is FALLBACK else [PREFERRED, FALLBACK]
+        for backend in backends:
+            try:
+                started = time.monotonic()
+                backend.warm(messages)
+                elapsed = time.monotonic() - started
+                if elapsed > 0.5:
+                    logger.info("%s warm in %.1fs", backend.name, elapsed)
+            except Exception as exc:
+                # A failed warm costs nothing but the head start; the first
+                # real request will do the same work the slow way.
+                logger.warning("%s warm-up failed: %s", backend.name, exc)
+
+    threading.Thread(target=_go, name="llm-warm", daemon=True).start()
+
+
 def generate_response(
     messages: list[dict[str, str]], max_tokens: Optional[int] = None
 ) -> str:
