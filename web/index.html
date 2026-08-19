@@ -1,172 +1,1463 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme>
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="color-scheme" content="light dark">
+<!-- One tag, written by the pre-paint script below and again on every change.
+     The media-scoped pair this replaces could only describe two colours, and
+     there are now five palettes in two modes. -->
+<meta name="theme-color" id="theme-color" content="#e9ecf1">
 <title>Reachy Mini</title>
 <style>
+  /* ════════════════════════════════════════════════════════════════════════
+     THREE LEVELS OF EMPHASIS, AND THEY MEAN THINGS:
+       SOLID accent fill .... exactly one thing: the demo that is running.
+       WASH (soft + line) ... a switch that is on, Say it, a drop target.
+       NEUTRAL .............. everything else on the page.
+
+     So a staff member facing a group and glancing back at a phone finds
+     "which one is going?" by looking for the one coloured block, rather than
+     by reading 11px grey.
+
+     NO color-mix(), NO :has(), NO backdrop-filter. The file used color-mix in
+     three places and all three are gone deliberately: this page is opened on
+     whatever phone somebody has in their pocket, often an Android on a hotspot
+     with no way to update it, and a dashboard whose "running" state silently
+     renders transparent is worse than one that looks slightly duller.
+
+     DEPTH IS INVERTED PER THEME, AND THAT IS A LAW: shadows carry elevation in
+     light, hairlines carry it in dark. A drop shadow in the dark block reads
+     as fog.
+
+     THE PALETTE IS WRITTEN OUT TWICE ON PURPOSE. The media query and the
+     manual attribute both have to be able to win, in both directions, and with
+     no build step there is nothing to share them from. Editing one and not the
+     other is the mistake waiting to happen here -- AGENTS.md says so too.
+     ════════════════════════════════════════════════════════════════════════ */
+
+  /* ── the palettes ──────────────────────────────────────────────────────────
+     Every colour is declared ONCE, as a --l-* (light) and a --d-* (dark) pair.
+     One mapping block near the bottom decides which set is live. That mapping
+     is the only thing written twice -- for the media query and for the manual
+     override, which both have to be able to win -- and it is written twice no
+     matter how many palettes exist.
+
+     ADDING A PALETTE is therefore one block: override the light and dark
+     pairs that differ from the base, add a swatch colour, add a button in the
+     tray. Nothing else in this stylesheet knows how many palettes there are.
+
+     NEVER write a star followed by a slash inside one of these comments. CSS
+     comments do not nest and have no escape: the first such pair ENDS the
+     comment, and the rest of the sentence is handed to the parser, which
+     discards everything up to the next brace it can make sense of. Writing
+     the token prefixes as a glob once cost this file its entire :root block --
+     no fonts, no cards, no colours, a page of serif text on black.
+
+     Two rules every palette obeys, because the whole design rests on them:
+       1. SOLID accent fill means exactly one thing -- the demo that is running.
+          So --accent must be legible against --accent-ink at 4.5:1 or better.
+       2. --accent must not be confusable with --ok (Speaking), --warn (Asleep)
+          or --bad (Offline), because those four alternate in the SAME state bar
+          every few seconds. Where a palette's accent gets close, it shifts the
+          state colour rather than the accent -- see Teal.
+     ──────────────────────────────────────────────────────────────────────── */
+
   :root {
-    --bg: #0f1115; --panel: #171a21; --line: #262b36;
-    --text: #e6e9ef; --dim: #8b94a7;
-    --accent: #4da3ff; --ok: #3ddc97; --warn: #ffb454; --bad: #ff6b6b;
-    --heard: #4da3ff; --said: #3ddc97;
+    /* — type ramp. The file improvised nine sizes including 13.5px and 10.5px
+         half-pixels; these are the only sizes that exist now. — */
+    --fs-eyebrow: 11px;   /* ALL-CAPS labels only, never sentence case */
+    --fs-tiny:   12px;    /* timestamps, counts, flags */
+    --fs-small:  13px;    /* secondary lines, chips */
+    --fs-help:   14px;    /* the help line under a key */
+    --fs-body:   15px;    /* prose, transcript */
+    --fs-lead:   16px;    /* EVERY input and select. See the rule at "fields". */
+    --fs-key:    17px;    /* a mode key's name */
+    --fs-h:      19px;    /* h1 and the state bar's headline */
+
+    /* — geometry — */
+    --r-xs: 6px; --r-sm: 9px; --r: 13px; --r-lg: 18px; --r-pill: 999px;
+    --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
+    --tap: 44px;        /* nothing interactive is ever shorter than this */
+    --key-h: 76px;      /* a mode key at rest */
+    --grid-min: 236px;  /* narrowed while arranging, 1fr on phones */
+
+    /* — the second face ───────────────────────────────────────────────────
+       A control surface has instrument readings on it, and they should look
+       like readings rather than like prose: uptime, transcript timestamps,
+       how many buttons are in a folder, the monogram on a key, and the
+       phrases a visitor is meant to say out loud. Everything in this stack
+       ships with the OS, because nothing on this page may be downloaded --
+       a webfont would fail silently on a robot on a hotspot and take the
+       page's whole voice with it. — */
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Mono",
+            "Segoe UI Mono", "Roboto Mono", "Liberation Mono", Menlo, monospace;
+
+    /* — motion — */
+    --dur-1: 110ms;  /* colour and state */
+    --dur-2: 160ms;  /* hover, reveal, chevron */
+    --merge-ms: 550ms;  /* the dwell before two keys group. Mirrored by
+                           MERGE_MS in the script, which is what actually
+                           arms the gesture -- this only draws the wait. */
+    --ease: cubic-bezier(.2,.8,.3,1);
+
+    /* ── TRINITY, the base palette. Every other palette is a diff on this. ── */
+
+    /* ground and surfaces: an elevation ladder, low to high */
+    --l-bg:      #e9ecf1;   /* the page: soft grey so white cards lift off it */
+    --l-panel:   #ffffff;   /* cards */
+    --l-panel-2: #f3f5f9;   /* key faces, inputs -- recessed inside a card */
+    --l-panel-3: #e7ebf2;   /* hover / pressed of --panel-2 */
+    --d-bg:      #0b0d12;
+    --d-panel:   #14181f;
+    --d-panel-2: #1b212b;
+    --d-panel-3: #262e3c;
+
+    /* TWO line weights, meaning different things. A hairline separates rows.
+       --line-2 borders anything a finger presses, because a 1px #d5dae3 edge
+       does not exist in a glass atrium at noon. */
+    --l-line:   #d5dae3;
+    --l-line-2: #8b95a9;
+    --d-line:   #29313e;
+    --d-line-2: #626f88;
+
+    /* ink. Nothing dimmer than --dim exists: there is no decorative-only ink
+       token, because somebody would eventually put words in it. */
+    --l-text:   #10131a;    /* 17.6:1 on --panel */
+    --l-text-2: #414a5c;    /*  9.1:1 */
+    --l-dim:    #5a6376;    /*  6.0:1 on --panel, 4.9:1 on --bg */
+    --d-text:   #eef1f7;
+    --d-text-2: #b9c2d2;
+    --d-dim:    #949eb2;
+
+    /* the one accent */
+    --l-accent:      #0b5fd0;  /* 5.9:1 on white -- deep enough to survive sun */
+    --l-accent-2:    #0a4fae;  /* hover / pressed */
+    --l-accent-ink:  #ffffff;  /* text sitting ON a solid accent fill */
+    --l-accent-soft: #e2ecfc;
+    --l-accent-line: #9dc0f2;
+    --d-accent:      #66b0ff;
+    --d-accent-2:    #92c8ff;
+    --d-accent-ink:  #06121f;
+    --d-accent-soft: #12263c;
+    --d-accent-line: #33628f;
+
+    /* Veils over a solid accent fill: white-ish in light, ink-ish in dark.
+       Shared by every palette, because they are the ink colour at low alpha
+       and a few degrees of hue there is invisible. */
+    --l-accent-dim:  rgba(255,255,255,.86);
+    --l-accent-veil: rgba(255,255,255,.20);
+    --l-accent-veil-2: rgba(255,255,255,.42);
+    --d-accent-dim:  rgba(6,18,31,.76);
+    --d-accent-veil: rgba(6,18,31,.18);
+    --d-accent-veil-2: rgba(6,18,31,.34);
+
+    /* state. Asleep (warn) and Offline (bad) are the two an operator most
+       needs to tell apart -- one means "say Hey Reachy", the other means the
+       robot has fallen over -- and they share the state bar. The first light
+       set had them 32 degrees of hue apart at the same lightness, which is a
+       brown and a browner brown from across a room. Bad is now a crimson, ~50
+       degrees off, and the dark set was already separated. */
+    --l-ok:   #0c6e42;  --l-ok-soft:   #dff3e8;  --l-ok-line:   #8ecdaf;
+    --l-warn: #8a5200;  --l-warn-soft: #fbeed6;  --l-warn-line: #dfbc79;
+    --l-bad:  #bd0f38;  --l-bad-soft:  #fde3e9;  --l-bad-line:  #f0a3b5;
+    --d-ok:   #3ddc97;  --d-ok-soft:   #0e2a20;  --d-ok-line:   #256f52;
+    --d-warn: #ffb454;  --d-warn-soft: #2c2113;  --d-warn-line: #7a5a2a;
+    --d-bad:  #ff7d74;  --d-bad-soft:  #2e1518;  --d-bad-line:  #7d3a3c;
+
+    /* transcript voices. NOT aliased to --accent: "the visitor spoke" and
+       "this is clickable" must not be one colour. */
+    --l-heard: #17558f;  --l-said: #0c6e42;
+    --d-heard: #7ab8ff;  --d-said: #3ddc97;
+
+    /* depth: shadows carry elevation in light, hairlines carry it in dark.
+       That is a law, not an accident -- a drop shadow in the dark set reads as
+       fog. Neutral in every palette; tinting them was tried and looked grubby. */
+    --l-shadow-1: 0 1px 2px rgba(16,19,26,.06), 0 1px 1px rgba(16,19,26,.04);
+    --l-shadow-2: 0 2px 4px rgba(16,19,26,.07), 0 8px 20px rgba(16,19,26,.08);
+    --l-shadow-drag: 0 14px 30px rgba(16,19,26,.26), 0 3px 8px rgba(16,19,26,.18);
+    --l-shadow-key: inset 0 -1px 0 rgba(16,19,26,.05);
+    --l-shadow-bar: 0 -6px 22px rgba(16,19,26,.14);
+    --d-shadow-1: 0 1px 0 rgba(255,255,255,.03);
+    --d-shadow-2: 0 1px 0 rgba(255,255,255,.05), 0 10px 26px rgba(0,0,0,.45);
+    --d-shadow-drag: 0 18px 40px rgba(0,0,0,.62), 0 2px 0 rgba(255,255,255,.08);
+    --d-shadow-key: inset 0 1px 0 rgba(255,255,255,.04);
+    --d-shadow-bar: 0 -8px 26px rgba(0,0,0,.5);
   }
-  @media (prefers-color-scheme: light) {
-    :root {
-      --bg: #f6f7f9; --panel: #fff; --line: #e2e5ea;
-      --text: #131722; --dim: #667085;
+
+  /* ── VIOLET ─ cool, quieter than the blue. Violet-tinted neutrals rather
+       than grey ones, so the accent belongs to the page instead of sitting on
+       top of it. ─────────────────────────────────────────────────────────── */
+  :root[data-palette="violet"] {
+    --l-bg: #eceaf4; --l-panel: #ffffff; --l-panel-2: #f5f3fa; --l-panel-3: #eae6f4;
+    --l-line: #dcd7e8; --l-line-2: #8f87a8;
+    --l-text: #141020; --l-text-2: #46405c; --l-dim: #5e5776;
+    --l-accent: #5c33c4; --l-accent-2: #4a289f; --l-accent-ink: #ffffff;
+    --l-accent-soft: #ebe4fb; --l-accent-line: #bfa9ef;
+    --l-heard: #57379f;
+    --d-bg: #0d0b14; --d-panel: #171522; --d-panel-2: #1f1c2e; --d-panel-3: #2c2740;
+    --d-line: #2f2a40; --d-line-2: #6b6390;
+    --d-text: #f0eef8; --d-text-2: #c1bbd4; --d-dim: #9a93b4;
+    --d-accent: #b39bff; --d-accent-2: #cbb9ff; --d-accent-ink: #140a2b;
+    --d-accent-soft: #241a3d; --d-accent-line: #52407f;
+    --d-heard: #c0abff;
+    --d-accent-dim: rgba(20,10,43,.76);
+    --d-accent-veil: rgba(20,10,43,.18);
+    --d-accent-veil-2: rgba(20,10,43,.34);
+  }
+
+  /* ── TEAL ─ slate-and-water. The accent sits near --ok, and those two share
+       the state bar (Listening vs Speaking) seconds apart, so THIS palette
+       moves the green rather than the teal: --ok goes yellow-green, which no
+       longer reads as the same colour at a glance across a room. ─────────── */
+  :root[data-palette="teal"] {
+    --l-bg: #e6eef0; --l-panel: #ffffff; --l-panel-2: #f1f6f8; --l-panel-3: #e2edf0;
+    --l-line: #cedde1; --l-line-2: #7f939a;
+    --l-text: #0d1618; --l-text-2: #3b4c50; --l-dim: #526367;
+    --l-accent: #06697a; --l-accent-2: #05545f; --l-accent-ink: #ffffff;
+    --l-accent-soft: #dbf0f4; --l-accent-line: #8ac7d5;
+    --l-heard: #0f5b74;
+    --l-ok: #4a7714; --l-ok-soft: #e8f3d9; --l-ok-line: #a9c982; --l-said: #4a7714;
+    --d-bg: #080f11; --d-panel: #111a1d; --d-panel-2: #172329; --d-panel-3: #223138;
+    --d-line: #24333a; --d-line-2: #5a7178;
+    --d-text: #ecf3f5; --d-text-2: #b3c5ca; --d-dim: #8da0a6;
+    --d-accent: #4fd3e8; --d-accent-2: #85e2f1; --d-accent-ink: #04191e;
+    --d-accent-soft: #0c2b33; --d-accent-line: #23616f;
+    --d-heard: #6fdcee;
+    --d-ok: #b6e05a; --d-ok-soft: #1e2a10; --d-ok-line: #5d7a2c; --d-said: #b6e05a;
+    --d-accent-dim: rgba(4,25,30,.76);
+    --d-accent-veil: rgba(4,25,30,.18);
+    --d-accent-veil-2: rgba(4,25,30,.34);
+  }
+
+  /* ── ROSE ─ warm greys and a magenta accent. Deliberately magenta rather
+       than pink-red: --bad is red and owns the Offline state, and two reds in
+       one state bar is exactly the confusion this design exists to avoid. ── */
+  :root[data-palette="rose"] {
+    --l-bg: #f1ecee; --l-panel: #ffffff; --l-panel-2: #f8f4f5; --l-panel-3: #efe8ea;
+    --l-line: #e2d8db; --l-line-2: #9b8b90;
+    --l-text: #1a1214; --l-text-2: #55464a; --l-dim: #6d5c61;
+    /* Purple-magenta, not pink-red, and further from red than it first was.
+       --bad owns Offline and --accent owns Listening, and both wash the SAME
+       state bar; at 33 degrees apart with equal lightness they were two warm
+       pinks. This sits about 50 degrees off it. */
+    --l-accent: #9b1aa8; --l-accent-2: #7f1489; --l-accent-ink: #ffffff;
+    --l-accent-soft: #f7e3fb; --l-accent-line: #dda6ea;
+    --l-heard: #86228f;
+    --d-bg: #120d10; --d-panel: #1c161a; --d-panel-2: #251d22; --d-panel-3: #342931;
+    --d-line: #362a31; --d-line-2: #7c6a73;
+    --d-text: #f7eff3; --d-text-2: #d3c2ca; --d-dim: #ab99a2;
+    --d-accent: #ff8ad8; --d-accent-2: #ffaee4; --d-accent-ink: #24071b;
+    --d-accent-soft: #34142b; --d-accent-line: #7d3f6a;
+    --d-heard: #ff9fdf;
+    --d-accent-dim: rgba(36,7,27,.78);
+    --d-accent-veil: rgba(36,7,27,.18);
+    --d-accent-veil-2: rgba(36,7,27,.36);
+  }
+
+  /* ── CONTRAST ─ for the glass atrium at noon, and for anyone who finds the
+       others too soft. Pure grounds, near-black borders, every state colour
+       pushed to its limit. Cards read by their border rather than by their
+       fill, which is why the shadows are removed rather than darkened: a
+       shadow under a white card on a white page is dirt, not depth. ─────── */
+  :root[data-palette="contrast"] {
+    --l-bg: #ffffff; --l-panel: #ffffff; --l-panel-2: #f0f0f3; --l-panel-3: #dedee3;
+    --l-line: #6b6b73; --l-line-2: #16161a;
+    --l-text: #000000; --l-text-2: #16161a; --l-dim: #30303a;
+    --l-accent: #0033cc; --l-accent-2: #002499; --l-accent-ink: #ffffff;
+    --l-accent-soft: #dde5ff; --l-accent-line: #0033cc;
+    --l-heard: #0033cc; --l-said: #005c2e;
+    --l-ok: #005c2e; --l-ok-soft: #d7f2e2; --l-ok-line: #005c2e;
+    /* Asleep and Offline are the two states an operator most needs to tell
+       apart -- one means "say Hey Reachy", the other means the robot has
+       fallen over. At full contrast both wanted to be a dark warm brown, 34
+       degrees and almost no lightness apart. Warn is pushed yellow and bad is
+       pushed crimson so they are 50-odd degrees apart and read differently
+       even where the words are too small to. */
+    --l-warn: #7a5200; --l-warn-soft: #fff0d0; --l-warn-line: #7a5200;
+    --l-bad: #b00020; --l-bad-soft: #ffdfe4; --l-bad-line: #b00020;
+    --l-shadow-1: none; --l-shadow-2: none; --l-shadow-key: none;
+    --l-shadow-bar: 0 -2px 0 #16161a;
+    --l-shadow-drag: 0 10px 24px rgba(0,0,0,.4);
+    --d-bg: #000000; --d-panel: #0a0a0c; --d-panel-2: #141418; --d-panel-3: #23232a;
+    --d-line: #8a8a94; --d-line-2: #d8d8de;
+    --d-text: #ffffff; --d-text-2: #f0f0f4; --d-dim: #cfcfd8;
+    --d-accent: #7fb2ff; --d-accent-2: #a8caff; --d-accent-ink: #000814;
+    --d-accent-soft: #10233d; --d-accent-line: #7fb2ff;
+    --d-heard: #7fb2ff; --d-said: #4ff09f;
+    --d-ok: #4ff09f; --d-ok-soft: #062516; --d-ok-line: #4ff09f;
+    --d-warn: #ffc46b; --d-warn-soft: #2b1f0a; --d-warn-line: #ffc46b;
+    --d-bad: #ff9b93; --d-bad-soft: #2e0f0f; --d-bad-line: #ff9b93;
+    --d-shadow-1: none; --d-shadow-2: none; --d-shadow-key: none;
+    --d-shadow-bar: 0 -2px 0 #d8d8de;
+    --d-accent-dim: rgba(0,8,20,.82);
+    --d-accent-veil: rgba(0,8,20,.20);
+    --d-accent-veil-2: rgba(0,8,20,.40);
+  }
+
+  /* ── which set is live ─────────────────────────────────────────────────────
+     The only thing in this file written out twice, and it has to be: the media
+     query answers "the device says dark", the attribute answers "the operator
+     chose dark", and each has to be able to win. Both are palette-agnostic, so
+     adding a palette does not touch either. ──────────────────────────────── */
+
+  :root {
+    color-scheme: light;
+    --bg: var(--l-bg); --panel: var(--l-panel); --panel-2: var(--l-panel-2); --panel-3: var(--l-panel-3);
+    --line: var(--l-line); --line-2: var(--l-line-2);
+    --text: var(--l-text); --text-2: var(--l-text-2); --dim: var(--l-dim);
+    --accent: var(--l-accent); --accent-2: var(--l-accent-2); --accent-ink: var(--l-accent-ink);
+    --accent-soft: var(--l-accent-soft); --accent-line: var(--l-accent-line);
+    --accent-dim: var(--l-accent-dim); --accent-veil: var(--l-accent-veil); --accent-veil-2: var(--l-accent-veil-2);
+    --ok: var(--l-ok); --ok-soft: var(--l-ok-soft); --ok-line: var(--l-ok-line);
+    --warn: var(--l-warn); --warn-soft: var(--l-warn-soft); --warn-line: var(--l-warn-line);
+    --bad: var(--l-bad); --bad-soft: var(--l-bad-soft); --bad-line: var(--l-bad-line);
+    --heard: var(--l-heard); --said: var(--l-said);
+    --shadow-1: var(--l-shadow-1); --shadow-2: var(--l-shadow-2); --shadow-drag: var(--l-shadow-drag);
+    --shadow-key: var(--l-shadow-key); --shadow-bar: var(--l-shadow-bar);
+    --ring: 0 0 0 3px var(--accent-line);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: var(--d-bg); --panel: var(--d-panel); --panel-2: var(--d-panel-2); --panel-3: var(--d-panel-3);
+      --line: var(--d-line); --line-2: var(--d-line-2);
+      --text: var(--d-text); --text-2: var(--d-text-2); --dim: var(--d-dim);
+      --accent: var(--d-accent); --accent-2: var(--d-accent-2); --accent-ink: var(--d-accent-ink);
+      --accent-soft: var(--d-accent-soft); --accent-line: var(--d-accent-line);
+      --accent-dim: var(--d-accent-dim); --accent-veil: var(--d-accent-veil); --accent-veil-2: var(--d-accent-veil-2);
+      --ok: var(--d-ok); --ok-soft: var(--d-ok-soft); --ok-line: var(--d-ok-line);
+      --warn: var(--d-warn); --warn-soft: var(--d-warn-soft); --warn-line: var(--d-warn-line);
+      --bad: var(--d-bad); --bad-soft: var(--d-bad-soft); --bad-line: var(--d-bad-line);
+      --heard: var(--d-heard); --said: var(--d-said);
+      --shadow-1: var(--d-shadow-1); --shadow-2: var(--d-shadow-2); --shadow-drag: var(--d-shadow-drag);
+      --shadow-key: var(--d-shadow-key); --shadow-bar: var(--d-shadow-bar);
     }
   }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: var(--d-bg); --panel: var(--d-panel); --panel-2: var(--d-panel-2); --panel-3: var(--d-panel-3);
+    --line: var(--d-line); --line-2: var(--d-line-2);
+    --text: var(--d-text); --text-2: var(--d-text-2); --dim: var(--d-dim);
+    --accent: var(--d-accent); --accent-2: var(--d-accent-2); --accent-ink: var(--d-accent-ink);
+    --accent-soft: var(--d-accent-soft); --accent-line: var(--d-accent-line);
+    --accent-dim: var(--d-accent-dim); --accent-veil: var(--d-accent-veil); --accent-veil-2: var(--d-accent-veil-2);
+    --ok: var(--d-ok); --ok-soft: var(--d-ok-soft); --ok-line: var(--d-ok-line);
+    --warn: var(--d-warn); --warn-soft: var(--d-warn-soft); --warn-line: var(--d-warn-line);
+    --bad: var(--d-bad); --bad-soft: var(--d-bad-soft); --bad-line: var(--d-bad-line);
+    --heard: var(--d-heard); --said: var(--d-said);
+    --shadow-1: var(--d-shadow-1); --shadow-2: var(--d-shadow-2); --shadow-drag: var(--d-shadow-drag);
+    --shadow-key: var(--d-shadow-key); --shadow-bar: var(--d-shadow-bar);
   }
-  .wrap { max-width: 820px; margin: 0 auto; padding: 20px 16px 48px; }
-  h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
-  header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+
+  /* ── base ──────────────────────────────────────────────────────────────── */
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: var(--fs-lead)/1.5 ui-sans-serif, system-ui, -apple-system,
+          BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* One focus treatment for the whole page, and it has to be loud: while
+     arranging, the keyboard path moves keys around, and you must be able to
+     see which one you are holding from a metre away. */
+  :focus { outline: none; }
+  :focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--r-xs);
+  }
+
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 18px 16px 56px; }
+
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%);
+    white-space: nowrap; border: 0;
+  }
+
+  .dim { color: var(--dim); font-size: var(--fs-small); }
+  .mt { margin-top: var(--s4); }
+  .spacer { flex: 1 1 auto; min-width: 0; }
+
+  /* ── fields ────────────────────────────────────────────────────────────────
+     ONE rule sets the size of every form control, it is 16px, and nothing
+     below may override it downwards. iOS Safari zooms the whole viewport when
+     a control under 16px takes focus and does not zoom back -- so changing the
+     voice on a phone mid-visit would leave the operator on a 130% page for the
+     rest of the session. That applies to <select> as well as <input>, which is
+     the half people forget. */
+
+  input, select, textarea, button { font-family: inherit; }
+  input, select, textarea { font-size: var(--fs-lead); }
+
+  input[type="text"], input[type="number"], input[type="search"], input:not([type]) {
+    color: var(--text); background: var(--panel-2);
+    border: 1px solid var(--line-2); border-radius: var(--r);
+    min-height: var(--tap); padding: 0 var(--s3); width: 100%;
+  }
+  input::placeholder { color: var(--dim); }
+  input:focus-visible, select:focus-visible {
+    outline: none; border-color: var(--accent); box-shadow: var(--ring);
+  }
+  input[type="checkbox"] {
+    width: 22px; height: 22px; min-height: 0; margin: 0; padding: 0;
+    accent-color: var(--accent); flex: none; cursor: pointer;
+  }
+
+  /* Native menu, custom face. The caret is two gradients on currentColor, so
+     there is no image to fail to load and nothing to redefine per theme. */
+  select {
+    appearance: none; -webkit-appearance: none;
+    color: var(--text); cursor: pointer;
+    min-height: 38px; padding: 0 30px 0 11px; max-width: 13em;
+    text-overflow: ellipsis;
+    border: 1px solid var(--line-2); border-radius: var(--r-sm);
+    background-color: var(--panel-2);
+    background-image:
+      linear-gradient(45deg,  transparent 50%, currentColor 50%),
+      linear-gradient(135deg, currentColor 50%, transparent 50%);
+    background-position: calc(100% - 17px) center, calc(100% - 11px) center;
+    background-size: 6px 6px, 6px 6px;
+    background-repeat: no-repeat;
+  }
+
+  /* THE LIST A SELECT OPENS IS A SEPARATE SURFACE AND MUST BE COLOURED ITSELF.
+     It inherits the control's own colours, and the pill rule below deliberately
+     makes the CLOSED control transparent so it sits flush inside its pill --
+     which handed the OPEN list a transparent ground over the platform's white
+     canvas, with near-white --text painted on it. In dark mode every option
+     except the highlighted one was invisible: the personality menu looked like
+     it contained "Default" and then a tall empty white box.
+
+     Explicit and opaque, therefore, rather than relying on inheritance or on
+     color-scheme -- appearance:none stops several engines applying the latter
+     to the popup at all. macOS and iOS draw their own native menu and ignore
+     this, which is correct: there the system menu is already themed. */
+  select option, select optgroup {
+    background-color: var(--panel);
+    color: var(--text);
+  }
+  select option { padding: 6px 10px; }
+  select optgroup { color: var(--dim); font-style: normal; font-weight: 700; }
+  select option:disabled { color: var(--dim); }
+
+  /* ── the masthead: the robot, and what it is doing ─────────────────────────
+     One block where there were two. The brand sat in its own strip above the
+     state, which on a phone put three rows of chrome between the top of the
+     page and the Mode grid -- and the grid is the page. Merged, the top of the
+     dashboard IS the robot's status, which is what somebody standing in front
+     of a group actually looks up. */
+
+  header.masthead {
+    display: flex; align-items: stretch; gap: var(--s3);
+    flex-wrap: wrap; margin-bottom: var(--s4);
+  }
+  h1 {
+    font-size: var(--fs-eyebrow); font-weight: 700; margin: 0 0 1px;
+    text-transform: uppercase; letter-spacing: .13em; color: var(--dim);
+  }
+  .util {
+    display: flex; align-items: center; gap: 6px;
+    flex-wrap: wrap; flex: 0 1 auto; margin-left: auto;
+  }
+  .util .up {
+    font: 600 var(--fs-tiny)/1 var(--mono);
+    color: var(--dim); padding: 0 var(--s2); white-space: nowrap;
+  }
 
   .pill {
-    display: inline-flex; align-items: center; gap: 7px;
-    padding: 5px 11px; border-radius: 999px;
+    display: inline-flex; align-items: center; gap: var(--s2);
+    min-height: var(--tap); padding: 0 13px;
+    border-radius: var(--r-pill);
     background: var(--panel); border: 1px solid var(--line);
-    font-size: 13px; color: var(--dim);
+    box-shadow: var(--shadow-1);
+    font-size: var(--fs-small); color: var(--text-2);
+    white-space: nowrap;
   }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex: none; }
-  .dot.on { background: var(--ok); box-shadow: 0 0 0 3px rgba(61,220,151,.18); }
-  .dot.warn { background: var(--warn); box-shadow: 0 0 0 3px rgba(255,180,84,.18); }
-  .dot.bad { background: var(--bad); box-shadow: 0 0 0 3px rgba(255,107,107,.18); }
-  .dot.live { animation: pulse 1.4s ease-in-out infinite; }
-  #vol { width: 90px; accent-color: var(--accent); }
-  #vol-val { min-width: 2.2em; text-align: right; font-variant-numeric: tabular-nums; }
-  @keyframes pulse { 50% { opacity: .35; } }
+  label.pill, button.pill { cursor: pointer; font-size: var(--fs-small); }
+  button.pill { color: var(--text-2); }
 
+  /* A switch that is ON is washed, never solid -- solid is reserved for the
+     one running key. */
+  .pill.is-on {
+    background: var(--accent-soft); border-color: var(--accent-line);
+    color: var(--accent); font-weight: 600;
+  }
+  .pill.is-off { opacity: .45; }
+  .pill select { background-color: transparent; border-color: transparent; }
+
+  /* Volume stays on the surface rather than going in the tray: "they cannot
+     hear it at the back" is the one setting that genuinely gets touched
+     mid-visit, and it is the reason the tray exists for everything else. */
+  #p-vol { flex: 0 1 auto; }
+  #vol { -webkit-appearance: none; appearance: none; width: 112px; height: 26px;
+         min-height: 0; background: none; border: 0; padding: 0; cursor: pointer; }
+  #vol::-webkit-slider-runnable-track {
+    height: 6px; border-radius: 3px; background: var(--panel-3); border: 1px solid var(--line);
+  }
+  #vol::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 24px; height: 24px; margin-top: -10px;
+    border-radius: 50%; background: var(--accent); border: 2px solid var(--panel);
+    box-shadow: var(--shadow-1); cursor: pointer;
+  }
+  #vol::-moz-range-track { height: 6px; border-radius: 3px; background: var(--panel-3); border: 1px solid var(--line); }
+  #vol::-moz-range-thumb {
+    width: 22px; height: 22px; border-radius: 50%; background: var(--accent);
+    border: 2px solid var(--panel); box-shadow: var(--shadow-1); cursor: pointer;
+  }
+  #vol-val { min-width: 2.4em; text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+
+  /* ── the settings tray ─────────────────────────────────────────────────────
+     Model, voice, personality, web search and open mic are not touched during
+     a visit. Left in the header they stacked five 44px pills above the state
+     bar and started the Mode grid most of the way down a phone -- and the grid
+     is the page. On a laptop the tray is simply always open and the toggle is
+     not rendered, so ONE node is a disclosure on a phone and a strip of pills
+     on a laptop, with no JS at the breakpoint to keep in sync. */
+
+  #settings {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    margin-bottom: var(--s3);
+  }
+  #settings[hidden] { display: none; }
+  #settings .pill { flex: 1 1 auto; justify-content: flex-start; }
+  @media (min-width: 760px) {
+    #settings[hidden] { display: flex; }
+    #btn-settings { display: none; }
+  }
+
+  .seg {
+    display: inline-flex; gap: 2px; padding: 2px; flex: none;
+    background: var(--panel-3); border-radius: var(--r-pill);
+  }
+  .seg > button {
+    font-size: var(--fs-small); font-weight: 600; cursor: pointer;
+    min-height: 34px; padding: 0 13px; border: 0; border-radius: var(--r-pill);
+    background: transparent; color: var(--dim);
+  }
+  /* Words, not a sun/moon riddle: a lone glyph never says whether it is
+     showing the state or offering the action. Three buttons, not a cycling
+     one -- Auto to Dark must not cost two presses. */
+  .seg > button[aria-pressed="true"] {
+    background: var(--panel); color: var(--text); box-shadow: var(--shadow-1);
+  }
+
+  /* Colour swatches. A dot of the palette's own accent, because the name of a
+     colour is a worse description of it than the colour. The name is still on
+     the button as its accessible label and its tooltip, so this is not a
+     colour-only control. */
+  .swatches { display: inline-flex; gap: 6px; align-items: center; flex: none; }
+  .sw {
+    width: 30px; height: 30px; flex: none; padding: 0; cursor: pointer;
+    border-radius: 50%; border: 2px solid var(--line);
+    background-color: var(--sw-l);
+  }
+  .sw[aria-pressed="true"] {
+    border-color: var(--text);
+    box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--text);
+  }
+  /* The swatch shows its palette in the mode you are actually in, so a dark
+     phone is not offered five bright light-mode dots it will never show you.
+     Written twice for the same reason the mapping above is. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .sw { background-color: var(--sw-d); }
+  }
+  :root[data-theme="dark"] .sw { background-color: var(--sw-d); }
+  .sw[data-palette-set=""]       { --sw-l: #0b5fd0; --sw-d: #66b0ff; }
+  .sw[data-palette-set="violet"] { --sw-l: #5c33c4; --sw-d: #b39bff; }
+  .sw[data-palette-set="teal"]   { --sw-l: #06697a; --sw-d: #4fd3e8; }
+  .sw[data-palette-set="rose"]   { --sw-l: #9b1aa8; --sw-d: #ff8ad8; }
+  /* Half and half, because "maximum contrast" is a relationship between two
+     colours and one dot cannot show it. Painted with background-IMAGE, which
+     is a different property from the background-color the two mode rules
+     above set -- so it survives both without a specificity fight. */
+  .sw[data-palette-set="contrast"] {
+    --sw-l: #0033cc; --sw-d: #7fb2ff;
+    background-image: linear-gradient(135deg, #ffffff 0 50%, #000000 50% 100%);
+  }
+
+  /* ── what the robot is doing, from the back row ────────────────────────────
+     THE ROBOT'S OWN EYES ARE THE STATUS LIGHT. Reachy Mini is a head with two
+     round eyes, and a group standing in front of one reads its face before
+     they read anything on a screen -- so the mark on the dashboard is that
+     face, and it does what the robot is doing. Asleep closes it. That is a
+     thing a coloured dot cannot say, and a room understands it without being
+     told.
+
+     Drawn in CSS rather than set as an emoji, for the reason the monogram
+     tiles are: the shipped brand mark was a robot emoji, which renders as a
+     different picture on every platform and as an empty box on a stripped
+     Linux browser. Two divs cannot fail to a missing glyph.
+
+     The colour is carried by the eyes and the headline, NOT by washing the
+     whole block. The wash fired on every transition -- Ready, Listening,
+     Speaking, Ready -- so the top of the page changed colour every few seconds
+     for an entire visit, which is a great deal of movement at the edge of
+     somebody's vision and spends the loudest signal the page has on its most
+     routine event. Offline still washes, because that one IS an alarm. */
+
+  #state {
+    display: flex; align-items: center; gap: var(--s3);
+    min-height: 66px; padding: var(--s2) var(--s4) var(--s2) var(--s3);
+    flex: 1 1 300px;
+    border-radius: var(--r-lg);
+    background: var(--panel); border: 1px solid var(--line);
+    box-shadow: var(--shadow-1);
+    color: var(--text);
+    transition: background var(--dur-2) var(--ease), border-color var(--dur-2) var(--ease);
+  }
+
+  /* the face */
+  #state .mark {
+    flex: none; width: 46px; height: 40px;
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 12px / 14px;
+    transition: background var(--dur-2) var(--ease), border-color var(--dur-2) var(--ease);
+  }
+  #state .mark i {
+    width: 9px; height: 9px; border-radius: 50%; background: var(--dim);
+    transition: height var(--dur-2) var(--ease), border-radius var(--dur-2) var(--ease),
+                background var(--dur-2) var(--ease);
+  }
+
+  #state .state-text { display: flex; flex-direction: column; min-width: 0; }
+  #state .what {
+    font-size: 24px; font-weight: 700; letter-spacing: -.022em;
+    line-height: 1.1; color: var(--text);
+  }
+  #state .detail { font-size: var(--fs-small); color: var(--dim); }
+
+  /* the level meter, which only exists while there is a level */
+  #state .bars { display: none; gap: 3px; align-items: flex-end; height: 24px; flex: none; margin-left: auto; }
+  #state.is-listening .bars, #state.is-speaking .bars { display: flex; }
+  #state .bars i { width: 4px; height: 8px; border-radius: 2px; background: currentColor; }
+  #state .bars i:nth-child(1) { animation: vu 1.05s ease-in-out infinite; }
+  #state .bars i:nth-child(2) { animation: vu 1.05s ease-in-out .18s infinite; }
+  #state .bars i:nth-child(3) { animation: vu 1.05s ease-in-out .36s infinite; }
+  @keyframes vu { 0%,100% { height: 7px; } 50% { height: 23px; } }
+
+  #state.is-listening { color: var(--accent); }
+  #state.is-listening .what { color: var(--accent); }
+  #state.is-listening .mark { background: var(--accent-soft); border-color: var(--accent-line); }
+  #state.is-listening .mark i { background: var(--accent); animation: gaze 2.4s ease-in-out infinite; }
+
+  #state.is-speaking { color: var(--ok); }
+  #state.is-speaking .what { color: var(--ok); }
+  #state.is-speaking .mark { background: var(--ok-soft); border-color: var(--ok-line); }
+  #state.is-speaking .mark i { background: var(--ok); }
+
+  #state.is-starting .what { color: var(--warn); }
+  #state.is-starting .mark { background: var(--warn-soft); border-color: var(--warn-line); }
+  #state.is-starting .mark i { background: var(--warn); animation: gaze 1.6s ease-in-out infinite; }
+
+  /* Asleep: the eyes close. */
+  #state.is-asleep .what { color: var(--warn); }
+  #state.is-asleep .mark { background: var(--warn-soft); border-color: var(--warn-line); }
+  #state.is-asleep .mark i { background: var(--warn); height: 3px; border-radius: 2px; }
+
+  /* Offline is the one alarm on this page, so it is the one state that takes
+     the whole block. */
+  #state.is-offline {
+    background: var(--bad-soft); border-color: var(--bad-line); color: var(--bad);
+  }
+  #state.is-offline .what { color: var(--bad); }
+  #state.is-offline .mark { background: var(--panel); border-color: var(--bad-line); }
+  #state.is-offline .mark i { background: var(--bad); height: 3px; border-radius: 2px; }
+  #state.is-idle .what { color: var(--text); }
+  /* Not a blink -- a blink is a twitch and reads as a glitch at the edge of
+     vision. The eyes narrow and open, the way something paying attention
+     does. */
+  @keyframes gaze { 0%, 92%, 100% { height: 9px; } 96% { height: 4px; } }
+
+  /* The old dots survive: the feature list still uses them as a live light. */
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); flex: none; }
+  .dot.on   { background: var(--ok);   box-shadow: 0 0 0 3px var(--ok-soft); }
+  .dot.warn { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
+  .dot.bad  { background: var(--bad);  box-shadow: 0 0 0 3px var(--bad-soft); }
+
+  /* ── panels ────────────────────────────────────────────────────────────── */
+
+  /* TWO TIERS, not five identical cards. The page used to be a stack of
+     panels of exactly equal weight -- the grid you press every few minutes
+     sat at the same visual level as a phrase list nobody reads twice. The
+     things you operate are cards; the things you consult are quiet regions
+     on the page's own ground. */
   .panel {
     background: var(--panel); border: 1px solid var(--line);
-    border-radius: 12px; padding: 16px; margin-bottom: 16px;
+    border-radius: var(--r-lg); padding: var(--s4);
+    margin-bottom: var(--s4); box-shadow: var(--shadow-1);
   }
-  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .07em;
-       color: var(--dim); margin: 0 0 12px; font-weight: 600; }
-  .panel-head { display: flex; align-items: center; justify-content: space-between; }
-  .panel-head h2 { margin-bottom: 12px; }
-  button.toggle {
-    font: inherit; font-size: 12.5px; cursor: pointer; color: var(--dim);
-    background: var(--bg); border: 1px solid var(--line);
-    border-radius: 999px; padding: 4px 13px; margin-bottom: 12px;
-    display: inline-flex; align-items: center; gap: 6px;
+  .panel--quiet {
+    background: none; box-shadow: none; border-style: dashed;
+    border-color: var(--line);
+  }
+  h2 {
+    font-size: var(--fs-tiny); text-transform: uppercase; letter-spacing: .09em;
+    color: var(--dim); margin: 0 0 var(--s3); font-weight: 700;
+  }
+  .panel-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: var(--s2); margin-bottom: var(--s3);
+  }
+  .panel-head h2 { margin-bottom: 0; }
+  .panel-head .tools { display: flex; align-items: center; gap: 6px; }
+  .panel--modes { padding: var(--s4) var(--s4) var(--s5); }
+
+  button.toggle, a.toggle {
+    font-size: var(--fs-small); font-weight: 600; cursor: pointer;
+    color: var(--text-2); text-decoration: none;
+    background: var(--panel-2); border: 1px solid var(--line-2);
+    border-radius: var(--r-pill); padding: 0 15px;
+    min-height: 40px; display: inline-flex; align-items: center; gap: 7px;
+    white-space: nowrap;
   }
   button.toggle::before {
-    content: ""; width: 7px; height: 7px; border-radius: 50%;
-    background: var(--line);
+    content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--line-2);
   }
+  a.toggle::before { display: none; }
   button.toggle[aria-pressed="true"] {
-    color: var(--accent); border-color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+    color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft);
   }
   button.toggle[aria-pressed="true"]::before { background: var(--accent); }
+  button.toggle:disabled { opacity: .5; cursor: default; }
 
-  /* Detail rows are hidden until Logs is on, so the default view stays a
-     readable conversation rather than a debug trace. */
+  /* ── the mode grid: folders are bands, keys are keys ───────────────────── */
+
+  .modes { display: flex; flex-direction: column; gap: var(--s4); }
+  /* The grid is genuinely empty on the very first poll: the robot discovers
+     demos while the dashboard is already up. Zero JS, zero motion. */
+  .modes:empty::after {
+    content: "Finding the robot's demos\2026";
+    display: block; padding: var(--s5) 0; text-align: center;
+    color: var(--dim); font-size: var(--fs-help);
+  }
+
+  .folder {
+    padding: 6px;            /* invisible at rest; the room the drop ring needs */
+    border-radius: var(--r-lg);
+    transition: box-shadow var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+  }
+  .folder-head {
+    display: flex; align-items: center; gap: var(--s2);
+    min-height: 40px; padding-bottom: 6px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: var(--s3);
+  }
+  /* The loose band has no chrome at all: on day one, before anybody has made a
+     folder, the grid must look finished rather than look like an empty folder. */
+  .folder--loose > .folder-head { border-bottom: none; margin-bottom: 0; min-height: 0; padding: 0; }
+  .folder--loose > .folder-head > * { display: none; }
+  body.arranging .folder--loose > .folder-head {
+    display: flex; min-height: 40px; padding-bottom: 6px;
+    border-bottom: 1px solid var(--line); margin-bottom: var(--s3);
+  }
+  body.arranging .folder--loose > .folder-head > .folder-name { display: block; }
+  body.arranging .folder--loose > .folder-head > .folder-count { display: inline; }
+
+  /* An empty band is noise in front of a school group. It exists only while
+     arranging, where it is somewhere to aim at. */
+  .folder.is-empty { display: none; }
+  body.arranging .folder.is-empty { display: block; }
+
+  .folder-twist {
+    flex: none; width: var(--tap); height: var(--tap); margin-left: -10px;
+    display: grid; place-items: center;
+    background: none; border: 0; border-radius: var(--r-sm);
+    color: var(--dim); cursor: pointer;
+  }
+  /* Two borders, not a font glyph: nothing on this page may depend on a font
+     the phone might not have. */
+  .folder-twist::before {
+    content: ""; width: 9px; height: 9px;
+    border-right: 2.5px solid currentColor; border-bottom: 2.5px solid currentColor;
+    transform: translateY(-2px) rotate(45deg);
+    transition: transform var(--dur-2) var(--ease);
+  }
+  .folder-twist[aria-expanded="false"]::before { transform: translateX(-2px) rotate(-45deg); }
+
+  .folder-name {
+    font-size: var(--fs-small); font-weight: 700;
+    text-transform: uppercase; letter-spacing: .09em;
+    color: var(--text-2); margin: 0; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .folder-count {
+    font: 600 var(--fs-tiny)/1 var(--mono); color: var(--dim); flex: none;
+    padding: 3px 7px; border-radius: var(--r-xs); background: var(--panel-2);
+  }
+  input.folder-rename {
+    font-size: var(--fs-lead); font-weight: 700;
+    min-height: 40px; padding: 5px 10px; min-width: 8em; max-width: 16em; width: auto;
+    border-color: var(--accent); box-shadow: var(--ring);
+  }
+  .folder-tools { display: none; align-items: center; gap: 4px; margin-left: auto; }
+  body.arranging .folder-tools { display: flex; }
+
+  /* What a collapsed folder still shows you: monogram chips of its contents. */
+  .folder-peek { display: none; gap: 5px; align-items: center; margin-left: auto; flex: none; }
+  .folder.is-collapsed .folder-peek { display: flex; }
+  .folder-peek i {
+    width: 28px; height: 28px; flex: none;
+    display: grid; place-items: center;
+    font-size: var(--fs-tiny); font-style: normal; font-weight: 700; line-height: 1;
+    letter-spacing: -.02em; color: var(--text-2);
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+  }
+
+  .folder-body {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(var(--grid-min), 1fr));
+    gap: var(--s3);
+  }
+
+  /* COLLAPSED HIDES EVERY KEY EXCEPT THE ONE THAT IS RUNNING. A grid whose
+     children are all display:none has no rows and no height, so this needs no
+     JavaScript at all -- and there is therefore NO code path by which
+     collapsing a folder can hide the live button. That is the one failure mode
+     that would make folders worse than no folders. */
+  .folder.is-collapsed .folder-head { border-bottom-color: transparent; margin-bottom: 0; }
+  .folder.is-collapsed .mode:not([data-state="running"]) { display: none; }
+  .folder.is-collapsed .folder-body { margin-top: var(--s2); }
+  .folder.is-collapsed .folder-empty { display: none; }
+
+  .folder-empty {
+    display: none; align-items: center; justify-content: center;
+    grid-column: 1 / -1;
+    min-height: 68px; border: 2px dashed var(--line-2); border-radius: var(--r);
+    color: var(--dim); font-size: var(--fs-small);
+  }
+  body.arranging .folder.is-empty .folder-empty { display: flex; }
+
+  /* ── a mode key ────────────────────────────────────────────────────────────
+     A DIV, not a BUTTON, with an absolutely positioned .mode-hit button on top
+     and the grip and the "put it in" select as SIBLINGS above it. A <button>
+     inside a <button> is not parseable HTML -- the parser hoists the inner one
+     out -- and a <span role="button" tabindex="0"> inside a button is valid
+     markup but invalid ARIA and unreliably exposed by VoiceOver and TalkBack,
+     which would be a problem on precisely the control a one-handed staff
+     member uses. This is the only arrangement in which every control is a real
+     button. */
+
+  .mode {
+    --key-bg: var(--panel-2);
+    --key-ink: var(--text);
+    position: relative;
+    display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap;
+    min-height: var(--key-h); padding: var(--s3);
+    color: var(--key-ink); background: var(--key-bg);
+    border: 1px solid var(--line-2); border-radius: var(--r);
+    box-shadow: var(--shadow-1), var(--shadow-key);
+    transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease),
+                box-shadow var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+  }
+  .mode-hit {
+    position: absolute; inset: 0; z-index: 1;
+    width: 100%; padding: 0; margin: 0; border: 0;
+    background: transparent; border-radius: inherit;
+    color: inherit; cursor: pointer;
+  }
+  /* Everything except the hit target is decoration as far as the pointer is
+     concerned -- then the real controls are handed back their events. The
+     pickbar MUST be in that list: it is appended as a direct child of .mode,
+     so without it every button on a picked-up key is dead to the touch. */
+  .mode > *:not(.mode-hit) { position: relative; z-index: 2; pointer-events: none; }
+  .mode .mode-grip, .mode .mode-file, .mode .flag-fix,
+  .mode .pickbar, .mode .pickbar button { pointer-events: auto; }
+
+  /* The monogram. Deliberately NOT emoji: this page's one law is that colour
+     means state and never decoration, and ten full-colour multi-hue glyphs
+     across the main grid would be the most chromatic thing on screen next to
+     the single accent block they are meant to defer to. A monogram also needs
+     no font support (a stripped Linux browser renders emoji as tofu), and it
+     gives a staff-written "Cork school visit" the same treatment as a built-in
+     demo instead of a second-class fallback. */
+  .mode-mono {
+    flex: none; width: 46px; height: 46px;
+    display: grid; place-items: center;
+    font: 700 var(--fs-body)/1 var(--mono);
+    letter-spacing: -.01em; text-transform: uppercase;
+    color: var(--text-2);
+    background: var(--panel-3); border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease),
+                border-color var(--dur-1) var(--ease);
+  }
+
+  .mode-body { flex: 1 1 120px; min-width: 0; }
+  .mode .name {
+    display: block; font-size: var(--fs-key); font-weight: 650;
+    line-height: 1.2; letter-spacing: -.006em;
+    overflow-wrap: anywhere;   /* a staff label is never truncated */
+  }
+  .mode .help {
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin-top: 3px; font-size: var(--fs-help); line-height: 1.35; color: var(--dim);
+  }
+  .mode .help:empty { display: none; }
+
+  /* RUNNING. The one solid block of colour on the page. */
+  .mode[data-state="running"] {
+    --key-bg: var(--accent);
+    --key-ink: var(--accent-ink);
+    border-color: var(--accent);
+    box-shadow: var(--shadow-2), 0 0 0 3px var(--accent-soft);
+  }
+  .mode[data-state="running"] .help { color: var(--accent-dim); }
+  .mode[data-state="running"] .mode-mono {
+    background: var(--accent-veil); border-color: var(--accent-veil-2); color: var(--accent-ink);
+  }
+  /* Inverted, so the chip is the highest-contrast thing on the page and the
+     running state is not carried by fill alone -- which a colourblind operator
+     in a hurry would be leaning on. */
+  .mode-state {
+    display: none; flex: none; align-items: center; gap: 6px;
+    padding: 5px 10px; border-radius: var(--r-pill);
+    font-size: var(--fs-eyebrow); font-weight: 800; letter-spacing: .1em;
+    text-transform: uppercase;
+    background: var(--accent-ink); color: var(--accent);
+  }
+  .mode-state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .mode[data-state="running"] .mode-state { display: inline-flex; }
+
+  /* Hover is guarded, because on a touchscreen :hover latches on the last
+     thing tapped and leaves a demo looking half-pressed for the rest of a visit. */
+  @media (hover: hover) {
+    .mode:hover { background: var(--panel-3); box-shadow: var(--shadow-2); }
+    .mode[data-state="running"]:hover { background: var(--accent-2); border-color: var(--accent-2); }
+    .mode[data-state="unavailable"]:hover { background: var(--panel); box-shadow: none; }
+    button.toggle:hover:not(:disabled), a.toggle:hover { background: var(--panel-3); }
+    button.act:hover:not(:disabled) { background: var(--panel-3); }
+    button.act.accent:hover:not(:disabled) { border-color: var(--accent); }
+    button.act.danger:hover:not(:disabled) { color: var(--bad); border-color: var(--bad-line); background: var(--bad-soft); }
+    .folder-twist:hover { background: var(--panel-2); color: var(--text); }
+    .mode-grip:hover { border-color: var(--line-2); color: var(--text); }
+    .step button:hover { border-color: var(--line-2); color: var(--text); }
+  }
+
+  /* Set aside, and saying so. Never opacity: a half-transparent key in
+     sunlight is a key nobody can read the reason off, and the reason is the
+     whole point of setting it aside. */
+  .mode[data-state="unavailable"] {
+    background: var(--panel); border-style: dashed; box-shadow: none; color: var(--dim);
+  }
+  .mode[data-state="unavailable"] .name { color: var(--text-2); }
+  .mode[data-state="unavailable"] .mode-mono { background: none; color: var(--dim); border-style: dashed; }
+  .mode[data-state="unavailable"] .mode-hit { cursor: default; }
+  .mode .flag {
+    display: none; flex: 0 0 100%;
+    align-items: center; gap: var(--s2); flex-wrap: wrap;
+    margin-top: 2px; padding: 4px 6px 4px 12px;
+    font-size: var(--fs-tiny); font-weight: 600; color: var(--warn);
+    background: var(--warn-soft); border: 1px solid var(--warn-line);
+    border-radius: var(--r-pill);
+  }
+  .mode[data-state="unavailable"] .flag { display: flex; }
+  /* POST /api/demos/{id}/enable has existed since the day the greyed-out state
+     shipped and nothing on this page ever called it. Without this button, a
+     demo set aside for three consecutive failures could only be recovered by
+     restarting the robot -- mid-visit, in front of a group. */
+  .flag-fix {
+    font-size: var(--fs-tiny); font-weight: 700; cursor: pointer;
+    min-height: 32px; padding: 0 12px; border-radius: var(--r-pill);
+    color: var(--warn); background: var(--panel); border: 1px solid var(--warn-line);
+  }
+  .flag-fix[hidden] { display: none; }
+
+  /* ── arrange mode ──────────────────────────────────────────────────────────
+     Dragging is a MODE you enter deliberately. On a live dashboard a key press
+     starts a demo, and a thumb that slides 8px must never turn "start the
+     welcome" into "reorder the grid" in front of fifteen students. Entering it
+     changes every key visibly and at once, so nobody is ever in doubt which
+     mode they are in. */
+
+  body.arranging .mode {
+    border-style: dashed; min-height: 62px; padding-left: var(--s2);
+  }
+  body.arranging .mode .help { display: none; }
+  body.arranging .mode .mode-mono { width: 38px; height: 38px; font-size: var(--fs-body); }
+  body.arranging .mode .mode-hit { cursor: default; }
+  body.arranging .mode-grip { display: grid; }
+  body.arranging .mode-file { display: block; }
+  body.arranging .folder-body { --grid-min: 196px; }
+  body.arranging { padding-bottom: 96px; }
+
+  .mode-grip {
+    display: none; flex: none; order: -1;
+    width: 40px; height: var(--tap); place-items: center; padding: 0;
+    background: var(--panel-3); border: 1px solid var(--line-2);
+    border-radius: var(--r-sm); color: var(--dim);
+    cursor: grab;
+    /* touch-action is on the GRIP ONLY. The mode grid is ten keys tall on a
+       phone, so if the card ate the gesture the page could not be scrolled
+       over its own main panel. */
+    touch-action: none;
+    -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+  }
+  .mode-grip::before {
+    content: ""; width: 12px; height: 20px;
+    background-image: radial-gradient(currentColor 1.6px, transparent 1.8px);
+    background-size: 6px 6px; background-position: 0 1px;
+  }
+  .mode-grip:active { cursor: grabbing; }
+  .mode-grip[aria-pressed="true"] {
+    background: var(--accent); border-color: var(--accent); color: var(--accent-ink);
+  }
+  .folder-head .mode-grip { order: 0; }
+
+  /* One tap, and on a phone it is the OS's own full-height picker. This is the
+     control a staff member with one hand free actually uses, and it is why
+     there is no popover to freeze the poll for. */
+  .mode-file {
+    display: none; flex: 0 0 100%; width: 100%; max-width: none;
+    margin-top: var(--s2); min-height: 38px; font-size: var(--fs-lead);
+    background-color: var(--panel);
+  }
+
+  /* Picked up, by keyboard or by tap. Deliberately the same look as being
+     dragged, because it is the same act. */
+  .mode.is-picked, .folder.is-picked {
+    box-shadow: var(--shadow-2), 0 0 0 3px var(--accent);
+    border-color: var(--accent);
+  }
+  .mode.is-picked { border-style: solid; transform: scale(1.015); z-index: 3; }
+  .folder.is-picked { background: var(--accent-soft); }
+
+  /* The four-button bar on a picked-up key. This is the tap-only path: no
+     precision, no hold timers, no steady hand. */
+  .pickbar { display: flex; gap: var(--s1); flex: 0 0 100%; margin-top: var(--s2); }
+  .pickbar button {
+    flex: 1; min-height: 40px; font-size: var(--fs-body); font-weight: 700; cursor: pointer;
+    color: var(--text); background: var(--panel); border: 1px solid var(--line-2);
+    border-radius: var(--r-sm);
+  }
+  .pickbar button.done { color: var(--accent); background: var(--accent-soft); border-color: var(--accent-line); }
+
+  /* The hole the key came out of. It moves live, so where the hole is, is
+     where the key lands -- there is no separate insertion line to interpret. */
+  .mode.is-ghost, .folder.is-ghost {
+    background: var(--accent-soft);
+    border: 2px dashed var(--accent);
+    box-shadow: none; transform: none;
+  }
+  .mode.is-ghost > *, .folder.is-ghost > * { visibility: hidden; }
+
+  /* The key under the finger. Position is written into --fly-x/--fly-y on
+     every pointermove with no transition, so it tracks the finger exactly. */
+  .is-flying {
+    position: fixed; left: 0; top: 0; margin: 0; z-index: 70;
+    width: var(--fly-w, 240px); pointer-events: none;
+    border-style: solid; border-color: var(--accent);
+    box-shadow: var(--shadow-drag);
+    transform: translate3d(var(--fly-x, 0px), var(--fly-y, 0px), 0) rotate(-1.5deg) scale(1.04);
+    transform-origin: 30px 50%;
+    transition: none;
+  }
+
+  /* ── grouping one key onto another ─────────────────────────────────────────
+     Two stages on purpose. A 550ms dwell with no feedback feels like nothing
+     is happening and people let go early, so the ring CLOSES over the length
+     of the wait and is itself the progress bar; the label only appears once
+     the gesture is actually armed, so it never promises something a release
+     would not deliver. */
+  .mode.is-merging::before {
+    content: ""; position: absolute; inset: -3px; z-index: 3;
+    border: 3px solid var(--accent); border-radius: calc(var(--r) + 3px);
+    opacity: 0; transform: scale(.92);
+    animation: arm var(--merge-ms) var(--ease) forwards;
+    pointer-events: none;
+  }
+  @keyframes arm { to { opacity: 1; transform: scale(1); } }
+
+  .mode.is-merge { border-color: var(--accent); transform: scale(1.03); z-index: 4; }
+  .mode.is-merge .mode-mono {
+    background: var(--accent); border-color: var(--accent); color: var(--accent-ink);
+    transform: scale(.76);
+  }
+  /* A sentence, not a symbol. The people using this have never seen the
+     gesture on this page before, and "two icons touching" is not self-evident
+     the way it is on a phone home screen where everybody has already done it. */
+  .mode.is-merge::after {
+    content: "Release to group";
+    position: absolute; left: 50%; bottom: -11px; z-index: 5;
+    transform: translateX(-50%);
+    padding: 3px 10px; border-radius: var(--r-pill);
+    font: 700 var(--fs-eyebrow)/1.7 var(--mono);
+    letter-spacing: .05em; text-transform: uppercase; white-space: nowrap;
+    background: var(--accent); color: var(--accent-ink);
+    pointer-events: none;
+  }
+
+  /* A folder that will receive the drop. Rings the whole band, head included,
+     so dropping onto a collapsed folder is a legible act. */
+  .folder.is-drop {
+    background: var(--accent-soft);
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+  .folder.is-drop > .folder-head { border-bottom-color: var(--accent-line); }
+  .folder.is-drop .folder-empty { border-color: var(--accent); color: var(--accent); }
+
+  /* The arrange bar. Fixed, because Done must be reachable with a thumb no
+     matter how far down the grid the drag has taken you. The safe-area inset
+     only resolves to anything because of viewport-fit=cover in the meta. */
+  #arrange-bar {
+    display: none; position: fixed; z-index: 50; left: 0; right: 0; bottom: 0;
+    align-items: center; gap: var(--s2);
+    padding: var(--s2) var(--s3);
+    padding-bottom: calc(var(--s2) + env(safe-area-inset-bottom, 0px));
+    background: var(--panel); border-top: 1px solid var(--line-2);
+    box-shadow: var(--shadow-bar);
+  }
+  body.arranging #arrange-bar { display: flex; }
+  body.dragging #arrange-bar { visibility: hidden; }
+  #arrange-bar .hint {
+    flex: 1 1 auto; min-width: 0; text-align: center; color: var(--dim);
+    font-size: var(--fs-small);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #arrange-bar .hint.is-warn { color: var(--bad); font-weight: 600; }
+
+  /* THE DROP RAIL. Every folder as a chip across the bottom of the screen,
+     right where the thumb already is, for the length of a drag. Without it,
+     moving a key into a folder three screens down means dragging while the
+     page autoscrolls past ten other targets, one-handed, standing up. */
+  #droprail {
+    display: none; position: fixed; z-index: 65; left: 0; right: 0; bottom: 0;
+    gap: var(--s2); overflow-x: auto; overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    padding: var(--s2) var(--s3);
+    padding-bottom: calc(var(--s2) + env(safe-area-inset-bottom, 0px));
+    background: var(--panel); border-top: 1px solid var(--line-2);
+    box-shadow: var(--shadow-bar);
+  }
+  #droprail::-webkit-scrollbar { display: none; }
+  body.dragging #droprail { display: flex; }
+  /* More specific than the rule above on purpose. buildRail() hides the rail
+     when there is nothing to aim at -- no folders yet, or a folder being
+     dragged, which can only live at the root -- and that happens while
+     body.dragging is set, so the plain [hidden] rule would lose and leave an
+     empty bar across the bottom of the screen. */
+  #droprail[hidden], body.dragging #droprail[hidden] { display: none; }
+  .rail-chip {
+    flex: none; min-height: 52px; min-width: 96px; max-width: 42vw;
+    padding: 0 var(--s3);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: var(--fs-body); font-weight: 600; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    background: var(--panel-2); border: 2px dashed var(--line-2); border-radius: var(--r);
+    transition: transform var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+  }
+  .rail-chip.is-over {
+    background: var(--accent); border-color: var(--accent); border-style: solid;
+    color: var(--accent-ink); transform: translateY(-3px);
+  }
+
+  body.dragging { user-select: none; -webkit-user-select: none; overscroll-behavior: contain; }
+
+  /* ── direct control ────────────────────────────────────────────────────── */
+
+  .ctl-row { display: flex; gap: var(--s2); flex-wrap: wrap; align-items: center; }
+  .ctl-row input { flex: 1 1 240px; min-width: 0; width: auto; }
+
+  button.act {
+    font-size: var(--fs-body); font-weight: 600; cursor: pointer;
+    color: var(--text); white-space: nowrap;
+    min-height: var(--tap); padding: 0 16px;
+    display: inline-flex; align-items: center; justify-content: center; gap: var(--s2);
+    background: var(--panel-2); border: 1px solid var(--line-2);
+    border-radius: var(--r); box-shadow: var(--shadow-1), var(--shadow-key);
+  }
+  button.act:active:not(:disabled) { transform: translateY(1px); }
+  /* Washed, not solid: the running key keeps the only solid fill on the page. */
+  button.act.accent { color: var(--accent); background: var(--accent-soft); border-color: var(--accent-line); }
+  button.act.danger { color: var(--text-2); }
+  /* Not opacity, for the same reason a set-aside key is not faded. */
+  button.act:disabled {
+    cursor: default; color: var(--dim);
+    background: var(--panel-3); border-style: dashed; box-shadow: none;
+  }
+  button.act.sm { min-height: 38px; padding: 0 12px; font-size: var(--fs-small); }
+
+  /* ── feature builder ───────────────────────────────────────────────────── */
+
+  details.panel > summary {
+    cursor: pointer; list-style: none;
+    display: flex; align-items: center; gap: var(--s2); min-height: 40px;
+  }
+  details.panel > summary::-webkit-details-marker { display: none; }
+  details.panel > summary::before {
+    content: ""; flex: none; width: 9px; height: 9px; margin-right: 2px;
+    border-right: 2.5px solid var(--dim); border-bottom: 2.5px solid var(--dim);
+    transform: translateX(-1px) rotate(-45deg);
+    transition: transform var(--dur-2) var(--ease);
+  }
+  details.panel[open] > summary::before { transform: translateY(-2px) rotate(45deg); }
+  details.panel > summary h2 { margin: 0; }
+
+  #feat-intro { color: var(--dim); font-size: var(--fs-help); max-width: 62ch; }
+
+  .feat {
+    display: flex; align-items: center; gap: var(--s2);
+    padding: var(--s2) 2px; border-bottom: 1px solid var(--line); flex-wrap: wrap;
+  }
+  .feat:last-child { border-bottom: none; }
+  .feat .name { font-weight: 650; font-size: var(--fs-body); }
+  .feat .dot { flex: none; }
+  .feat .spacer { flex: 1 1 auto; }
+
+  .step {
+    display: flex; gap: var(--s2); align-items: center; flex-wrap: wrap;
+    margin-bottom: var(--s2); padding: var(--s2);
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-sm);
+  }
+  .step .kind {
+    font-size: var(--fs-eyebrow); text-transform: uppercase; letter-spacing: .08em;
+    font-weight: 700; color: var(--dim); width: 54px; flex: none;
+  }
+  .step input[type="text"] { flex: 1 1 200px; min-width: 0; width: auto; min-height: 40px; }
+  .step input[type="number"] { width: 6em; flex: none; min-height: 40px; }
+  .step select { background-color: var(--panel); }
+  .step button {
+    cursor: pointer; color: var(--text-2); font-size: var(--fs-body);
+    background: var(--panel); border: 1px solid var(--line-2);
+    border-radius: var(--r-sm); min-width: 42px; min-height: 42px; padding: 0 10px;
+  }
+  .step .spacer { flex: 1 1 auto; }
+  .step label.dim { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; }
+
+  ul.errors {
+    color: var(--bad); background: var(--bad-soft);
+    border: 1px solid var(--bad-line); border-radius: var(--r-sm);
+    font-size: var(--fs-help); margin: var(--s3) 0 0;
+    padding: var(--s2) var(--s3) var(--s2) 30px;
+  }
+  ul.errors:empty { display: none; }
+
+  #feat-chat {
+    margin-bottom: var(--s2); font-size: var(--fs-help);
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: var(--r-sm); padding: var(--s3);
+    max-height: 40vh; overflow-y: auto;
+  }
+  #feat-chat.dim { color: var(--dim); }
+  #feat-chat .said { color: var(--text); margin: 5px 0; }
+  #feat-chat .mine { color: var(--accent); margin: 5px 0; font-weight: 600; }
+
+  /* ── phrases ───────────────────────────────────────────────────────────── */
+
+  .phrase-group { margin-bottom: var(--s4); }
+  .phrase-group:last-child { margin-bottom: 0; }
+  .phrase-group .lead {
+    color: var(--dim); font-size: var(--fs-tiny); font-weight: 700;
+    text-transform: uppercase; letter-spacing: .07em; margin-bottom: var(--s2);
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    font: var(--fs-small)/1.5 var(--mono); padding: 6px 12px;
+    border-radius: var(--r-sm);
+    background: var(--panel-2); border: 1px solid var(--line); color: var(--text-2);
+  }
+  .chip.wake {
+    color: var(--accent); background: var(--accent-soft);
+    border-color: var(--accent-line); font-weight: 600;
+  }
+  .feat .chip { font-size: var(--fs-tiny); padding: 3px 10px; }
+
+  /* ── QR handoff ────────────────────────────────────────────────────────────
+     Drawn as SVG rects from a matrix the robot sends, rather than an <img>:
+     it is built with the same createElement discipline as everything else, it
+     recolours with the theme, and there is no image endpoint to cache. */
+  .qr-row { display: flex; flex-wrap: wrap; gap: var(--s4); }
+  .qr { display: flex; flex-direction: column; align-items: center; gap: var(--s2); }
+  /* White quiet zone always, in BOTH themes. A scanner needs light modules
+     under dark ones, and a dark-mode QR drawn in theme colours is a QR that
+     does not scan -- which would be a subtle failure discovered by a visitor
+     rather than by us. */
+  .qr svg { background: #ffffff; padding: 8px; border-radius: var(--r-sm); display: block; }
+  .qr .cap {
+    font-size: var(--fs-small); color: var(--text-2); max-width: 22ch;
+    text-align: center; overflow-wrap: anywhere;
+  }
+
+  /* ── visit stats ───────────────────────────────────────────────────────── */
+
+  .stat-row { display: flex; flex-wrap: wrap; gap: var(--s3); margin-bottom: var(--s4); }
+  .stat {
+    flex: 1 1 120px; padding: var(--s3);
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r);
+  }
+  .stat .n { font: 700 26px/1.1 var(--mono); color: var(--text); letter-spacing: -.02em; }
+  .stat .k {
+    font-size: var(--fs-tiny); text-transform: uppercase; letter-spacing: .08em;
+    color: var(--dim); font-weight: 700; margin-top: 3px;
+  }
+  .bars-list { display: flex; flex-direction: column; gap: 6px; }
+  .barline { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-small); }
+  .barline .lab { flex: 0 0 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .barline .track { flex: 1; height: 10px; background: var(--panel-3); border-radius: var(--r-pill); overflow: hidden; }
+  .barline .fill { height: 100%; background: var(--accent); border-radius: var(--r-pill); }
+  .barline .n { flex: none; font: 600 var(--fs-tiny)/1 var(--mono); color: var(--dim); min-width: 2.5em; text-align: right; }
+
+  /* ── transcript ────────────────────────────────────────────────────────── */
+
+  #log {
+    max-height: 58vh; overflow-y: auto; overscroll-behavior: contain;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .row {
+    display: flex; gap: 10px; align-items: baseline;
+    padding: 7px 10px; border-radius: var(--r-sm);
+    border-left: 3px solid transparent;
+  }
+  .row .t { color: var(--dim); font: var(--fs-tiny)/1.6 var(--mono); flex: none; }
+  .row .who {
+    font-size: var(--fs-eyebrow); text-transform: uppercase; letter-spacing: .08em;
+    flex: none; width: 46px; font-weight: 800;
+  }
+  .row .msg { font-size: var(--fs-body); line-height: 1.45; word-break: break-word; }
+  .row.heard { border-left-color: var(--heard); background: var(--panel-2); }
+  .row.heard .who { color: var(--heard); }
+  .row.said .who { color: var(--said); }
+  .row.said .msg { font-weight: 500; color: var(--text); }
+  .row.heard .msg { color: var(--text-2); }
+  .row.status .who, .row.error .who { color: var(--dim); }
+  .row.error { color: var(--bad); background: var(--bad-soft); border-left-color: var(--bad); }
+  .row.status { color: var(--dim); font-size: var(--fs-small); }
+
+  /* Detail rows stay hidden until Logs is on: the default view is a readable
+     conversation, not a debug trace. */
   .row.listen, .row.partial, .row.status { display: none; }
   body.logs .row.listen, body.logs .row.partial, body.logs .row.status { display: flex; }
   .row.listen .who, .row.partial .who { color: var(--dim); }
-  .row.listen { color: var(--dim); font-size: 13px; }
-  .row.partial { color: var(--dim); font-size: 13px; font-style: italic; }
+  .row.listen { color: var(--dim); font-size: var(--fs-small); }
+  .row.partial { color: var(--dim); font-size: var(--fs-small); font-style: italic; }
 
-  .modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
-  button.mode {
-    text-align: left; cursor: pointer; font: inherit; color: var(--text);
-    background: var(--bg); border: 1px solid var(--line);
-    border-radius: 10px; padding: 12px 13px; transition: border-color .12s, background .12s;
-  }
-  button.mode:hover { border-color: var(--accent); }
-  button.mode[aria-pressed="true"] {
-    border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--panel));
-  }
-  button.mode .name { font-weight: 600; display: flex; align-items: center; gap: 7px; }
-  button.mode .help { color: var(--dim); font-size: 12.5px; margin-top: 4px; }
-  button.mode .flag { color: var(--warn); font-size: 11.5px; margin-top: 6px; }
-  button.mode[aria-pressed="true"] .name::after {
-    content: "active"; margin-left: auto; font-size: 11px; font-weight: 500;
-    color: var(--accent); text-transform: uppercase; letter-spacing: .05em;
+  .empty { color: var(--dim); padding: 28px 4px; text-align: center; }
+  footer { color: var(--dim); font-size: var(--fs-small); text-align: center; margin-top: var(--s3); }
+
+  /* ── phones ────────────────────────────────────────────────────────────── */
+
+  @media (max-width: 700px) {
+    .wrap { padding: 14px 12px 64px; }
+    header.masthead { gap: var(--s2); margin-bottom: var(--s3); }
+    #state { min-height: 62px; padding: var(--s2); border-radius: var(--r); flex: 1 1 100%; }
+    #state .mark { width: 40px; height: 36px; }
+    #state .what { font-size: 20px; }
+    .util .up { display: none; }   /* uptime is not a three-second question */
+    .util { margin-left: 0; width: 100%; }
+    .util .pill { flex: 1 1 auto; justify-content: center; }
+    .panel { padding: var(--s3); border-radius: var(--r); }
+
+    /* One column. A key is the full width of the phone and 76px tall -- the
+       largest target the device can offer, and the only layout in which a
+       mis-tap is genuinely hard. Arranging stays one column too, which also
+       makes the drop maths a strictly 1-D problem at this width. */
+    .folder-body { grid-template-columns: 1fr; }
+    body.arranging .folder-body { grid-template-columns: 1fr; }
+    .folder-peek i:nth-child(n+5) { display: none; }
+    #settings .pill { flex: 1 1 100%; }
+    #p-vol { flex: 1 1 100%; }
+    #vol { flex: 1 1 auto; width: auto; min-width: 90px; }
   }
 
-  .ctl-row { display: flex; gap: 8px; flex-wrap: wrap; }
-  .ctl-row input {
-    flex: 1; min-width: 200px; font: inherit; color: var(--text);
-    background: var(--bg); border: 1px solid var(--line);
-    border-radius: 10px; padding: 9px 12px;
+  @media (max-width: 380px) {
+    .mode .help { -webkit-line-clamp: 1; }
+    .folder-peek i:nth-child(n+3) { display: none; }
   }
-  .ctl-row input:focus { outline: none; border-color: var(--accent); }
-  button.act {
-    font: inherit; cursor: pointer; color: var(--text); white-space: nowrap;
-    background: var(--bg); border: 1px solid var(--line);
-    border-radius: 10px; padding: 9px 14px;
+
+  /* ── motion ────────────────────────────────────────────────────────────── */
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: .001ms !important;
+      scroll-behavior: auto !important;
+    }
+    /* The flying key still follows the finger -- that is not decoration, it is
+       the feedback the gesture is made of -- but it stops tilting and growing. */
+    .is-flying { transform: translate3d(var(--fly-x, 0px), var(--fly-y, 0px), 0); }
+    .mode.is-picked { transform: none; }
+    .rail-chip.is-over { transform: none; }
+    /* The bars and the gaze carry information, so they are replaced by a
+       static reading rather than simply removed: the meter shows a level, and
+       the eyes stay open. Asleep still closes them -- that is a shape, not an
+       animation, and it is the whole point of drawing a face. */
+    #state .bars i { height: 16px; }
+    #state .mark i { height: 9px; }
+    #state.is-asleep .mark i, #state.is-offline .mark i { height: 3px; }
+    /* The closing ring is a progress bar, and the global rule above collapses
+       it to nothing. Show it faintly while the dwell runs and solid once the
+       gesture is armed, so the two stages still read as two stages. */
+    .mode.is-merging::before { opacity: .4; transform: none; }
+    .mode.is-merge::before { opacity: 1; }
   }
-  button.act:hover { border-color: var(--accent); }
-  button.act:disabled { opacity: .5; cursor: default; }
-  a.toggle { text-decoration: none; display: inline-flex; }
-
-  .phrase-group { margin-bottom: 12px; }
-  .phrase-group:last-child { margin-bottom: 0; }
-  .phrase-group .lead { color: var(--dim); font-size: 12.5px; margin-bottom: 6px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chip {
-    font-size: 13px; padding: 4px 11px; border-radius: 999px;
-    background: var(--bg); border: 1px solid var(--line);
-  }
-  .chip.wake { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
-  .dim { color: var(--dim); font-size: 13px; }
-
-  /* Feature builder. Closed by default: most sessions never open it, and the
-     dashboard's virtue is being readable at a glance. */
-  details.panel > summary { cursor: pointer; list-style: none; }
-  details.panel > summary::-webkit-details-marker { display: none; }
-  details.panel > summary::before { content: "\25B8 "; color: var(--dim); }
-  details.panel[open] > summary::before { content: "\25BE "; }
-  .feat { display: flex; align-items: baseline; gap: 8px; padding: 7px 4px;
-          border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-  .feat:last-child { border-bottom: none; }
-  .feat .name { font-weight: 600; }
-  .feat .dot { flex: none; }
-  .feat .spacer { flex: 1; }
-  .step { display: flex; gap: 8px; align-items: center; margin-bottom: 7px; flex-wrap: wrap; }
-  .step .kind { font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
-                color: var(--dim); width: 52px; flex: none; }
-  .step input[type=text] { flex: 1; min-width: 180px; font: inherit; color: var(--text);
-        background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
-  .step select, .step input[type=number] { font: inherit; color: var(--text);
-        background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
-  .step button { font: inherit; cursor: pointer; color: var(--dim); background: var(--bg);
-        border: 1px solid var(--line); border-radius: 8px; padding: 4px 9px; }
-  ul.errors { color: var(--bad); font-size: 13.5px; margin: 10px 0 0; padding-left: 20px; }
-  ul.errors:empty { display: none; }
-  #feat-chat { margin-bottom: 8px; font-size: 13.5px; }
-  #feat-chat .said { color: var(--text); margin: 4px 0; }
-  #feat-chat .mine { color: var(--accent); margin: 4px 0; }
-
-  #log { max-height: 58vh; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
-  .row { display: flex; gap: 10px; padding: 6px 4px; border-radius: 6px; align-items: baseline; }
-  .row .t { color: var(--dim); font-size: 11.5px; font-variant-numeric: tabular-nums; flex: none; }
-  .row .who { font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
-               flex: none; width: 46px; font-weight: 600; }
-  .row.heard .who { color: var(--heard); }
-  .row.said  .who { color: var(--said); }
-  .row.status .who, .row.error .who { color: var(--dim); }
-  .row.error { color: var(--bad); }
-  .row.status { color: var(--dim); font-size: 13.5px; }
-  .row .msg { word-break: break-word; }
-  .empty { color: var(--dim); padding: 22px 4px; text-align: center; }
-  footer { color: var(--dim); font-size: 12.5px; text-align: center; margin-top: 6px; }
 </style>
+<script>
+  // Read before the first paint, so a dark-mode operator never sees a white
+  // flash on the reload that happens every time the robot restarts -- and so
+  // the page never appears in the default blue for a frame before turning the
+  // colour somebody chose. try/catch because localStorage throws outright in
+  // Safari private browsing; the "reachy-logs" read further down is the
+  // precedent.
+  try {
+    var root = document.documentElement;
+    var t = localStorage.getItem("reachy-theme");
+    if (t === "light" || t === "dark") root.dataset.theme = t;
+    var p = localStorage.getItem("reachy-palette");
+    // Matched against a literal list rather than trusted: this runs before any
+    // of the page exists, so there are no buttons to check it against yet, and
+    // an unknown value would leave the page on a data-palette nothing styles.
+    if (["violet", "teal", "rose", "contrast"].indexOf(p) !== -1) root.dataset.palette = p;
+    // The stylesheet is above this script, so --bg already resolves. Costs one
+    // style pass in <head> and saves the browser chrome flashing the wrong
+    // colour on every restart.
+    var tc = document.getElementById("theme-color");
+    var bg = getComputedStyle(root).getPropertyValue("--bg").trim();
+    if (tc && bg) tc.setAttribute("content", bg);
+  } catch (e) {}
+</script>
 </head>
 <body>
 <div class="wrap">
-  <header>
-    <h1>Reachy Mini</h1>
-    <span class="pill"><span class="dot" id="d-conn"></span><span id="s-conn">connecting</span></span>
-    <span class="pill"><span class="dot" id="d-act"></span><span id="s-act">&mdash;</span></span>
-    <span class="pill" id="p-up">up &mdash;</span>
+  <header class="masthead">
+    <!-- role="status" but deliberately NO aria-live: the robot flips between
+         listening and speaking every few seconds, and a live region here would
+         make a screen reader chatter through an entire visit. -->
+    <div id="state" class="is-idle" role="status">
+      <span class="mark" aria-hidden="true"><i></i><i></i></span>
+      <span class="state-text">
+        <h1>Reachy Mini</h1>
+        <span class="what" id="s-act">&mdash;</span>
+        <span class="detail" id="s-conn">connecting&hellip;</span>
+      </span>
+      <span class="bars" aria-hidden="true"><i></i><i></i><i></i></span>
+    </div>
+
+    <div class="util">
+      <span class="pill" id="p-vol">
+        <span title="Speaker volume" aria-hidden="true">&#128266;</span>
+        <input id="vol" type="range" min="0" max="100" step="5" aria-label="Speaker volume">
+        <span id="vol-val">&mdash;</span>
+      </span>
+      <button class="pill" id="btn-settings" type="button"
+              aria-expanded="false" aria-controls="settings">&#9881; Settings</button>
+      <span class="up" id="p-up">up &mdash;</span>
+    </div>
+  </header>
+
+  <div id="settings" hidden>
     <span class="pill" id="p-model" title="The language model answering questions">&#129504; &mdash;</span>
     <label class="pill" id="p-web" title="Let the robot look things up online. Off by default: it makes answers slower and costs credits.">
       <input type="checkbox" id="web-search"> &#127760; Web search
@@ -178,17 +1469,45 @@
       &#127917;
       <select id="persona" aria-label="Answering personality"></select>
     </span>
-    <span class="pill">
-      <span title="Speaker volume">&#128266;</span>
-      <input id="vol" type="range" min="0" max="100" step="5" aria-label="Speaker volume">
-      <span id="vol-val">&mdash;</span>
+    <span class="pill">&#128266;
       <select id="voice" aria-label="Speaking voice" title="Speaking voice"></select>
     </span>
-  </header>
+    <span class="pill">&#127768; Appearance
+      <span class="seg" role="group" aria-label="Appearance">
+        <button type="button" data-theme-set="" aria-pressed="true">Auto</button>
+        <button type="button" data-theme-set="light" aria-pressed="false">Light</button>
+        <button type="button" data-theme-set="dark" aria-pressed="false">Dark</button>
+      </span>
+    </span>
+    <span class="pill">&#127912; Colour
+      <span class="swatches" role="group" aria-label="Colour theme">
+        <button class="sw" type="button" data-palette-set="" aria-pressed="true"
+                aria-label="Trinity" title="Trinity — the Hub's blue"></button>
+        <button class="sw" type="button" data-palette-set="violet" aria-pressed="false"
+                aria-label="Violet" title="Violet — quieter, violet-tinted greys"></button>
+        <button class="sw" type="button" data-palette-set="teal" aria-pressed="false"
+                aria-label="Teal" title="Teal — slate and water"></button>
+        <button class="sw" type="button" data-palette-set="rose" aria-pressed="false"
+                aria-label="Rose" title="Rose — warm greys, magenta accent"></button>
+        <button class="sw" type="button" data-palette-set="contrast" aria-pressed="false"
+                aria-label="High contrast" title="High contrast — for bright rooms"></button>
+      </span>
+    </span>
+    <button id="btn-clear-cache" class="act sm danger" type="button"
+            title="Forget every cached answer, so the next question reaches the model again">Clear answers</button>
+  </div>
 
-  <div class="panel">
-    <h2>Mode</h2>
+  <div class="panel panel--modes">
+    <div class="panel-head">
+      <h2>Mode</h2>
+      <div class="tools">
+        <button id="btn-arrange" class="toggle" type="button" aria-pressed="false">Arrange</button>
+      </div>
+    </div>
     <div class="modes" id="modes"></div>
+    <p class="sr-only" id="grid-live" aria-live="assertive" aria-atomic="true"></p>
+    <p class="sr-only" id="grid-alert" role="alert"></p>
+    <p class="sr-only" id="grid-help">Press the move handle to pick a button up. Then the arrow keys move it, left and right also move it in and out of folders, pressing the handle again drops it, and Escape puts it back.</p>
   </div>
 
   <div class="panel">
@@ -196,15 +1515,13 @@
     <div class="ctl-row">
       <input id="say-text" type="text" maxlength="300"
              placeholder="Type something for Reachy to say&hellip;">
-      <button id="btn-say" class="act" type="button">Say it</button>
+      <button id="btn-say" class="act accent" type="button">Say it</button>
       <button id="btn-listen" class="act" type="button">&#127908; Listen now</button>
-      <button id="btn-clear-cache" class="act" type="button"
-              title="Forget every cached answer, so the next question reaches the model again">Clear answers</button>
     </div>
   </div>
 
   <details class="panel" id="features">
-    <summary><h2 style="display:inline">Build a feature</h2> <span class="dim" id="feat-count"></span></summary>
+    <summary><h2>Build a feature</h2> <span class="dim" id="feat-count"></span></summary>
     <p class="dim" id="feat-intro">
       Make a button that says something of your own &mdash; a welcome for a
       particular group, say. It appears here straight away; the robot does not
@@ -231,7 +1548,7 @@
         <select id="feat-persona" aria-label="Personality"></select>
       </div>
 
-      <h2 style="margin-top:16px">Steps</h2>
+      <h2 class="mt">Steps</h2>
       <div id="feat-steps"></div>
       <div class="ctl-row">
         <button class="act" type="button" data-add="SAY">+ Say something</button>
@@ -240,7 +1557,7 @@
         <button class="act" type="button" data-add="WAIT">+ Wait for someone</button>
       </div>
 
-      <h2 style="margin-top:16px">Ask the assistant to draft it</h2>
+      <h2 class="mt">Ask the assistant to draft it</h2>
       <div id="feat-chat" class="dim">
         Describe the group and it will write the words. You can edit anything
         it writes before saving.
@@ -252,17 +1569,53 @@
       </div>
 
       <ul id="feat-errors" class="errors"></ul>
-      <div class="ctl-row" style="margin-top:12px">
-        <button id="feat-save" class="act" type="button">Save</button>
+      <div class="ctl-row mt">
+        <button id="feat-save" class="act accent" type="button">Save</button>
         <button id="feat-cancel" class="act" type="button">Cancel</button>
       </div>
     </div>
   </details>
 
-  <div class="panel">
+  <!-- Appears only while the robot has offered somebody a link, and goes when
+       the demo changes. Not a permanent panel: an empty QR box on every screen
+       for the one moment it is useful is clutter the rest of the time. -->
+  <div class="panel" id="links" hidden>
+    <h2>Scan for more</h2>
+    <div class="qr-row" id="qr-row"></div>
+  </div>
+
+  <!-- Quiet tier: read once by whoever is running the visit, then consulted.
+       It does not belong at the same visual weight as the grid. -->
+  <div class="panel panel--quiet">
     <h2>Say any of these</h2>
     <div id="phrases"><span class="dim">loading&hellip;</span></div>
   </div>
+
+  <details class="panel" id="stats">
+    <summary><h2>How the visit went</h2> <span class="dim" id="stats-count"></span></summary>
+    <div id="stats-body"><span class="dim">loading&hellip;</span></div>
+  </details>
+
+  <details class="panel" id="research">
+    <summary><h2>Research mode</h2> <span class="dim" id="research-state"></span></summary>
+    <p class="dim">
+      Records what is said for human-robot interaction research. Nothing is
+      recorded until the participant hears what is being kept and says yes, out
+      loud &mdash; switch this on, then run <strong>Research session</strong>.
+      No names or faces are stored with it.
+    </p>
+    <p class="dim"><strong>This is not ethics approval.</strong> Trinity requires
+      approval before collecting data from participants. This only makes the
+      robot able to do it properly once you have that.</p>
+    <div class="ctl-row">
+      <label class="pill" id="p-study">
+        <input type="checkbox" id="study-on"> Recording armed
+      </label>
+      <select id="study-condition" aria-label="Condition"></select>
+      <button id="study-withdraw" class="act sm danger" type="button">Delete this session's data</button>
+    </div>
+    <p class="dim" id="study-summary"></p>
+  </details>
 
   <div class="panel">
     <div class="panel-head">
@@ -276,18 +1629,26 @@
   </div>
 
   <footer id="foot"></footer>
+
+  <div id="arrange-bar">
+    <button class="act sm" type="button" id="folder-new">+ New folder</button>
+    <span class="hint" id="arrange-hint">Drag by the handle. Hold one on another to group them.</span>
+    <button class="act accent" type="button" id="arrange-done">Done</button>
+  </div>
+  <div id="droprail" hidden aria-hidden="true"></div>
 </div>
 
 <script>
 (() => {
   const $ = id => document.getElementById(id);
-  let seq = 0, modesSignature = null, failures = 0, currentMode = null;
+  let seq = 0, failures = 0, currentMode = null;
 
   const clock = ts => new Date(ts * 1000).toLocaleTimeString([], {hour12: false});
 
   // One element, one class, text set as text. The whole defence against a
-  // staff-authored label or trigger phrase being interpreted as markup is
-  // that nothing on this page interpolates server data into innerHTML.
+  // staff-authored label, trigger phrase or folder name being interpreted as
+  // markup is that nothing on this page interpolates server data into
+  // innerHTML.
   function el(tag, cls, text) {
     const node = document.createElement(tag);
     if (cls) node.className = cls;
@@ -295,45 +1656,1254 @@
     return node;
   }
 
-  function renderModes(modes, active) {
-    // Re-render whenever the demo list OR any demo's availability changes,
-    // rather than latching after the first paint. Two things depend on it: the
-    // list is empty on the very first poll (the robot discovers demos while
-    // the dashboard is already up), and a demo set aside for repeated failures
-    // has to grey out with its reason while the session is running -- which is
-    // the entire point of setting it aside. Comparing a signature keeps the
-    // buttons stable between polls so clicks are not lost to a re-render.
-    const signature = JSON.stringify(modes.map(m => [m.id, m.label, m.available, m.note]));
-    if (modes.length && signature !== modesSignature) {
-      $("modes").innerHTML = "";
-      for (const m of modes) {
-        const b = document.createElement("button");
-        b.className = "mode";
-        b.dataset.mode = m.id;
-        b.type = "button";
-        b.disabled = m.available === false;
-        // Built element by element with textContent rather than interpolated
-        // into innerHTML. Every label and help line used to come from Python
-        // source, so markup in one was impossible; features written from this
-        // page put staff text here, on a dashboard with no login, which is the
-        // definition of a stored-XSS sink. See the same discipline at
-        // addRows() below, which has always done it this way for transcripts.
-        b.appendChild(el("div", "name", m.label));
-        b.appendChild(el("div", "help", m.help || ""));
-        if (m.available === false && m.note)
-          b.appendChild(el("div", "flag", "Unavailable — " + m.note));
-        b.onclick = () => setMode(m.id);
-        $("modes").appendChild(b);
+  /* ═══════════════════════════════════════════════════════════════════════
+     MODE GRID: folders, arranging, drag and drop.
+
+     POINTER EVENTS, not the HTML5 drag-and-drop API. dragstart is never
+     dispatched from a touch on iOS Safari or Android Chrome -- not "fires
+     badly", does not fire -- and half the people using this page are holding
+     a phone, so the native API would ship an affordance that is dead on the
+     primary device. What it would buy is dragging between windows, which
+     nobody has ever wanted here, and a `drop` channel from other tabs and the
+     desktop, which is a new untrusted-string entry point on a page whose
+     whole security model is "no server string ever reaches innerHTML".
+
+     Everything below builds DOM element by element and sets text with
+     textContent or setAttribute. cloneNode and outerHTML appear nowhere: the
+     dragged key is the real node, lifted, so no markup is ever re-parsed
+     mid-gesture.
+     ═══════════════════════════════════════════════════════════════════════ */
+
+  const grid = $("modes");
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
+  const deepCopy = o => JSON.parse(JSON.stringify(o));
+
+  const SLOP = 8;         // px of movement before a press becomes a drag
+  const EDGE = 84;        // px from the viewport edge that autoscrolls
+  const MAX_SCROLL = 16;  // px per frame at the very edge
+  const IDLE_EXIT_MS = 90000;
+  //: How long one key must rest on another before they group. Long enough that
+  //: dragging ACROSS the grid never groups anything by accident, short enough
+  //: that it does not feel broken while you wait. iOS sits at roughly this.
+  const MERGE_MS = 550;
+  //: Mirrors MAX_FOLDERS in brain/layout.py. The robot refuses past it either
+  //: way -- this is only so the refusal arrives as a sentence before the
+  //: gesture rather than as a failed save after it.
+  const MAX_FOLDERS = 12;
+
+  // The layout is an OVERLAY on the demo list the robot reports, never a
+  // replacement for it. Two rules follow, and they are the two that make
+  // folders safe: a demo the layout has never heard of still renders (at the
+  // end of the loose band), and an id the layout holds for a demo that is not
+  // running right now is kept rather than scrubbed -- a demo whose module has
+  // a syntax error this morning must not lose its folder.
+  let layout = {rev: 0, items: []};      // what is on screen
+  let confirmed = {rev: 0, items: []};   // the last thing the robot acknowledged
+  let inflight = null;                   // set while a write is out
+  let layoutGen = 0;                     // a reply to an overtaken write is dropped
+  let queuedServer = null;               // a poll/response that arrived mid-gesture
+  let layoutAvailable = true;
+
+  let modeById = new Map();              // id -> entry from /api/events
+  const cells = new Map();               // mode id   -> .mode element
+  const folderEls = new Map();           // folder id -> .folder element
+
+  let arranging = false, renaming = false;
+  let drag = null, pick = null, killClick = false, idleTimer = 0;
+
+  const busy = () => !!(drag || pick || renaming);
+
+  // Cleared first and set on the next frame: writing the text a live region
+  // already holds announces nothing in NVDA or JAWS, and "4 of 11" twice
+  // running is a real sequence.
+  function say(node, msg) {
+    if (!msg) return;
+    node.textContent = "";
+    requestAnimationFrame(() => { node.textContent = msg; });
+  }
+  const announce = m => say($("grid-live"), m);
+  const alarm = m => say($("grid-alert"), m);
+
+  // ── layout maths, the one implementation ─────────────────────────────────
+  // Pointer drop, keyboard move and the 409 rebase all go through applyMove,
+  // so the layout painted optimistically and the layout re-sent after a
+  // conflict can never disagree about what the move meant.
+
+  function locate(doc, id) {
+    for (let i = 0; i < doc.items.length; i++) {
+      const e = doc.items[i];
+      if (e.id === id) return {list: doc.items, index: i, folder: null};
+      if (e.t === "f") {
+        const k = (e.items || []).indexOf(id);
+        if (k !== -1) return {list: e.items, index: k, folder: e};
       }
-      modesSignature = signature;
-      currentMode = null;  // force the pressed state to be reapplied below
     }
-    if (active !== currentMode) {
-      currentMode = active;
-      for (const b of document.querySelectorAll("button.mode"))
-        b.setAttribute("aria-pressed", String(b.dataset.mode === active));
+    return {list: null, index: -1, folder: null};
+  }
+
+  // Every live id given an explicit place, and every id the layout already
+  // held kept where it was. This is what we PUT: the whole root order,
+  // materialised, so the robot never has to guess where an unplaced button
+  // sits relative to a placed one.
+  function materialise() {
+    const doc = deepCopy(layout);
+    const seen = new Set();
+    for (const e of doc.items) {
+      if (e.t === "f") { e.items = e.items || []; for (const c of e.items) seen.add(c); }
+      else seen.add(e.id);
+    }
+    for (const id of modeById.keys())
+      if (!seen.has(id)) doc.items.push({t: "i", id});
+    return doc;
+  }
+
+  function materialiseFrom(doc) {
+    const was = layout; layout = doc; const out = materialise(); layout = was; return out;
+  }
+
+  // A move names its destination by NEIGHBOUR, never by index. An index is
+  // measured against what is on screen, and the layout legitimately holds
+  // entries that are not on screen. A neighbour id survives that, and survives
+  // a rebase onto somebody else's layout.
+  function positionOf(doc, id) {
+    const {list, index, folder} = locate(doc, id);
+    if (!list) return null;
+    const after = list[index + 1];
+    const nextId = after == null ? null : (typeof after === "string" ? after : after.id);
+    return {id, into: folder ? folder.id : "", before: nextId};
+  }
+
+  function detach(doc, id) {
+    for (let i = 0; i < doc.items.length; i++) {
+      const e = doc.items[i];
+      if (e.id === id) return doc.items.splice(i, 1)[0];
+      if (e.t === "f") {
+        const k = (e.items || []).indexOf(id);
+        if (k !== -1) { e.items.splice(k, 1); return {t: "i", id}; }
+      }
+    }
+    return null;
+  }
+
+  function applyMove(src, move) {
+    const doc = deepCopy(src);
+    // The fallback matters: a demo the layout has never mentioned renders at
+    // the tail, and dragging it must work the FIRST time rather than after
+    // some other write has taught the layout that it exists.
+    const entry = detach(doc, move.id) || {t: move.kind || "i", id: move.id};
+    if (entry.t === "f") entry.items = entry.items || [];
+    if (move.into && entry.t !== "f") {
+      const f = doc.items.find(e => e.t === "f" && e.id === move.into);
+      // The folder was deleted from the other phone while this move was in the
+      // air. The button lands on the main grid rather than disappearing with
+      // the folder -- the gesture still meant something.
+      if (f) {
+        f.items = f.items || [];
+        const at = move.before ? f.items.indexOf(move.before) : -1;
+        f.items.splice(at === -1 ? f.items.length : at, 0, move.id);
+        return doc;
+      }
+    }
+    const at = move.before ? doc.items.findIndex(e => e.id === move.before) : -1;
+    doc.items.splice(at === -1 ? doc.items.length : at, 0, entry);
+    return doc;
+  }
+
+  const folderIn = (doc, id) => doc.items.find(e => e.t === "f" && e.id === id) || null;
+  const labelOf = id => {
+    const m = modeById.get(id);
+    if (m) return m.label;
+    const f = folderIn(layout, id);
+    return f ? "folder " + f.name : id;
+  };
+  function whereMsg(doc, id, verb) {
+    const {list, index, folder} = locate(doc, id);
+    if (!list) return null;
+    return labelOf(id) + " " + verb + ". " + (index + 1) + " of " + list.length +
+           (folder ? " in " + folder.name : " not in a folder") + ".";
+  }
+
+  // Two initials, in ink, from the label. Not an emoji: the law of this page is
+  // that colour means state and never decoration, and this also needs no font
+  // support -- a stripped Linux browser renders emoji as tofu.
+  function monogram(label) {
+    const words = String(label || "").replace(/[^\p{L}\p{N} ]/gu, " ").trim().split(/\s+/);
+    const a = (words[0] || "?")[0] || "?";
+    const b = words.length > 1 ? (words[1] || "")[0] || "" : "";
+    return (a + b).toUpperCase();
+  }
+
+  // ── talking to the robot ─────────────────────────────────────────────────
+
+  function commit(next, move, message) {
+    layout = next;
+    renderGrid();
+    announce(message);
+    send(next, move);
+  }
+
+  function send(next, move) {
+    const gen = ++layoutGen;
+    inflight = {gen, move};
+    fetch("/api/layout", {
+      method: "PUT", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({base: confirmed.rev, items: next.items})
+    }).then(async r => {
+      let body = {};
+      try { body = await r.json(); } catch (e) { /* a 500 with no JSON body */ }
+      if (gen !== layoutGen) return;              // a newer write has been sent
+      if (r.status === 409 && Array.isArray(body.items)) {
+        // Somebody on the other phone wrote first. Rebase onto their layout and
+        // send once more: do not simply win, and do not simply lose.
+        confirmed = {rev: body.rev, items: body.items};
+        if (move) {
+          const rebased = applyMove(materialiseFrom(confirmed), move);
+          inflight = null;
+          adopt(rebased);
+          send(rebased, null);                    // one retry, then we stop
+        } else {
+          adopt(deepCopy(confirmed));
+          hint("Somebody else rearranged this, so that change was not kept.", true);
+        }
+        return;
+      }
+      if (r.status === 503) { setLayoutAvailable(false); }
+      if (!r.ok || !body.ok || !Array.isArray(body.items)) throw new Error(String(r.status));
+      // Adopted from the RESPONSE, not from a later poll, so there is no frame
+      // in which the old order is back on screen. The robot's copy is
+      // canonical: it has clamped folder names and dropped anything malformed.
+      confirmed = {rev: body.rev, items: body.items};
+      adopt(deepCopy(confirmed));
+    }).catch(() => {
+      if (gen !== layoutGen) return;
+      // A layout that looks saved and is not is worse than a visible failure.
+      adopt(deepCopy(confirmed));
+      hint("The robot did not save that, so it has been put back.", true);
+    }).finally(() => { if (gen === layoutGen) inflight = null; });
+  }
+
+  // A response landing mid-gesture must not change the model under the finger:
+  // the drop reads its neighbour off the DOM, and if the model has moved on,
+  // applyMove finds no such neighbour and drops the key at the bottom of the
+  // grid instead of where it was released.
+  function adopt(doc) {
+    if (busy()) { queuedServer = doc; return; }
+    layout = doc;
+    renderGrid();
+  }
+
+  function flushQueued() {
+    if (!queuedServer || busy()) return;
+    layout = queuedServer; queuedServer = null; renderGrid();
+  }
+
+  function setLayoutAvailable(on) {
+    if (layoutAvailable === !!on) return;
+    layoutAvailable = !!on;
+    syncArrangeAffordances();
+  }
+
+  function ingestLayout(incoming) {
+    if (!incoming) return;
+    setLayoutAvailable(incoming.available !== false);
+    if (!Array.isArray(incoming.items)) return;
+    if (inflight) return;    // our own write is out; its reply is the truth
+    // Strictly greater, not "differs". The poll loop keeps one request in
+    // flight and re-arms in finally, so a poll ISSUED before a write routinely
+    // RESOLVES after it -- and on equality-only, that stale reply would repaint
+    // the pre-move order most of a second after the drop, in front of the room.
+    // The revision is durable on the robot, so it never goes backwards across a
+    // restart and this comparison is always safe.
+    if (incoming.rev <= confirmed.rev) return;
+    confirmed = {rev: incoming.rev, items: incoming.items};
+    adopt(deepCopy(confirmed));
+  }
+
+  // ── building the grid ────────────────────────────────────────────────────
+
+  function gripFor(name, cls) {
+    const g = el("button", cls || "mode-grip");
+    g.type = "button";
+    g.setAttribute("aria-label", "Move " + name);   // an attribute, never markup
+    g.setAttribute("aria-pressed", "false");
+    g.setAttribute("aria-describedby", "grid-help");
+    return g;
+  }
+
+  function buildCell(m) {
+    const cell = el("div", "mode");
+    cell.dataset.mode = m.id;
+
+    const hit = el("button", "mode-hit");
+    hit.type = "button";
+    hit.setAttribute("aria-pressed", "false");
+    hit.onclick = () => { if (!arranging && !killClick) setMode(m.id); };
+
+    const fix = el("button", "flag-fix", "Put back");
+    fix.type = "button";
+    fix.onclick = async e => {
+      e.stopPropagation();
+      try { await fetch("/api/demos/" + encodeURIComponent(m.id) + "/enable", {method: "POST"}); }
+      catch (e2) { /* the next poll shows whether it took */ }
+    };
+
+    const flag = el("span", "flag");
+    flag.appendChild(el("span", "flag-text"));
+    flag.appendChild(fix);
+
+    const body = el("span", "mode-body");
+    body.appendChild(el("span", "name"));
+    body.appendChild(el("span", "help"));
+    body.appendChild(flag);
+
+    const file = el("select", "mode-file");
+    file.onchange = () => fileInto(m.id, file.value);
+
+    const mono = el("span", "mode-mono");
+    mono.setAttribute("aria-hidden", "true");
+    const state = el("span", "mode-state", "Running");
+    state.setAttribute("aria-hidden", "true");
+
+    cell.append(hit, gripFor(m.label), mono, body, state, file);
+    return cell;
+  }
+
+  function patchCell(cell, m) {
+    // A per-key signature, JSON so that moving a word from the label to the
+    // help line still counts as a change. Without it this writes a hundred-odd
+    // DOM nodes a second on an idle dashboard.
+    const sig = JSON.stringify([m.label, m.help || "", m.available === false, m.note || ""]);
+    if (cell.dataset.sig === sig) return;
+    cell.dataset.sig = sig;
+    const grounded = m.available === false;
+    cell.querySelector(".name").textContent = m.label;
+    cell.querySelector(".help").textContent = m.help || "";
+    cell.querySelector(".mode-mono").textContent = monogram(m.label);
+    cell.querySelector(".flag-text").textContent = grounded && m.note ? "Unavailable — " + m.note : "";
+    // Only offer the cure for the condition it cures. "needs faces" is not
+    // something /enable can fix; "failed 3 times in a row" is exactly it.
+    cell.querySelector(".flag-fix").hidden = !/^failed /.test(m.note || "");
+    const hit = cell.querySelector(".mode-hit");
+    hit.disabled = grounded;
+    hit.setAttribute("aria-label", m.label + (m.help ? ". " + m.help : "") +
+                                   (grounded && m.note ? ". Unavailable — " + m.note : ""));
+    cell.querySelector(".mode-grip").setAttribute("aria-label", "Move " + m.label);
+    cell.querySelector(".mode-file").setAttribute("aria-label", "Put " + m.label + " in");
+    // The grip is NEVER disabled. A demo that is unavailable is exactly the one
+    // an operator wants filed out of the way -- and a disabled <button>
+    // swallows pointerdown in Chrome, so a handle inside it could not be
+    // dragged at all.
+    if (cell.dataset.state !== "running")
+      cell.dataset.state = grounded ? "unavailable" : "idle";
+  }
+
+  function buildFolder(f) {
+    const sec = el("section", "folder");
+    sec.dataset.folder = f.id;
+
+    const twist = el("button", "folder-twist");
+    twist.type = "button";
+    twist.onclick = () => toggleFolder(sec.dataset.folder);
+
+    const tools = el("span", "folder-tools");
+    const rename = el("button", "act sm", "Rename"); rename.type = "button";
+    rename.onclick = () => startRename(sec);
+    const del = el("button", "act sm danger", "Delete"); del.type = "button";
+    del.onclick = () => removeFolder(sec.dataset.folder);
+    tools.append(gripFor(f.name), rename, del);
+
+    const peek = el("span", "folder-peek");
+    peek.setAttribute("aria-hidden", "true");
+
+    const head = el("div", "folder-head");
+    head.append(twist, el("h3", "folder-name"), el("span", "folder-count"), peek, tools);
+
+    const body = el("div", "folder-body");
+    body.id = "fbody-" + f.id;
+    sec.append(head, body, el("div", "folder-empty", "Drop buttons here"));
+    return sec;
+  }
+
+  function patchFolder(sec, f, kids) {
+    sec.querySelector(".folder-name").textContent = f.name;
+    sec.querySelector(".folder-count").textContent = String(kids.length);
+    const twist = sec.querySelector(".folder-twist");
+    twist.setAttribute("aria-expanded", String(!f.collapsed));
+    twist.setAttribute("aria-controls", "fbody-" + f.id);
+    twist.setAttribute("aria-label", (f.collapsed ? "Expand " : "Collapse ") + f.name);
+    sec.querySelector(".folder-tools .mode-grip").setAttribute("aria-label", "Move folder " + f.name);
+    sec.classList.toggle("is-collapsed", !!f.collapsed);
+    sec.classList.toggle("is-empty", kids.length === 0);
+    // Monogram chips of what is inside, so a collapsed folder still tells you
+    // what it holds. Five at most; the CSS hides more than that on a phone.
+    const peek = sec.querySelector(".folder-peek");
+    peek.textContent = "";
+    for (const cell of kids.slice(0, 5))
+      peek.appendChild(el("i", "", cell.querySelector(".mode-mono").textContent));
+  }
+
+  // insertBefore only where the order is actually wrong. Nodes are MOVED,
+  // never rebuilt -- which is what keeps focus, aria-pressed, an in-flight
+  // press and a live drag alive across a re-render. The file used to do
+  // #modes.innerHTML = "" instead, so a poll landing between pointerdown and
+  // click discarded the press.
+  function place(container, nodes) {
+    nodes.forEach((n, i) => {
+      if (container.children[i] !== n) container.insertBefore(n, container.children[i] || null);
+    });
+    while (container.children.length > nodes.length) container.lastElementChild.remove();
+  }
+
+  // insertBefore on a CONNECTED node runs the removing steps first, and those
+  // unfocus the removed node in Chrome, Firefox and Safari alike. The keyboard
+  // path moves the very node the operator is holding, so without this the grip
+  // loses focus mid-move, the grid's keydown handler stops seeing keys, and
+  // they are stranded with a picked-up key they can neither drop nor cancel.
+  function keepFocus(fn) {
+    const was = document.activeElement;
+    const inside = was && grid.contains(was);
+    fn();
+    if (inside && document.activeElement !== was && was.isConnected) was.focus();
+  }
+
+  function renderGrid() {
+    if (drag) return;   // structure is never rebuilt under a live drag
+    keepFocus(() => {
+      const doc = materialise();
+      const seen = new Set();
+      const sections = [];
+      const loose = [];
+
+      for (const entry of doc.items) {
+        if (entry.t === "f") {
+          const kids = [];
+          for (const id of entry.items || []) {
+            const m = modeById.get(id);
+            if (!m || seen.has(id)) continue;   // filtered at render, never in storage
+            seen.add(id);
+            kids.push(cellFor(m));
+          }
+          let sec = folderEls.get(entry.id);
+          if (!sec) { sec = buildFolder(entry); folderEls.set(entry.id, sec); }
+          patchFolder(sec, entry, kids);
+          place(sec.querySelector(".folder-body"), kids);
+          sections.push(sec);
+        } else {
+          const m = modeById.get(entry.id);
+          if (!m || seen.has(entry.id)) continue;
+          seen.add(entry.id);
+          loose.push(cellFor(m));
+        }
+      }
+      sections.push(looseBand(loose));
+      place(grid, sections);
+      for (const [id, node] of folderEls) if (!node.isConnected) folderEls.delete(id);
+      for (const [id, node] of cells) if (!node.isConnected) cells.delete(id);
+      refreshFileSelects(doc);
+    });
+  }
+
+  function cellFor(m) {
+    let cell = cells.get(m.id);
+    if (!cell) { cell = buildCell(m); cells.set(m.id, cell); }
+    patchCell(cell, m);
+    return cell;
+  }
+
+  let looseEl = null;
+  function looseBand(kids) {
+    if (!looseEl) {
+      looseEl = el("section", "folder folder--loose");
+      looseEl.dataset.folder = "";
+      const head = el("div", "folder-head");
+      head.append(el("h3", "folder-name", "Not in a folder"), el("span", "folder-count"));
+      looseEl.append(head, el("div", "folder-body"), el("div", "folder-empty", "Drop buttons here"));
+    }
+    looseEl.querySelector(".folder-count").textContent = String(kids.length);
+    looseEl.classList.toggle("is-empty", kids.length === 0);
+    place(looseEl.querySelector(".folder-body"), kids);
+    return looseEl;
+  }
+
+  // Built with new Option(text, value), which assigns the TEXT property rather
+  // than parsing markup -- the same discipline as the voice list further down.
+  // Signature-guarded: rebuilding four <option> nodes per key twice a second is
+  // real work on a phone, and on Android it can disturb an open picker.
+  function refreshFileSelects(doc) {
+    const options = [["", "Not in a folder"]];
+    for (const e of doc.items) if (e.t === "f") options.push([e.id, e.name]);
+    options.push(["__new__", "New folder…"]);
+    const shared = JSON.stringify(options);
+    for (const [id, cell] of cells) {
+      const sel = cell.querySelector(".mode-file");
+      if (document.activeElement === sel) continue;   // never yank an open picker
+      const here = locate(doc, id).folder;
+      const want = here ? here.id : "";
+      if (sel.dataset.sig === shared + "|" + want) continue;
+      sel.dataset.sig = shared + "|" + want;
+      sel.textContent = "";
+      for (const [v, t] of options) sel.appendChild(new Option(t, v));
+      sel.value = want;
     }
   }
+
+  // What a poll is allowed to do while a gesture is live: change the words on a
+  // key, grey one out, ungrey one. Never move a node. So a demo set aside for
+  // three failures still greys out mid-drag -- which is the entire point of
+  // setting it aside -- while a feature saved on the other laptop simply waits
+  // for the finger to come up.
+  function patchLive() {
+    for (const [id, cell] of cells) {
+      const m = modeById.get(id);
+      if (m) patchCell(cell, m);
+    }
+    const held = drag || pick;
+    if (held && held.kind === "i" && !modeById.has(held.id))
+      abort("That button was removed from another dashboard, so the move was cancelled.");
+  }
+
+  function setPressed(active) {
+    if (active === currentMode) return;
+    currentMode = active;
+    for (const [id, cell] of cells) {
+      const running = id === active;
+      cell.querySelector(".mode-hit").setAttribute("aria-pressed", String(running));
+      // data-state on the CARD is what the pure-CSS collapsed-folder rule keys
+      // off, so there is no JS path by which the live key can vanish.
+      cell.dataset.state = running ? "running"
+        : (modeById.get(id) || {}).available === false ? "unavailable" : "idle";
+    }
+  }
+
+  // renderModes keeps its (modes, active) signature so setMode's optimistic
+  // renderModes([], mode) is unchanged -- and the modes.length guard is kept
+  // for exactly that reason: without it, the empty array from setMode would
+  // delete every key on the page the instant anybody pressed a demo button.
+  function renderModes(modes, active) {
+    if (modes && modes.length) modeById = new Map(modes.map(m => [m.id, m]));
+    if (busy()) patchLive(); else renderGrid();
+    setPressed(active);
+  }
+
+  // ── folders ──────────────────────────────────────────────────────────────
+
+  function newFolderId() {
+    const b = new Uint8Array(4);
+    if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(b);
+    else for (let i = 0; i < b.length; i++) b[i] = Math.floor(Math.random() * 256);
+    return "f_" + Array.from(b, x => (x & 255).toString(16).padStart(2, "0")).join("");
+  }
+
+  function newFolder(putInside) {
+    const doc = materialise();
+    const entry = {t: "f", id: newFolderId(), name: "New folder", collapsed: false, items: []};
+    doc.items.unshift(entry);
+    if (putInside) { detach(doc, putInside); entry.items.push(putInside); }
+    commit(doc, null, "New folder added at the top. Rename it, or move buttons into it.");
+    const sec = folderEls.get(entry.id);
+    if (sec) startRename(sec);
+  }
+
+  function fileInto(id, target) {
+    if (target === "__new__") { newFolder(id); return; }
+    const move = {id, kind: "i", into: target, before: null};
+    const doc = applyMove(materialise(), move);
+    commit(doc, move, whereMsg(doc, id, "moved"));
+  }
+
+  function toggleFolder(id) {
+    const doc = materialise();
+    const f = folderIn(doc, id);
+    if (!f) return;
+    f.collapsed = !f.collapsed;
+    // Kept on the robot rather than in this browser, like the web-search and
+    // open-mic switches: two people with the dashboard open are looking at ONE
+    // robot and must not see two different grids. The theme is the opposite
+    // case and stays in localStorage -- which theme suits the phone in your
+    // hand is not a fact about the robot.
+    commit(doc, null, (f.collapsed ? "Collapsed " : "Expanded ") + f.name + ".");
+  }
+
+  function startRename(sec) {
+    const head = sec.querySelector(".folder-head");
+    if (head.querySelector(".folder-rename")) return;
+    const title = head.querySelector(".folder-name");
+    const box = document.createElement("input");
+    box.type = "text";
+    box.className = "folder-rename";
+    box.maxLength = 24;
+    box.value = title.textContent;   // .value, never innerHTML
+    box.setAttribute("aria-label", "Folder name");
+    renaming = true;
+    let done = false;
+    const finish = save => {
+      if (done) return;
+      done = true;
+      const name = box.value.trim().slice(0, 24);
+      box.remove(); title.hidden = false; renaming = false;
+      const twist = sec.querySelector(".folder-twist");
+      if (twist) twist.focus();
+      flushQueued();
+      if (!save || !name) { renderGrid(); return; }
+      const doc = materialise();
+      const f = folderIn(doc, sec.dataset.folder);
+      if (!f || f.name === name) { renderGrid(); return; }
+      f.name = name;
+      commit(doc, null, "Folder renamed to " + name + ".");
+    };
+    box.onkeydown = e => {
+      e.stopPropagation();          // the grid's move keys are not for typing
+      if (e.key === "Enter") { e.preventDefault(); finish(true); }
+      else if (e.key === "Escape") { e.preventDefault(); finish(false); }
+    };
+    box.onblur = () => finish(true);
+    title.hidden = true;
+    head.insertBefore(box, title);
+    box.focus(); box.select();
+  }
+
+  function removeFolder(id) {
+    const doc = materialise();
+    const i = doc.items.findIndex(e => e.t === "f" && e.id === id);
+    if (i === -1) return;
+    const f = doc.items[i];
+    const kids = f.items || [];
+    if (!confirm("Delete “" + f.name + "”? Its " + kids.length +
+                 " button" + (kids.length === 1 ? "" : "s") + " move back to the grid.")) return;
+    // Deleting a folder never deletes a demo. The buttons spill out where the
+    // folder was.
+    doc.items.splice(i, 1, ...kids.map(cid => ({t: "i", id: cid})));
+    folderEls.delete(id);
+    commit(doc, null, "Folder " + f.name + " removed. " +
+           (kids.length ? kids.length + " buttons moved back to the grid." : "It was empty."));
+  }
+
+  // ── arrange mode ─────────────────────────────────────────────────────────
+
+  function setArranging(on) {
+    if (on && !layoutAvailable) return;
+    arranging = on;
+    document.body.classList.toggle("arranging", on);
+    $("btn-arrange").setAttribute("aria-pressed", String(on));
+    if (!on) { abort(null); flushQueued(); renderGrid(); }
+    else { hint("Drag by the handle. Hold one on another to group them.", false); bumpIdle(); }
+    announce(on ? "Arranging. Buttons will not start a demo." : "Finished arranging.");
+  }
+  // An operator who walks away mid-arrange leaves a dashboard whose buttons
+  // start nothing, and nobody else will work out why. Ninety seconds of no
+  // interaction and it lets go by itself.
+  function bumpIdle() {
+    clearTimeout(idleTimer);
+    if (arranging) idleTimer = setTimeout(() => setArranging(false), IDLE_EXIT_MS);
+  }
+  function hint(text, warn) {
+    const h = $("arrange-hint");
+    h.textContent = text;
+    h.classList.toggle("is-warn", !!warn);
+    if (warn) alarm(text);
+  }
+  function syncArrangeAffordances() {
+    // A robot whose layout table failed to create is a robot with a flat grid,
+    // which is the dashboard that shipped and is fine -- but offering gestures
+    // that will not stick is not.
+    $("btn-arrange").disabled = !layoutAvailable;
+    $("btn-arrange").title = layoutAvailable ? ""
+      : "The robot's database is unavailable, so the layout cannot be changed.";
+    if (!layoutAvailable && arranging) setArranging(false);
+  }
+
+  $("btn-arrange").onclick = () => setArranging(!arranging);
+  $("arrange-done").onclick = () => setArranging(false);
+  $("folder-new").onclick = () => { bumpIdle(); newFolder(null); };
+
+  // ── the drop rail ────────────────────────────────────────────────────────
+  // Every folder as a chip across the bottom, right where the thumb already
+  // is. Without it, moving a key into a folder three screens down means
+  // dragging while the page autoscrolls past ten other targets, one-handed,
+  // standing up.
+  function buildRail() {
+    const rail = $("droprail");
+    rail.textContent = "";
+    if (drag && drag.kind === "f") { rail.hidden = true; return; }   // folders live at the root
+    for (const e of materialise().items)
+      if (e.t === "f") {
+        const chip = el("span", "rail-chip", e.name);
+        chip.dataset.rail = e.id;
+        rail.appendChild(chip);
+      }
+    const loose = el("span", "rail-chip", "Not in a folder");
+    loose.dataset.rail = "";
+    rail.appendChild(loose);
+    rail.hidden = rail.children.length <= 1;   // only "Not in a folder": nothing to aim at
+  }
+
+  // ── pointer drag ─────────────────────────────────────────────────────────
+
+  grid.addEventListener("pointerdown", e => {
+    if (drag || pick || !e.isPrimary || e.button !== 0) return;
+    const handle = e.target.closest(".mode-grip");
+    if (!handle) return;
+    const node = handle.closest(".mode, .folder");
+    if (!node || node.classList.contains("folder--loose")) return;
+    bumpIdle();
+    drag = {
+      id: node.dataset.mode || node.dataset.folder,
+      kind: node.dataset.mode ? "i" : "f",
+      node, pointerId: e.pointerId,
+      startX: e.clientX, startY: e.clientY, x: e.clientX, y: e.clientY,
+      live: false, raf: 0, ghost: null, fly: null, offX: 0, offY: 0, home: null,
+      overFolder: null, railTarget: null,
+      mergeOver: null, mergeTimer: 0, mergeWith: null
+    };
+    // Capture is taken LATER, at the moment the drag goes live. Taken here it
+    // would retarget the trailing click to #modes in Chromium, so the handle's
+    // own click -- which is the tap-to-pick-up path on a phone -- would never
+    // fire on the handle, and a plain click on a card would stop switching the
+    // robot's mode at all.
+  });
+
+  grid.addEventListener("pointermove", e => {
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    drag.x = e.clientX; drag.y = e.clientY;
+    if (!drag.live) {
+      if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < SLOP) return;
+      drag.live = true;
+      try { grid.setPointerCapture(e.pointerId); } catch (err) {}
+      lift();
+      buildRail();
+      document.body.classList.add("dragging");
+      drag.raf = requestAnimationFrame(autoScroll);
+      announce(labelOf(drag.id) + " lifted.");
+    }
+    drag.fly.style.setProperty("--fly-x", (e.clientX - drag.offX) + "px");
+    drag.fly.style.setProperty("--fly-y", (e.clientY - drag.offY) + "px");
+    updateTarget(e.clientX, e.clientY);
+  });
+
+  grid.addEventListener("pointerup", e => { if (drag && e.pointerId === drag.pointerId) endDrag(true); });
+  grid.addEventListener("pointercancel", e => { if (drag && e.pointerId === drag.pointerId) endDrag(false); });
+  // Firefox still starts a native text/image drag from a mouse-down inside a
+  // button, and iOS raises its callout on a press that has not moved yet --
+  // which fires pointercancel and would silently kill the tap-to-pick-up path.
+  grid.addEventListener("dragstart", e => e.preventDefault());
+  grid.addEventListener("contextmenu", e => { if (e.target.closest(".mode-grip")) e.preventDefault(); });
+
+  function lift() {
+    const node = drag.node;
+    const r = node.getBoundingClientRect();
+    const ghost = el("div", node.className.split(" ")[0] + " is-ghost");
+    ghost.style.height = r.height + "px";
+    ghost.style.minHeight = r.height + "px";
+    node.parentNode.insertBefore(ghost, node);
+    // The real node is lifted, not cloned. cloneNode(true) would copy text
+    // nodes and be safe, but the real node also keeps focus and the
+    // accessibility tree intact, and there is then no second copy to keep in
+    // step with a poll.
+    node.style.setProperty("--fly-w", r.width + "px");
+    node.classList.add("is-flying");
+    drag.offX = drag.startX - r.left;
+    drag.offY = drag.startY - r.top;
+    drag.fly = node;
+    drag.ghost = ghost;
+    drag.home = positionOf(materialise(), drag.id);
+  }
+
+  // elementFromPoint once per move rather than a table of rectangles measured
+  // at drag start: those go stale the instant the ghost moves or the page
+  // autoscrolls, which is constantly.
+  function updateTarget(x, y) {
+    const under = document.elementFromPoint(x, y);
+    if (!under) return;
+
+    // The rail first: it is fixed above everything and is the whole point.
+    const chip = under.closest("[data-rail]");
+    const railId = chip ? chip.dataset.rail : null;
+    if (drag.railTarget !== railId) {
+      for (const c of $("droprail").children) c.classList.toggle("is-over", c === chip);
+      drag.railTarget = railId;
+      if (chip) announce("Over " + chip.textContent);
+    }
+    if (chip) return;
+
+    if (!grid.contains(under)) return;    // off the panel: keep the last target
+
+    const over = under.closest(".mode, .folder");
+    if (over && over !== drag.fly && over !== drag.ghost) {
+      if (over.classList.contains("mode") && drag.kind === "i") {
+        // Held over the middle of another key, the two become a folder -- the
+        // gesture everybody already knows from a phone home screen. Checked
+        // before reordering, and while it is only ARMING the reorder carries
+        // on underneath, so moving away leaves nothing behind.
+        if (considerMerge(over, x, y)) return;
+        const list = over.parentElement;
+        const r = over.getBoundingClientRect(), lr = list.getBoundingClientRect();
+        // Which axis decides before-or-after depends on how many columns the
+        // grid drew, which is a phone-versus-laptop difference rather than a
+        // setting. A key noticeably narrower than its row has a neighbour
+        // beside it, so the split is horizontal.
+        const after = (r.width + 24 < lr.width) ? x > r.left + r.width / 2
+                                                : y > r.top + r.height / 2;
+        moveGhost(list, after ? over.nextElementSibling : over, list.closest(".folder"));
+        return;
+      }
+      clearMerge();
+      if (over.classList.contains("folder")) {
+        if (drag.kind === "f") {
+          const r = over.getBoundingClientRect();
+          moveGhost(grid, y > r.top + r.height / 2 ? over.nextElementSibling : over, null);
+        } else {
+          moveGhost(over.querySelector(".folder-body"), null, over);
+        }
+        return;
+      }
+    }
+    // The gutters between keys are 12px lattices and elementFromPoint returns
+    // the CONTAINER there, constantly. Appending to the tail on that -- the
+    // obvious fallback -- makes the ghost strobe between the pointer and the
+    // bottom of the grid on every traversal, reflowing the layout under a
+    // moving finger and changing what the next elementFromPoint returns. Aim
+    // at the nearest child instead.
+    const list = under.closest(".folder-body") || (under === grid ? grid : null);
+    if (list) nearestIn(list, x, y);
+  }
+
+  // ── grouping by dropping one key on another ──────────────────────────────
+  // The phone home-screen gesture, and people arrive already knowing it. The
+  // dwell is what makes it safe: without one, dragging a key ACROSS the grid
+  // would make a folder out of every key it passed over. With one, grouping is
+  // something you do on purpose by stopping.
+
+  function considerMerge(over, x, y) {
+    // Item onto item only, and only in the loose band. A folder inside a
+    // folder is not a thing this robot has -- brain/layout.py drops nested
+    // ones on read -- so offering the gesture where it cannot work would be
+    // worse than not offering it.
+    const eligible = drag.kind === "i"
+      && over.parentElement.closest(".folder") === looseEl
+      && over.dataset.mode && over.dataset.mode !== drag.id;
+    if (!eligible) { clearMerge(); return false; }
+
+    // The middle of the key groups; the outer band still reorders. Passing
+    // over a key on the way somewhere else must never be a grouping gesture,
+    // and the dwell alone does not give you that -- a slow, careful drag rests
+    // on every key it crosses.
+    const r = over.getBoundingClientRect();
+    const inZone = x > r.left + r.width * 0.3 && x < r.right - r.width * 0.3
+                && y > r.top + r.height * 0.22 && y < r.bottom - r.height * 0.22;
+    if (!inZone) { clearMerge(); return false; }
+
+    if (drag.mergeOver === over) return !!drag.mergeWith;
+    clearMerge();
+    if (countFolders() >= MAX_FOLDERS) {
+      hint("That is as many folders as the robot will keep. Delete one first.", true);
+      return false;
+    }
+    drag.mergeOver = over;
+    over.classList.add("is-merging");   // the ring closes over the dwell
+    drag.mergeTimer = setTimeout(() => {
+      if (!drag || drag.mergeOver !== over) return;
+      drag.mergeWith = over.dataset.mode;
+      over.classList.add("is-merge");
+      announce("Release to group with " + labelOf(over.dataset.mode) + ".");
+    }, MERGE_MS);
+    return false;   // still reordering until the dwell actually completes
+  }
+
+  function clearMerge() {
+    if (!drag) return;
+    clearTimeout(drag.mergeTimer);
+    drag.mergeTimer = 0;
+    if (drag.mergeOver) drag.mergeOver.classList.remove("is-merging", "is-merge");
+    drag.mergeOver = null;
+    drag.mergeWith = null;
+  }
+
+  const countFolders = () => materialise().items.filter(e => e.t === "f").length;
+
+  function groupInto(dragged, target) {
+    const doc = materialise();
+    // The new folder takes the TARGET's place, so the group appears where the
+    // person was looking rather than jumping to the top of the grid -- which
+    // is what "+ New folder" does, and is right there and wrong here.
+    detach(doc, dragged);
+    const at = doc.items.findIndex(e => e.id === target);
+    if (at === -1) { renderGrid(); return; }
+    detach(doc, target);
+    doc.items.splice(at, 0, {
+      t: "f", id: newFolderId(), name: "New folder", collapsed: false,
+      // Target first: it did not move, and it is the one the eye was on.
+      items: [target, dragged]
+    });
+    const made = doc.items[at];
+    commit(doc, null, "Grouped " + labelOf(dragged) + " with " + labelOf(target) +
+                      " into a new folder. Type a name for it.");
+    const sec = folderEls.get(made.id);
+    if (sec) startRename(sec);
+  }
+
+  function nearestIn(list, x, y) {
+    const kids = [...list.children].filter(n => n !== drag.fly && !n.classList.contains("folder-empty"));
+    if (!kids.length) { moveGhost(list, null, list.closest(".folder")); return; }
+    const lw = list.getBoundingClientRect().width;
+    let best = null, bestD = Infinity, after = false;
+    for (const k of kids) {
+      const r = k.getBoundingClientRect();
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const d = Math.hypot(x - cx, y - cy);
+      if (d < bestD) { bestD = d; best = k; after = (r.width + 24 < lw) ? x > cx : y > cy; }
+    }
+    moveGhost(list, after ? best.nextElementSibling : best, list.closest(".folder"));
+  }
+
+  function moveGhost(list, before, folderEl) {
+    if (!list) return;
+    if (drag.ghost.parentElement === list && drag.ghost.nextElementSibling === before) return;
+    list.insertBefore(drag.ghost, before || null);
+    for (const [, sec] of folderEls) sec.classList.toggle("is-drop", sec === folderEl);
+    if (looseEl) looseEl.classList.toggle("is-drop", looseEl === folderEl);
+    const name = folderEl && !folderEl.classList.contains("folder--loose")
+      ? folderEl.querySelector(".folder-name").textContent : null;
+    if (name !== drag.overFolder) {
+      drag.overFolder = name;
+      announce(name ? "Over folder " + name : "Not in a folder");
+    }
+  }
+
+  function autoScroll() {
+    if (!drag || !drag.live) return;
+    drag.raf = requestAnimationFrame(autoScroll);
+    // innerHeight, not visualViewport.height: drag.y is a clientY, which is a
+    // layout-viewport coordinate. Mixing the two puts the hot zone in the wrong
+    // place the moment anybody pinch-zooms, which on a phone at arm's length is
+    // routine.
+    const h = innerHeight;
+    let v = 0;
+    if (drag.y < EDGE) v = -(EDGE - drag.y) / EDGE;
+    else if (drag.y > h - EDGE) v = (drag.y - (h - EDGE)) / EDGE;
+    if (!v) return;
+    // Not disabled under reduced motion -- it is the only way to reach the
+    // bottom of the grid mid-drag on a phone, and it is motion the operator is
+    // driving with their own finger. Just slower.
+    scrollBy(0, v * (reduceMotion.matches ? 9 : MAX_SCROLL));
+    updateTarget(drag.x, drag.y);   // the page moved under a stationary finger
+  }
+
+  function endDrag(keep) {
+    const d = drag;
+    if (!d) return;
+    if (d.raf) cancelAnimationFrame(d.raf);
+    try { grid.releasePointerCapture(d.pointerId); } catch (err) {}
+    if (!d.live) { drag = null; return; }    // a press that never became a drag
+
+    // The key returns to the flow where the ghost is, in the same frame the
+    // ghost is removed, so it is never seen mid-air.
+    d.ghost.parentNode.insertBefore(d.fly, d.ghost);
+    d.ghost.remove();
+    d.fly.classList.remove("is-flying");
+    d.fly.style.removeProperty("--fly-x");
+    d.fly.style.removeProperty("--fly-y");
+    d.fly.style.removeProperty("--fly-w");
+    document.body.classList.remove("dragging");
+    for (const [, sec] of folderEls) sec.classList.remove("is-drop");
+    if (looseEl) looseEl.classList.remove("is-drop");
+    $("droprail").textContent = "";
+    $("droprail").hidden = true;
+
+    const railId = d.railTarget;
+    const list = d.fly.parentElement;
+    const nextEl = d.fly.nextElementSibling;
+    const folderEl = list.closest(".folder");
+    // Read and cleared while `drag` still exists, because clearMerge takes the
+    // classes back off the target and needs it.
+    const mergeWith = d.mergeWith;
+    clearMerge();
+    drag = null;
+
+    // pointerup on the handle produces a click on the handle, which is the
+    // tap-to-pick-up gesture. Swallow exactly one, and clear it on the next
+    // task so a cancelled pointer does not leave the swallower armed for the
+    // next legitimate press.
+    killClick = true;
+    setTimeout(() => { killClick = false; }, 0);
+
+    flushQueued();
+    if (!keep) { renderGrid(); announce("Move cancelled."); return; }
+
+    // Dropped on another key and held there long enough to mean it.
+    if (mergeWith && modeById.has(mergeWith)) { groupInto(d.id, mergeWith); return; }
+
+    const move = railId != null
+      ? {id: d.id, kind: d.kind, into: railId, before: null}
+      : {id: d.id, kind: d.kind,
+         into: folderEl && !folderEl.classList.contains("folder--loose") ? folderEl.dataset.folder : "",
+         before: nextEl && (nextEl.dataset.mode || nextEl.dataset.folder) || null};
+    // home is read from the same DOM-neighbour space, so picking a key up and
+    // putting it straight back really does send nothing, rather than posting a
+    // no-op write that hands every other dashboard a spurious 409 window.
+    if (d.home && move.into === d.home.into && move.before === d.home.before) { renderGrid(); return; }
+    const doc = applyMove(materialise(), move);
+    commit(doc, move, whereMsg(doc, d.id, "dropped"));
+  }
+
+  function abort(message) {
+    if (drag) endDrag(false);
+    if (pick) cancelPick();
+    if (message) hint(message, true);
+  }
+  addEventListener("blur", () => abort(null));
+  document.addEventListener("visibilitychange", () => { if (document.hidden) abort(null); });
+
+  // ── picked up: the keyboard, and a tap on the handle ─────────────────────
+  // ONE state machine for both. The four toolbar buttons call the same
+  // functions the arrow keys call, so there is no second implementation of
+  // "move into a folder" to drift out of step with the first.
+
+  grid.addEventListener("click", e => {
+    const handle = e.target.closest(".mode-grip");
+    if (!handle || killClick) return;
+    // Entry is on CLICK, not on keydown. A <button> synthesises a click from
+    // Enter and Space, so handling keydown as well means grab-and-instant-drop
+    // -- and Space activates on keyup, where preventDefault on keydown does not
+    // reliably suppress it.
+    e.preventDefault();
+    bumpIdle();
+    const node = handle.closest(".mode, .folder");
+    if (!node) return;
+    if (pick) { if (pick.id === (node.dataset.mode || node.dataset.folder)) dropPick(); return; }
+    startPick(node);
+  });
+
+  function startPick(node) {
+    if (drag || pick || !node) return;
+    pick = {id: node.dataset.mode || node.dataset.folder,
+            kind: node.dataset.mode ? "i" : "f",
+            snapshot: deepCopy(layout)};
+    node.classList.add("is-picked");
+    node.querySelector(".mode-grip").setAttribute("aria-pressed", "true");
+    if (node.classList.contains("mode")) node.appendChild(pickBar());
+    const {list, index} = locate(materialise(), pick.id);
+    announce(labelOf(pick.id) + " picked up, " + (index + 1) + " of " + (list ? list.length : 1) +
+             ". Arrow keys move it, left and right move it in and out of folders, " +
+             "the handle drops it, Escape puts it back.");
+  }
+
+  function pickBar() {
+    const bar = el("div", "pickbar");
+    const mk = (glyph, label, fn, cls) => {
+      const b = el("button", cls || "", glyph);
+      b.type = "button";
+      b.setAttribute("aria-label", label);
+      b.onclick = ev => { ev.stopPropagation(); bumpIdle(); fn(); };
+      b.onkeydown = ev => ev.stopPropagation();   // the bar's own keys are its own
+      return b;
+    };
+    bar.append(
+      mk("‹", "Move earlier, or out of the folder", () => step(-1)),
+      mk("›", "Move later, or into the folder", () => step(1)),
+      mk("Done", "Done", dropPick, "done"),
+      mk("✕", "Cancel", cancelPick)
+    );
+    return bar;
+  }
+
+  function endPick() {
+    const node = cells.get(pick.id) || folderEls.get(pick.id);
+    if (node) {
+      node.classList.remove("is-picked");
+      const bar = node.querySelector(".pickbar");
+      if (bar) bar.remove();
+      const g = node.querySelector(".mode-grip");
+      if (g) { g.setAttribute("aria-pressed", "false"); g.focus(); }
+    }
+    pick = null;
+  }
+
+  function cancelPick() {
+    if (!pick) return;
+    const id = pick.id;
+    layout = pick.snapshot;
+    endPick();
+    renderGrid();
+    flushQueued();
+    announce(labelOf(id) + " put back.");
+  }
+
+  function dropPick() {
+    if (!pick) return;
+    const id = pick.id, before = pick.snapshot, kind = pick.kind;
+    endPick();
+    renderGrid();
+    const now = materialise();
+    const was = positionOf(materialiseFrom(before), id);
+    const move = positionOf(now, id);
+    if (!move) { flushQueued(); return; }
+    move.kind = kind;
+    if (was && was.into === move.into && was.before === move.before) {
+      flushQueued();
+      announce(labelOf(id) + " left where it was.");
+      return;
+    }
+    // ONE request for the whole journey. Five arrow presses must not be five
+    // writes to a robot on somebody's phone hotspot.
+    commit(now, move, whereMsg(now, id, "moved"));
+  }
+
+  // step(±1): later/earlier, and in and out of folders at the ends, so the
+  // arrow keys alone reach every position in the grid -- including reordering a
+  // FOLDER, which is something drag can do and therefore must have a keyboard
+  // path.
+  function step(dir) {
+    if (!pick) return;
+    const doc = materialise();
+    const {list, index, folder} = locate(doc, pick.id);
+    if (!list) return;
+    const entry = list.splice(index, 1)[0];
+    let msg = "";
+    const neighbour = list[dir > 0 ? index : index - 1];
+    if (folder && dir > 0 && index === list.length) {
+      const fi = doc.items.findIndex(e => e.id === folder.id);
+      doc.items.splice(fi + 1, 0, {t: "i", id: pick.id});
+      msg = "Out of " + folder.name + ", after it. ";
+    } else if (folder && dir < 0 && index === 0) {
+      const fi = doc.items.findIndex(e => e.id === folder.id);
+      doc.items.splice(fi, 0, {t: "i", id: pick.id});
+      msg = "Out of " + folder.name + ", before it. ";
+    } else if (!folder && pick.kind === "i" && neighbour && neighbour.t === "f") {
+      neighbour.items = neighbour.items || [];
+      neighbour.items.splice(dir > 0 ? 0 : neighbour.items.length, 0, pick.id);
+      msg = "Into folder " + neighbour.name + ". ";
+    } else {
+      const to = index + dir;
+      if (to < 0 || to > list.length) {
+        list.splice(index, 0, entry);
+        announce(dir < 0 ? "Already first." : "Already last.");
+        return;
+      }
+      list.splice(to, 0, entry);
+    }
+    layout = doc;
+    renderGrid();
+    const at = locate(layout, pick.id);
+    announce(msg + (at.index + 1) + " of " + (at.list ? at.list.length : 1) +
+             (at.folder ? " in " + at.folder.name : " not in a folder") + ".");
+  }
+
+  function nudge(dir) {        // Up/Down: within this list only, never in or out
+    if (!pick) return;
+    const doc = materialise();
+    const {list, index} = locate(doc, pick.id);
+    if (!list) return;
+    const to = index + dir;
+    if (to < 0 || to >= list.length) { announce(dir < 0 ? "Already first." : "Already last."); return; }
+    list.splice(to, 0, list.splice(index, 1)[0]);
+    layout = doc;
+    renderGrid();
+    const at = locate(layout, pick.id);
+    announce((at.index + 1) + " of " + (at.list ? at.list.length : 1) + ".");
+  }
+
+  function toEnd(which) {
+    if (!pick) return;
+    const doc = materialise();
+    const {list, index} = locate(doc, pick.id);
+    if (!list) return;
+    list.splice(which === "start" ? 0 : list.length, 0, list.splice(index, 1)[0]);
+    layout = doc;
+    renderGrid();
+    const at = locate(layout, pick.id);
+    announce((at.index + 1) + " of " + (at.list ? at.list.length : 1) + ".");
+  }
+
+  grid.addEventListener("keydown", e => {
+    if (!pick) return;
+    if (e.target.closest("input, select, .pickbar")) return;
+    const keys = {
+      ArrowLeft: () => step(-1), ArrowRight: () => step(1),
+      ArrowUp: () => nudge(-1), ArrowDown: () => nudge(1),
+      Home: () => toEnd("start"), End: () => toEnd("end"),
+      Escape: cancelPick
+    };
+    const fn = keys[e.key];
+    if (!fn) return;
+    e.preventDefault();     // the arrows move the button, they do not scroll
+    e.stopPropagation();
+    bumpIdle();
+    fn();
+  });
+
+  grid.addEventListener("pointerdown", bumpIdle, true);
+
+  // ── the theme ────────────────────────────────────────────────────────────
+  // Two independent choices: the MODE (auto/light/dark) and the PALETTE. Both
+  // per device, in localStorage, exactly like "reachy-logs" below -- which
+  // colours suit the phone in your hand is not a fact about the robot, and two
+  // people looking at one robot may reasonably want different ones. The FOLDER
+  // layout is the opposite case and lives on the robot -- see toggleFolder.
+  (() => {
+    const modes = document.querySelectorAll("[data-theme-set]");
+    const palettes = document.querySelectorAll("[data-palette-set]");
+    const root = document.documentElement;
+
+    // The browser's own chrome bar, matched to the page. Read back off the
+    // stylesheet rather than kept in a table here: with five palettes and two
+    // modes that table would be ten values to forget to update.
+    function paintChrome() {
+      const tc = $("theme-color");
+      if (!tc) return;
+      const bg = getComputedStyle(root).getPropertyValue("--bg").trim();
+      if (bg) tc.setAttribute("content", bg);
+    }
+
+    function store(key, value) {
+      // Safari private browsing throws outright on setItem, and a theme that
+      // does not persist is a great deal better than a dashboard that stops.
+      try { value ? localStorage.setItem(key, value) : localStorage.removeItem(key); } catch (e) {}
+    }
+    function read(key) {
+      try { return localStorage.getItem(key) || ""; } catch (e) { return ""; }
+    }
+
+    function applyMode(v) {
+      if (v) root.dataset.theme = v; else root.removeAttribute("data-theme");
+      store("reachy-theme", v);
+      for (const b of modes) b.setAttribute("aria-pressed", String(b.dataset.themeSet === v));
+      paintChrome();
+    }
+    function applyPalette(v) {
+      if (v) root.dataset.palette = v; else root.removeAttribute("data-palette");
+      store("reachy-palette", v);
+      for (const b of palettes) b.setAttribute("aria-pressed", String(b.dataset.paletteSet === v));
+      paintChrome();
+    }
+
+    for (const b of modes) b.onclick = () => applyMode(b.dataset.themeSet);
+    for (const b of palettes) b.onclick = () => applyPalette(b.dataset.paletteSet);
+
+    const savedMode = read("reachy-theme");
+    applyMode(savedMode === "light" || savedMode === "dark" ? savedMode : "");
+    // Checked against the buttons that actually exist, so a palette removed
+    // from a later build degrades to the default rather than leaving the page
+    // on a data-palette nothing styles.
+    const savedPalette = read("reachy-palette");
+    const known = new Set([...palettes].map(b => b.dataset.paletteSet));
+    applyPalette(known.has(savedPalette) ? savedPalette : "");
+
+    // The device can change its mind mid-visit -- iOS and Android both switch
+    // to dark on a schedule -- and on Auto the chrome bar has to follow.
+    matchMedia("(prefers-color-scheme: dark)").addEventListener("change", paintChrome);
+  })();
+
+  // ── the settings tray ────────────────────────────────────────────────────
+  // At 760px and up the CSS keeps it open and hides the toggle, so this only
+  // matters on a phone.
+  (() => {
+    const btn = $("btn-settings"), tray = $("settings");
+    const set = on => { tray.hidden = !on; btn.setAttribute("aria-expanded", String(on)); };
+    btn.onclick = () => set(tray.hidden);
+    set(innerWidth >= 760);
+  })();
+
+  syncArrangeAffordances();
 
   async function setMode(mode) {
     // Reflect the click immediately; the next poll confirms it.
@@ -349,17 +2919,19 @@
 
   function addRows(events) {
     const log = $("log");
-    if (log.querySelector(".empty")) log.innerHTML = "";
+    if (log.querySelector(".empty")) log.textContent = "";
     const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
     for (const e of events) {
-      const row = document.createElement("div");
-      row.className = "row " + e.kind;
       const who = {heard: "you", said: "robot", partial: "…", listen: "wake",
                    status: "•", error: "!"}[e.kind] || "";
-      row.innerHTML = `<span class="t">${clock(e.at)}</span>
-                       <span class="who">${who}</span>
-                       <span class="msg"></span>`;
-      row.querySelector(".msg").textContent = e.text;
+      // Both values here are locally computed, so the template literal this
+      // replaces was not a live hole -- converted anyway, because it is the
+      // line the next person copies the next time they add a row kind, and by
+      // then it will not be safe.
+      const row = el("div", "row " + e.kind);
+      row.appendChild(el("span", "t", clock(e.at)));
+      row.appendChild(el("span", "who", who));
+      row.appendChild(el("span", "msg", e.text));
       log.appendChild(row);
     }
     while (log.children.length > 300) log.removeChild(log.firstChild);
@@ -367,22 +2939,28 @@
   }
 
   function setStatus(s) {
+    // The layout first: the grid is drawn from it, so drawing the grid before
+    // it has landed would paint a flat pass and then re-fold it.
+    ingestLayout(s.layout);
     renderModes(s.modes, s.mode);
+    if (window.renderLinks) renderLinks(s.links);
     renderWebSearch(s);
     renderOpenMic(s);
     renderPersona(s);
 
-    const conn = $("d-conn"), connText = $("s-conn");
-    conn.className = "dot " + (s.ready ? "on" : "warn");
-    connText.textContent = s.ready ? "running" : "starting…";
-
-    // Asleep is a normal resting state, not a fault -- say so plainly, and say
-    // how to get out of it, so it is never mistaken for the robot being stuck.
-    const act = $("d-act");
-    if (s.sleeping)      { act.className = "dot warn"; $("s-act").textContent = 'asleep — say "Hey Reachy"'; }
-    else if (s.speaking) { act.className = "dot on live"; $("s-act").textContent = "speaking"; }
-    else if (s.listening){ act.className = "dot on live"; $("s-act").textContent = "listening"; }
-    else                 { act.className = "dot"; $("s-act").textContent = "idle"; }
+    // One line, in words, of what the robot is doing. Asleep is a normal
+    // resting state rather than a fault -- say so plainly, and say how to get
+    // out of it, so it is never mistaken for the robot being stuck.
+    const bar = $("state");
+    let cls, what, detail;
+    if (!s.ready)         { cls = "is-starting";  what = "Starting up"; detail = "loading the models…"; }
+    else if (s.sleeping)  { cls = "is-asleep";    what = "Asleep";      detail = "say “Hey Reachy” to wake it"; }
+    else if (s.speaking)  { cls = "is-speaking";  what = "Speaking";    detail = "the robot is talking"; }
+    else if (s.listening) { cls = "is-listening"; what = "Listening";   detail = "waiting for the end of a sentence"; }
+    else                  { cls = "is-idle";      what = "Ready";       detail = "running — say “Hey Reachy”"; }
+    bar.className = cls;
+    $("s-act").textContent = what;
+    $("s-conn").textContent = detail;
 
     const m = Math.floor(s.uptime_s / 60), sec = Math.floor(s.uptime_s % 60);
     $("p-up").textContent = `up ${m}m ${sec}s`;
@@ -392,10 +2970,9 @@
   }
 
   function offline() {
-    $("d-conn").className = "dot bad";
-    $("s-conn").textContent = "robot offline";
-    $("d-act").className = "dot";
-    $("s-act").textContent = "—";
+    $("state").className = "is-offline";
+    $("s-act").textContent = "Robot offline";
+    $("s-conn").textContent = "reconnecting… the robot may be restarting";
     $("foot").textContent = "Reconnecting… the robot may be restarting.";
   }
 
@@ -481,12 +3058,13 @@
     if (webAvailable !== status.web_search_available) {
       webAvailable = status.web_search_available;
       webBox.disabled = !webAvailable;
-      webPill.style.opacity = webAvailable ? "" : "0.45";
+      webPill.classList.toggle("is-off", !webAvailable);
       webPill.title = webAvailable
         ? "Let the robot look things up online. Off by default: it makes answers slower and costs credits."
         : "Unavailable — the model answering is running on this laptop and cannot search.";
     }
     if (document.activeElement !== webBox) webBox.checked = !!status.web_search;
+    webPill.classList.toggle("is-on", !!status.web_search);
   }
   if (webBox) webBox.onchange = async () => {
     const enabled = webBox.checked;
@@ -505,6 +3083,7 @@
   function renderOpenMic(status) {
     if (!micBox) return;
     if (document.activeElement !== micBox) micBox.checked = !!status.open_mic;
+    $("p-openmic").classList.toggle("is-on", !!status.open_mic);
   }
   if (micBox) micBox.onchange = async () => {
     const enabled = micBox.checked;
@@ -539,6 +3118,7 @@
         personaBox.appendChild(o);
       }
       personaLoaded = true;
+      window.__personas = d.personas || [];
       if (personaPill) personaPill.style.display = personaLoaded ? "" : "none";
     } catch (e) { if (personaPill) personaPill.style.display = "none"; }
   })();
@@ -582,23 +3162,39 @@
   // here -- loading a piper voice swaps the object every utterance goes
   // through, and doing that from the browser's request thread while the robot
   // is mid-sentence is the same fault as speaking from it.
-  (async () => {
+  //
+  // KEEPS TRYING until the list arrives, where it used to fetch exactly once
+  // at page load. The voice loop publishes the list only after the models
+  // finish loading (~50s after launch), and a dashboard opened before that --
+  // which is every dashboard, since the launcher opens it first -- got an
+  // empty list and hid the dropdown FOREVER. Voices then looked unselectable
+  // while personalities (served from a constant) worked, which is exactly how
+  // it was reported.
+  (() => {
     const sel = document.getElementById("voice");
     if (!sel) return;
     const pretty = n => n.replace(/^en_(US|GB)-/, "").replace(/-medium$/, "")
                          .replace(/^./, c => c.toUpperCase());
-    try {
-      const v = await (await fetch("/api/voices")).json();
-      if (!v.available || !v.available.length) { sel.style.display = "none"; return; }
-      // Fed by filenames rather than by anything staff type, so this was never
-      // exposed -- rewritten anyway, because it is the pattern somebody copies
-      // the next time they add a dropdown.
-      sel.textContent = "";
-      for (const n of v.available) {
-        const opt = new Option(pretty(n), n, false, n === v.current);
-        sel.appendChild(opt);
+    let filled = false;
+
+    async function syncVoices() {
+      let v = null;
+      try { v = await (await fetch("/api/voices")).json(); } catch (e) { return; }
+      if (!v || !v.available || !v.available.length) return;
+      if (!filled) {
+        // Fed by filenames rather than by anything staff type, so this was
+        // never exposed -- built with new Option anyway, because it is the
+        // pattern somebody copies the next time they add a dropdown.
+        sel.textContent = "";
+        for (const n of v.available) sel.appendChild(new Option(pretty(n), n));
+        filled = true;
       }
-    } catch (e) { sel.style.display = "none"; return; }
+      // The EFFECTIVE voice: a persona can bring its own, and the dropdown
+      // must show what the robot is actually speaking in, not the last hand
+      // pick. Never yanked while the operator has the menu open.
+      if (document.activeElement !== sel && v.current) sel.value = v.current;
+    }
+
     sel.onchange = async () => {
       try {
         await fetch("/api/voice", {
@@ -606,8 +3202,13 @@
           headers: {"Content-Type": "application/json"},
           body: JSON.stringify({voice: sel.value})
         });
-      } catch (e) { /* the next poll shows whether it took */ }
+      } catch (e) { /* the next sync shows whether it took */ }
     };
+
+    syncVoices();
+    // 3s: fast enough that the list appears moments after the robot finishes
+    // loading, cheap enough to leave running for the persona-voice sync.
+    setInterval(syncVoices, 3000);
   })();
 
   // Feature builder. Everything a staff member types comes back through here,
@@ -654,23 +3255,23 @@
         row.appendChild(el("span", "name", f.label));
         if (f.trigger_phrase) row.appendChild(el("span", "chip", f.trigger_phrase));
         row.appendChild(el("span", "spacer"));
-        row.appendChild(button("Try", () => setMode(f.id)));
-        row.appendChild(button("Edit", () => openEditor(f)));
+        row.appendChild(button("Try", () => setMode(f.id), "act sm"));
+        row.appendChild(button("Edit", () => openEditor(f), "act sm"));
         row.appendChild(button(f.enabled ? "Disable" : "Enable", async () => {
           await api(`/api/features/${f.id}/enabled`, json({enabled: !f.enabled}));
           refresh();
-        }));
+        }, "act sm"));
         row.appendChild(button("Delete", async () => {
           if (!confirm(`Delete "${f.label}"?`)) return;
           await api(`/api/features/${f.id}`, {method: "DELETE"});
           refresh();
-        }));
+        }, "act sm danger"));
         listBox.appendChild(row);
       }
     }
 
-    function button(text, onclick) {
-      const b = el("button", "act", text);
+    function button(text, onclick, cls) {
+      const b = el("button", cls || "act", text);
       b.type = "button";
       b.onclick = onclick;
       return b;
@@ -695,6 +3296,7 @@
       steps = f ? f.blocks.map(b => Object.assign({}, b)) : [{kind: "SAY", text: "", emotion: "happy"}];
       chat = [];
       chatBox.textContent = "Describe the group and it will write the words. You can edit anything it writes before saving.";
+      chatBox.classList.add("dim");
       showErrors([]);
       renderSteps();
       editor.hidden = false;
@@ -826,6 +3428,175 @@
     refresh();
   })();
 
+  // ── QR handoff ───────────────────────────────────────────────────────────
+  // The robot offers somebody a page at the end of a course conversation; this
+  // draws it as something they can photograph. Rebuilt only when the set of
+  // links actually changes -- it rides the 700ms poll, and refetching a QR
+  // matrix twice a second would be absurd.
+  (() => {
+    const panel = $("links"), row = $("qr-row");
+    let showing = "";
+
+    async function drawOne(link) {
+      const wrap = el("div", "qr");
+      let data = null;
+      try {
+        const r = await fetch("/api/qr?url=" + encodeURIComponent(link.url));
+        data = await r.json();
+      } catch (e) { /* fall through to the plain link */ }
+      if (data && data.ok && Array.isArray(data.matrix)) {
+        const n = data.size;
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.setAttribute("viewBox", `0 0 ${n} ${n}`);
+        svg.setAttribute("width", "150");
+        svg.setAttribute("height", "150");
+        svg.setAttribute("role", "img");
+        svg.setAttribute("aria-label", "QR code for " + link.label);
+        // One path of many rects would be fewer nodes, but a path needs a
+        // built "d" string; rects keep this to createElement + setAttribute,
+        // which is the rule this page is held to everywhere else.
+        for (let y = 0; y < n; y++) {
+          for (let x = 0; x < n; x++) {
+            if (!data.matrix[y][x]) continue;
+            const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            rect.setAttribute("x", x); rect.setAttribute("y", y);
+            rect.setAttribute("width", "1"); rect.setAttribute("height", "1");
+            rect.setAttribute("fill", "#000000");
+            svg.appendChild(rect);
+          }
+        }
+        wrap.appendChild(svg);
+      }
+      wrap.appendChild(el("span", "cap", link.label));
+      return wrap;
+    }
+
+    window.renderLinks = async function renderLinks(links) {
+      const signature = JSON.stringify(links || []);
+      if (signature === showing) return;
+      showing = signature;
+      if (!links || !links.length) { panel.hidden = true; row.textContent = ""; return; }
+      row.textContent = "";
+      panel.hidden = false;
+      for (const link of links) row.appendChild(await drawOne(link));
+    };
+  })();
+
+  // ── visit stats ──────────────────────────────────────────────────────────
+  // Opened after a visit, not during one, so it fetches on open and every
+  // half minute while it stays open rather than riding the 700ms poll.
+  (() => {
+    const panel = $("stats"), body = $("stats-body");
+    if (!panel) return;
+    let timer = 0;
+
+    function bar(label, value, max) {
+      const line = el("div", "barline");
+      line.appendChild(el("span", "lab", label));
+      const track = el("span", "track");
+      const fill = el("span", "fill");
+      fill.style.width = Math.max(4, Math.round((value / (max || 1)) * 100)) + "%";
+      track.appendChild(fill);
+      line.append(track, el("span", "n", String(value)));
+      return line;
+    }
+
+    async function refresh() {
+      let d = null;
+      try { d = await (await fetch("/api/stats")).json(); } catch (e) { return; }
+      const today = (d && d.today) || {counts: {}, demos: {}, questions: []};
+      body.textContent = "";
+      $("stats-count").textContent = today.day || "";
+
+      const row = el("div", "stat-row");
+      const turns = today.counts.turns || 0;
+      for (const [key, value] of [
+        ["Things said to it", turns],
+        ["Demos used", Object.keys(today.demos || {}).length],
+        ["Different questions", (today.questions || []).length],
+      ]) {
+        const box = el("div", "stat");
+        box.appendChild(el("div", "n", String(value)));
+        box.appendChild(el("div", "k", key));
+        row.appendChild(box);
+      }
+      body.appendChild(row);
+
+      const demos = Object.entries(today.demos || {}).sort((a, b) => b[1] - a[1]);
+      if (demos.length) {
+        body.appendChild(el("h2", "", "Which demos ran"));
+        const list = el("div", "bars-list");
+        const top = demos[0][1];
+        for (const [id, n] of demos.slice(0, 8)) list.appendChild(bar(id, n, top));
+        body.appendChild(list);
+      }
+
+      const asked = today.questions || [];
+      if (asked.length) {
+        body.appendChild(el("h2", "mt", "Most asked"));
+        const list = el("div", "bars-list");
+        const top = asked[0].asked;
+        for (const q of asked.slice(0, 8)) list.appendChild(bar(q.question, q.asked, top));
+        body.appendChild(list);
+      }
+      if (!turns && !demos.length) {
+        body.appendChild(el("p", "dim", "Nothing yet today."));
+      }
+    }
+
+    panel.addEventListener("toggle", () => {
+      clearInterval(timer);
+      if (panel.open) { refresh(); timer = setInterval(refresh, 30000); }
+    });
+  })();
+
+  // ── research mode ────────────────────────────────────────────────────────
+  // Arms recording; it does NOT consent on anybody's behalf. The consent
+  // conversation is the Research session demo, because consent is given by a
+  // participant rather than ticked by an operator.
+  (() => {
+    const box = $("study-on"), pill = $("p-study"), sel = $("study-condition");
+    if (!box) return;
+    let loaded = false;
+
+    async function refresh() {
+      let d = null;
+      try { d = await (await fetch("/api/study")).json(); } catch (e) { return; }
+      if (document.activeElement !== box) box.checked = !!d.running;
+      pill.classList.toggle("is-on", !!d.running);
+      $("research-state").textContent = d.running
+        ? (d.consented ? "recording" : "armed, awaiting consent") : "off";
+      const s = d.summary || {};
+      $("study-summary").textContent = s.turns
+        ? `${s.turns} turn(s) across ${s.sessions} session(s).`
+        : "No data collected yet.";
+      if (!loaded) {
+        // The condition is which manner the robot answers in -- the one
+        // variable this robot can actually manipulate between participants.
+        sel.appendChild(new Option("Default manner", ""));
+        for (const p of (window.__personas || [])) sel.appendChild(new Option(p.label, p.id));
+        loaded = true;
+      }
+    }
+
+    box.onchange = async () => {
+      try {
+        await fetch("/api/study", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({running: box.checked, condition: sel.value})
+        });
+      } catch (e) { box.checked = !box.checked; }
+      refresh();
+    };
+    $("study-withdraw").onclick = async () => {
+      if (!confirm("Delete this session's recorded data? This cannot be undone.")) return;
+      try { await fetch("/api/study", {method: "DELETE"}); } catch (e) {}
+      refresh();
+    };
+    $("research").addEventListener("toggle", () => { if ($("research").open) refresh(); });
+    refresh();
+  })();
+
   // Fetched once: these change only when the keyword file is regenerated.
   (async () => {
     try {
@@ -857,7 +3628,9 @@
       if (shown.length) shown.forEach(g => panel.appendChild(g));
       else panel.appendChild(el("span", "dim", "Phrase list unavailable."));
     } catch (e) {
-      $("phrases").innerHTML = '<span class="dim">Phrase list unavailable.</span>';
+      const panel = $("phrases");
+      panel.textContent = "";
+      panel.appendChild(el("span", "dim", "Phrase list unavailable."));
     }
   })();
 
