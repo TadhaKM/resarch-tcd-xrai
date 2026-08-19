@@ -32,6 +32,7 @@ loop is what applies the tracking target -- so a flourish would freeze the head
 in the one demo whose subject is the head not freezing.
 """
 
+import logging
 import re
 import time
 from typing import TYPE_CHECKING
@@ -41,6 +42,8 @@ import numpy as np
 from body.face import extract_spoken_name
 from config import MODELS
 from demokit import Demo, DemoContext, IdleResult
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from body.face_tracker import FaceTracker
@@ -104,6 +107,45 @@ _OUR_EXCHANGE_AT = "our_exchange_at"
 #: at. The previous version of this demo had no limit and was unbearable; the
 #: one after it removed the remarks entirely and demonstrated nothing.
 _REMARK_COOLDOWN_S = 60.0
+
+#: Consecutive slices a face must go UNRECOGNISED before the robot offers to
+#: learn it. This is the fix for the thing that made the offer feel broken:
+#: recognition is per-frame and occasionally drops one, so a visitor the robot
+#: knows perfectly well produced a single unmatched frame and was asked for
+#: their name again. Measured on this robot: a frame scoring 0.58 sat between
+#: frames scoring 0.80 and 0.91, two seconds apart, on a face with 24 stored
+#: views.
+#:
+#: Deliberately a STREAK rather than a better threshold. Any threshold is a
+#: guess about a distribution nobody has measured properly; "unrecognised four
+#: times in a row" needs no such guess, and a genuinely new face satisfies it
+#: within a few seconds of standing there.
+_UNKNOWN_BEFORE_OFFER = 4
+
+#: How UNLIKE everyone on file a face must be before the robot offers to learn
+#: it. Not the same thing as "did not match": the recognition bar is 0.65, and
+#: everything between this number and that one is the interesting middle --
+#: somebody the robot almost certainly knows, seen at a bad angle.
+#:
+#: Measured on this robot, three times over, because two earlier fixes guessed
+#: instead: two genuinely different people score 0.33 to 0.39 against each
+#: other; a known visitor at a bad angle scored 0.47 and 0.58 in the two live
+#: failures. So a face scoring above this is treated as "probably someone I
+#: know" and left alone, and only a face down in stranger territory is asked.
+#:
+#: The trade is deliberate and one-sided. Failing to offer costs a visitor
+#: nothing -- they can say "remember me" (see _REMEMBER_PHRASES), and staff can
+#: run the demo again -- while asking somebody their name for the third time
+#: makes the robot look like it has no memory at all, which is the one thing
+#: this whole feature exists to demonstrate.
+_OFFER_MAX_SCORE = 0.45
+
+#: How a visitor asks to be remembered when the robot has been too cautious to
+#: ask them. The escape hatch that makes the conservative gate above safe.
+_REMEMBER_PHRASES = (
+    "remember me", "learn my name", "do you know my name", "my name is",
+    "you can remember me", "take my name",
+)
 
 #: Wake-word window returned by every idle slice; the core clamps it to
 #: MAX_LISTEN_WINDOW_S. Never zero: DemoRunner.cycle opens no microphone at
@@ -260,6 +302,7 @@ class Vision(Demo):
             if store.get("present_since") is not None:
                 self._on_leaving(ctx)
             store["present_since"] = None
+            store["unknown_streak"] = 0
             return IdleResult(listen_for=_LISTEN_S)
 
         present_since = store.get("present_since")
@@ -270,18 +313,60 @@ class Vision(Demo):
             return IdleResult(listen_for=_LISTEN_S)
 
         if person_id:
+            # Recognised. Reset the streak: this is what stops one dropped
+            # frame, seconds after a confident match, from being read as a
+            # stranger.
+            store["unknown_streak"] = 0
             # Greeting a recognised face is the runner's job now
             # (DemoRunner._greet_if_recognised), so that being known feels the
             # same under every demo rather than only under this one. Nothing to
             # do here but keep following them.
             return IdleResult(listen_for=_LISTEN_S)
+
+        streak = store.get("unknown_streak", 0) + 1
+        store["unknown_streak"] = streak
+        if streak < _UNKNOWN_BEFORE_OFFER:
+            return IdleResult(listen_for=_LISTEN_S)
+
         if store.get("stage") is None:
+            score = getattr(tracker, "last_score", lambda: 0.0)()
+            if score >= _OFFER_MAX_SCORE:
+                # Close enough to somebody on file that asking their name would
+                # be asking a visitor the robot has already met. Stay quiet and
+                # keep following them; recognition usually comes back within a
+                # frame or two.
+                logger.info(
+                    "Not offering: face scores %.2f, close enough to somebody known.", score
+                )
+                return IdleResult(listen_for=_LISTEN_S)
+            logger.info(
+                "Offering to a face with no id (unrecognised %d slices running, "
+                "best database score %.2f).", streak, score,
+            )
             return self._offer(ctx)
         return IdleResult(listen_for=_LISTEN_S)
 
     def on_utterance(self, ctx: DemoContext, text: str) -> bool:
         """Answer the camera question; the enrolment dialogue never comes here."""
         lowered = text.lower()
+        # The phrase that selected this demo, handed back by the runner right
+        # after on_enter. Swallowed, or it falls through and the conversation
+        # demo answers it as though somebody had asked a question -- two demos
+        # replying to one sentence. See test_demokit [33].
+        if any(trigger in lowered for trigger in self.triggers):
+            return True
+        # Asked outright. This is the way in when the robot has decided not to
+        # offer -- which it now does readily, because being asked twice is
+        # worse than not being asked. Skips straight to the name, since somebody
+        # who says "remember me" has already answered the offer.
+        if any(phrase in lowered for phrase in _REMEMBER_PHRASES):
+            if ctx.face_visible(max_age_s=_PRESENT_AGE_S):
+                ctx.store["rounds"] = 0
+                self._begin_exchange(ctx, _ASK_NAME)
+                ctx.status("Asked to be remembered.")
+                return True
+            ctx.say("Step in front of me so I can see you, and say that again.", "curious")
+            return True
         if not any(phrase in lowered for phrase in _SEEING_PHRASES):
             return False
         if ctx.face_visible(max_age_s=_PRESENT_AGE_S):
@@ -513,7 +598,9 @@ class Vision(Demo):
         verdict = _read_answer(answer)
 
         if verdict is _YES:
-            self._end_exchange(ctx)
+            # The exchange is NOT closed here: _enroll asks one more question
+            # (how the name should sound) and needs the microphone still held
+            # to hear the answer. _enroll closes it on every path it can take.
             self._enroll(ctx, tracker, name)
             return IdleResult(listen_for=_LISTEN_S)
 
@@ -555,6 +642,7 @@ class Vision(Demo):
         # the one in front of the camera at the moment of storing.
         _person_id, face = tracker.current(max_age_s=_PRESENT_AGE_S)
         if face is None:
+            self._end_exchange(ctx)
             ctx.say(f"I have lost sight of you, {name}. Another time.", "sad")
             return
 
@@ -564,11 +652,56 @@ class Vision(Demo):
         # thread, which face_tracker.py exists to avoid.
         person_id = tracker._face.enroll(name, face)
         if person_id is None:
+            self._end_exchange(ctx)
             ctx.say("Sorry, I could not save that. Another time.", "sad")
             return
+        # Spelling agreed; now the SOUND. These are two different questions and
+        # the confirm step only ever asked the first: a name can be transcribed
+        # perfectly and still come out of piper wrong, which at Trinity is the
+        # common case rather than the exception -- Tadhg, Saoirse, Caoimhe,
+        # Sadhbh all read wrong from their letters. Only the person it belongs
+        # to can settle it, and only while they are standing there.
+        self._check_pronunciation(ctx, person_id, name)
         # The session greeting is spent here, on the thank-you: the tracker
         # starts recognising this face within seconds, and without this the
         # runner follows "thank you, Sarah" with "oh, hello again Sarah".
         ctx.state.mark_greeted(name)
         ctx.status(f"Enrolled {name} as person {person_id}.")
         ctx.say(f"Thank you, {name}. I will know you next time.", "happy")
+
+    def _check_pronunciation(self, ctx: DemoContext, person_id: int, name: str) -> None:
+        """Ask whether the name SOUNDED right, and learn it if it did not.
+
+        Inline rather than another stage in the machine, because it is one
+        question with one follow-up and the visitor is already mid-exchange
+        with the microphone held open. Every path here is optional: silence,
+        "yes", or anything unusable all leave the enrolment exactly as it was.
+
+        What is stored is a RESPELLING, not phonetics -- somebody asked how to
+        say their name spells it the way it sounds ("Tie-g", "Seer-sha"), and
+        that is precisely what a text-to-speech voice needs. It is kept apart
+        from the name, so the robot writes Tadhg and says Tie-g.
+        """
+        from brain import db
+
+        answer = ctx.ask("And am I saying it right?", "curious",
+                         wait_for_speech_s=_ANSWER_WAIT_S)
+        verdict = _read_answer(answer)
+        if verdict is not _NO:
+            # Yes, or silence, or something that was not an answer. All three
+            # mean "leave it alone" -- a pronunciation is only ever added by
+            # somebody deliberately correcting one.
+            self._end_exchange(ctx)
+            return
+
+        spoken = ctx.ask("Sorry. Say it the way it sounds, and I'll copy you.",
+                         "curious", wait_for_speech_s=_ANSWER_WAIT_S)
+        say_as = extract_spoken_name(spoken)
+        if not say_as:
+            self._end_exchange(ctx)
+            ctx.status(f"No pronunciation captured for {name}.")
+            return
+        if db.set_pronunciation(person_id, say_as):
+            ctx.status(f"Pronunciation for {name}: {say_as}")
+            ctx.say(f"{say_as}. I'll remember that.", "happy")
+        self._end_exchange(ctx)

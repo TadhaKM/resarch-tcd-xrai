@@ -16,6 +16,8 @@ import threading
 import time
 from typing import Optional
 
+import numpy as np
+
 from config import MODELS
 
 from brain import db
@@ -81,6 +83,29 @@ _SEARCH_PITCH_DEG = 7.0
 _SEARCH_PITCH_SWING_DEG = 9.0
 
 
+#: How long a recognised identity survives frames that fail to match. Long
+#: enough to ride out a turned head or a moment of blur; short enough that it
+#: is never carried across somebody leaving and somebody else arriving. It is
+#: bounded by the similarity check too -- see _hold_identity.
+_IDENTITY_HOLD_S = 20.0
+
+#: How alike this frame must be to the last identified one to count as the same
+#: person still standing there. BELOW face_match_threshold (0.65), and the
+#: first version of this got that backwards: it was set to 0.75 on the theory
+#: that frame-to-frame is an easier question than a database lookup, and so
+#: could afford a higher bar. It cannot. A degraded frame -- blur, a turned
+#: head, half a face -- is degraded against EVERYTHING, including a good stored
+#: view of the same person, so a frame that just failed the database at 0.65
+#: can never clear 0.75 against one embedding.
+#:
+#: The measured gap is what sets this. On this robot's own data: a bad frame of
+#: somebody known scored 0.58 against a 24-view database, between frames at
+#: 0.80 and 0.91 either side. Two DIFFERENT people score 0.33 to 0.39 against
+#: each other. 0.50 sits in that gap with room on both sides -- it rescues the
+#: dropped frames without ever carrying one person's name to another's face.
+_SAME_PERSON_THRESHOLD = 0.50
+
+
 class FaceTracker:
     """Background loop: detect the active face, aim the head, cache identity."""
 
@@ -93,6 +118,17 @@ class FaceTracker:
         self._lock = threading.Lock()
         self._person_id: Optional[int] = None
         self._active_face: Optional[DetectedFace] = None
+        #: Who was last positively identified, their face vector at the time,
+        #: and when. This is what stops a recognised visitor flickering back to
+        #: "stranger" on a single bad frame -- see _hold_identity.
+        self._known_id: Optional[int] = None
+        self._known_embedding = None
+        self._known_at: float = 0.0
+        #: Best database score for the last frame, whether or not it matched.
+        #: Read by demos/vision.py so a decision to offer can say WHY -- a
+        #: near-miss on a known face and a genuinely new face look identical
+        #: from the outside and want opposite fixes.
+        self._last_score: float = 0.0
         #: The embedding of the face in view. Kept because this thread has
         #: already computed it to do the matching, and a demo that wants to
         #: tell one unrecognised visitor from another would otherwise have to
@@ -131,6 +167,34 @@ class FaceTracker:
             if time.monotonic() - self._seen_at > max_age_s:
                 return None, None
             return self._person_id, self._active_face
+
+    def last_score(self) -> float:
+        """Best database similarity for the most recent frame."""
+        with self._lock:
+            return self._last_score
+
+    def _hold_identity(self, embedding) -> Optional[int]:
+        """Keep the last identity if this is plainly the same face, still here.
+
+        Two guards, and both matter. The TIME limit means an identity is never
+        carried across a gap in which the room could have changed -- somebody
+        new stepping in front of the robot half a minute later gets a clean
+        slate. The SIMILARITY check means it is never carried to a different
+        face that happens to arrive in the meantime: consecutive frames of one
+        person score far higher against each other than two different people
+        do, which is why this threshold can sit well above the recognition one
+        and still rescue the frames recognition drops.
+        """
+        if self._known_id is None or self._known_embedding is None:
+            return None
+        if time.monotonic() - self._known_at > _IDENTITY_HOLD_S:
+            return None
+        probe = float(np.linalg.norm(embedding))
+        held = float(np.linalg.norm(self._known_embedding))
+        if not probe or not held:
+            return None
+        similarity = float(np.dot(embedding, self._known_embedding) / (probe * held))
+        return self._known_id if similarity >= _SAME_PERSON_THRESHOLD else None
 
     def current_embedding(self, max_age_s: float = 3.0):
         """The face vector for whoever is in view, or None if stale.
@@ -242,13 +306,30 @@ class FaceTracker:
                 # detector -- the voice loop just reads the cached answer.
                 embedding = self._face.embedding_for_face(detected)
                 person_id, score = self._face.match_embedding(embedding)
+                self._last_score = score
                 if person_id:
                     self._reinforce(person_id, score, detected, now)
+                else:
+                    # Recognition against the whole database is a hard question
+                    # asked of every frame, and it fails on ordinary things --
+                    # a turned head, motion blur, somebody looking down. Before
+                    # this, one such frame dropped a known visitor to
+                    # "stranger", and demos/vision.py offered to learn the name
+                    # of somebody it had greeted by name seconds earlier.
+                    #
+                    # "Is this still the person from the last frame?" is a far
+                    # easier question than "who is this out of everyone", so it
+                    # is asked separately and at its own threshold.
+                    person_id = self._hold_identity(embedding)
                 with self._lock:
                     self._person_id = person_id
                     self._active_face = detected
                     self._embedding = embedding
                     self._seen_at = time.monotonic()
+                    if person_id:
+                        self._known_id = person_id
+                        self._known_embedding = embedding
+                        self._known_at = time.monotonic()
             except Exception as exc:
                 logger.warning("Face tracking paused after error: %s", exc)
                 self._stop.wait(_ERROR_BACKOFF_S)
