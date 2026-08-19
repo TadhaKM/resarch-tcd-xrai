@@ -123,6 +123,22 @@ def _capabilities(tracker: FaceTracker) -> frozenset[str]:
     return frozenset(caps)
 
 
+def _layout_doc() -> dict:
+    """How the dashboard's buttons are grouped, ready to publish.
+
+    Imported inside the function rather than at module scope: this file pulls
+    in nothing from brain.db today and there is no reason to start, least of
+    all for a purely cosmetic table. layout.read() never raises, so there is
+    nothing to guard -- an unavailable layout is an empty document, and an
+    empty document is exactly the flat grid that shipped.
+    """
+    from brain import layout
+
+    doc, available = layout.read()
+    doc["available"] = available
+    return doc
+
+
 def run_forever(target: HardwareTarget) -> None:
     """Run the session until interrupted."""
     # In "robot" mode audio, camera, and motion all share ONE ReachyMini.
@@ -185,13 +201,29 @@ def run_forever(target: HardwareTarget) -> None:
     if loaded:
         STATE.add("status", f"{loaded} feature(s) from the dashboard loaded.")
     STATE.set_capabilities(capabilities)
-    STATE.set_demos(REGISTRY.dashboard_entries(capabilities))
+    STATE.set_demos(REGISTRY.dashboard_entries(capabilities), _layout_doc())
+    # The operator's chosen voice, restored before the first word is spoken.
+    # Every network drop relaunches this process, and until this line each
+    # relaunch silently put the robot back on the config default -- so a voice
+    # picked at nine was gone by the first wifi blip of the morning.
+    from brain import settings
+
+    saved_voice = settings.get("voice")
+    if saved_voice and saved_voice != audio.voice_name:
+        if audio.set_voice(saved_voice):
+            logger.info("Restored the chosen voice: %s", saved_voice)
+        else:
+            STATE.add("status", f"Saved voice {saved_voice} is not installed; using the default.")
     STATE.set_voices(audio.available_voices(), audio.voice_name)
     # Whether searching is even possible: only the Anthropic backend can, so
     # the dashboard greys the switch rather than offering a setting that
     # would silently do nothing on the local model.
-    from brain.llm import streaming_backends
+    from brain.llm import streaming_backends, warm_in_background
     STATE.set_web_search_available(streaming_backends()[0].supports_web)
+    # Load the local model NOW, in the background, rather than in front of the
+    # first visitor -- the cold start is ~30s on this hardware and it used to
+    # land on whoever asked the first question of the day.
+    warm_in_background()
 
     runner = DemoRunner(
         audio=audio,
@@ -229,7 +261,14 @@ def run_forever(target: HardwareTarget) -> None:
                 runner.cycle()
                 # Availability changes when a demo is set aside or re-enabled,
                 # and the operator needs to see that while the session runs.
-                STATE.refresh_demo_availability(REGISTRY.dashboard_entries(capabilities))
+                # The folder arrangement goes out with it: read here rather
+                # than in /api/events so it never scales with the number of
+                # open browsers, at roughly the rate this loop already calls
+                # db.get_person_name() for a recognised visitor.
+                STATE.refresh_demo_availability(
+                    REGISTRY.dashboard_entries(STATE.capabilities),
+                    _layout_doc(),
+                )
                 STATE.set_voices(audio.available_voices(), audio.voice_name)
             except (KeyboardInterrupt, ShutdownRequested):
                 raise

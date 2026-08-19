@@ -143,6 +143,74 @@ def contains_phrase(word_stream: str, phrase: str) -> bool:
     normalised = _word_stream(phrase).strip()
     return bool(normalised) and f" {normalised} " in word_stream
 
+
+#: The two-part test for "this trigger phrase, misheard". A single similarity
+#: threshold was tried first and measured unable to separate the real cases:
+#: "welcome to your irisimus group" (a mangled "welcome the erasmus group",
+#: must fire) scored 0.750 -- EXACTLY what "a warm welcome to this group"
+#: (must not fire) scored, with "we should welcome the new group" above both
+#: at 0.800. The scaffolding words dominate a whole-window ratio. What
+#: separates a mishearing from a coincidence is the DISTINCTIVE word: heard
+#: "irisimus" resembles "erasmus", while "new" and "this" resemble nothing in
+#: the phrase. So the window ratio sets a floor, and every substantial word of
+#: the phrase must additionally have its own fuzzy counterpart in the window.
+_FUZZY_WINDOW_RATIO = 0.70
+_FUZZY_WORD_RATIO = 0.65
+#: Words shorter than this are scaffolding ("the", "to", "our") and carry no
+#: identity worth testing for.
+_FUZZY_WORD_MIN_LEN = 4
+#: Only phrases at least this long may match approximately. Short triggers
+#: ("lets dance") are one mishearing away from everything, which is the same
+#: reason features.py refuses short trigger phrases outright.
+_FUZZY_MIN_WORDS = 3
+_FUZZY_MIN_CHARS = 12
+
+
+def _word_evidence(heard: list[str], word: str) -> bool:
+    """Whether `word`, possibly misheard and possibly SPLIT, is in `heard`.
+
+    Split matters: "erasmus" arrived as "de arass mis...", three fragments, so
+    single heard words can never account for it -- joins of up to three
+    consecutive words are counterparts too.
+    """
+    from difflib import SequenceMatcher
+
+    for size in (1, 2, 3):
+        for start in range(len(heard) - size + 1):
+            candidate = "".join(heard[start:start + size])
+            if SequenceMatcher(None, candidate, word).ratio() >= _FUZZY_WORD_RATIO:
+                return True
+    return False
+
+
+def fuzzy_contains(word_stream: str, phrase: str) -> bool:
+    """Whether the transcript contains something that IS `phrase`, misheard.
+
+    Character-level similarity over a sliding window of words, because
+    mishearings do not respect word boundaries; the window runs from one word
+    shorter than the phrase to two longer, which covers a word split into
+    pieces without letting the rest of the utterance dilute the comparison.
+    See the constants above for why the window ratio alone is not the test.
+    """
+    from difflib import SequenceMatcher
+
+    words = _word_stream(phrase).split()
+    if len(words) < _FUZZY_MIN_WORDS or sum(len(w) for w in words) < _FUZZY_MIN_CHARS:
+        return False
+    heard_all = word_stream.split()
+    substantial = [w for w in words if len(w) >= _FUZZY_WORD_MIN_LEN]
+    target = "".join(words)
+    low = max(2, len(words) - 1)
+    high = min(len(heard_all), len(words) + 2)
+    for size in range(low, high + 1):
+        for start in range(len(heard_all) - size + 1):
+            window = heard_all[start:start + size]
+            if SequenceMatcher(None, "".join(window), target).ratio() < _FUZZY_WINDOW_RATIO:
+                continue
+            if all(_word_evidence(window, w) for w in substantial):
+                return True
+    return False
+
 #: Pause on an idle slice that asked for no listening. See cycle().
 _IDLE_SLICE_S = 0.05
 
@@ -165,6 +233,10 @@ class DemoRunner:
         self._motion = motion
         self._tracker = tracker
         self._state = state
+        # The hardware baseline, kept only as a fallback. What actually
+        # gates a demo is read live from the state -- an operator can switch a
+        # capability on mid-visit (research mode), and a set frozen here would
+        # refuse the very demo the dashboard is showing as available.
         self._capabilities = capabilities
         self._active_id: Optional[str] = None
         self._active_demo: Optional[Demo] = None
@@ -397,6 +469,19 @@ class DemoRunner:
         """
         words = _word_stream(heard)
 
+        # Counted here, at the one place every utterance passes through --
+        # wake-word turns and open-mic follow-ups alike. Aggregate only: what
+        # was asked and how often, never by whom. See brain/stats.py.
+        try:
+            from brain import stats
+
+            stats.bump("turns")
+            stats.note_question(heard)
+            if self._active_id:
+                stats.bump(f"demo:{self._active_id}")
+        except Exception:  # pragma: no cover - a counter must never cost a turn
+            logger.debug("Could not record visit stats", exc_info=True)
+
         if any(contains_phrase(words, phrase) for phrase in SLEEP_PHRASES):
             self._go_to_sleep()
             return
@@ -470,10 +555,17 @@ class DemoRunner:
     def _active(self) -> tuple[Optional[Demo], Optional[DemoContext]]:
         """The selected demo, entering it if the operator just switched."""
         wanted = self._state.mode
-        if wanted == self._active_id and self._active_demo is not None:
+        # Availability is checked EVERY cycle, not just on a switch. Capabilities
+        # change while a demo is running now -- research mode is a dashboard
+        # toggle, not a boot-time fact -- and the old fast path returned the
+        # running demo without looking, so turning research mode OFF left the
+        # research demo running. "Off" has to mean off. The check is a dict
+        # lookup and a short list comp, which is nothing against a cycle that
+        # does audio.
+        available, reason = REGISTRY.is_available(wanted, self._live_capabilities())
+        if available and wanted == self._active_id and self._active_demo is not None:
             return self._active_demo, self._ctx
 
-        available, reason = REGISTRY.is_available(wanted, self._capabilities)
         if not available:
             fallback = REGISTRY.default_id()
             if fallback != wanted and REGISTRY.get(fallback) is not None:
@@ -519,26 +611,43 @@ class DemoRunner:
         self._guarded(demo, ctx, "on_exit", lambda: demo.on_exit(ctx))
         self._active_id = self._active_demo = self._ctx = None
 
+    def _live_capabilities(self) -> frozenset:
+        """What the robot can do right now: hardware, plus operator switches."""
+        live = getattr(self._state, "capabilities", None)
+        return live if live else self._capabilities
+
     def _switch_on_trigger(self, words: str) -> Optional[tuple[Demo, DemoContext]]:
         """Switch demo if the transcript contains a trigger phrase.
 
         `words` is the space-padded word stream from _word_stream, so a trigger
         only fires on whole words.
         """
-        for phrase, demo_id in self._trigger_table():
-            if not contains_phrase(words, phrase):
-                continue
-            if demo_id == self._active_id:
-                return None
-            available, reason = REGISTRY.is_available(demo_id, self._capabilities)
-            if not available:
-                logger.info("Trigger %r ignored: %s is %s", phrase, demo_id, reason)
-                continue
-            self._state.set_mode(demo_id)
-            demo, ctx = self._active()
-            if demo is None or ctx is None:
-                return None
-            return demo, ctx
+        # Two passes, exact first: a transcript that literally contains one
+        # trigger and merely resembles another must go to the literal one,
+        # whatever order the table happens to be in. The fuzzy pass exists
+        # because the final transcript comes from Whisper, which has no hotword
+        # biasing -- a proper noun in a staff-written trigger arrives mangled
+        # ("erasmus" came back as "irisimus" and "de-arass mis") and an exact
+        # table can never fire on it.
+        table = self._trigger_table()
+        for approximate in (False, True):
+            for phrase, demo_id in table:
+                hit = fuzzy_contains(words, phrase) if approximate else contains_phrase(words, phrase)
+                if not hit:
+                    continue
+                if demo_id == self._active_id:
+                    return None
+                available, reason = REGISTRY.is_available(demo_id, self._live_capabilities())
+                if not available:
+                    logger.info("Trigger %r ignored: %s is %s", phrase, demo_id, reason)
+                    continue
+                if approximate:
+                    logger.info("Trigger %r matched approximately in %r", phrase, words.strip())
+                self._state.set_mode(demo_id)
+                demo, ctx = self._active()
+                if demo is None or ctx is None:
+                    return None
+                return demo, ctx
         return None
 
     def _trigger_table(self) -> list[tuple[str, str]]:
@@ -592,6 +701,12 @@ class DemoRunner:
             # as speaking from it.
             if self._audio.set_voice(text):
                 self._state.add("status", f"Voice set to {text}")
+                # Persisted only once it actually loaded and spoke: a choice
+                # that failed to apply must not come back at every restart as
+                # a warning about a voice that was never installed.
+                from brain import settings
+
+                settings.put("voice", text)
                 self._audio.speak("This is my voice now.", "happy", motion=self._motion)
             else:
                 self._state.add("error", f"Could not switch to voice {text}")

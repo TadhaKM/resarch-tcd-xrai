@@ -112,23 +112,46 @@ class RobotState:
         self._ready = False
         self._history: list[Event] = []
         self._requests: list[tuple[str, str, str]] = []
+        #: How the dashboard's buttons are grouped into folders. Published
+        #: alongside the demo list and read by nothing else in this process:
+        #: it is display order, and the order the robot chooses a demo by is
+        #: the registry's. See brain/layout.py, and set_demos below.
+        self._layout: dict = {"rev": 0, "items": [], "available": True}
+        #: Links the robot has just offered somebody, shown on the dashboard as
+        #: QR codes. See show_links.
+        self._links: list[dict] = []
+        self._links_at: float = 0.0
         # Set on every mode change, consumed by whoever needs an
         # on-entry action (storyteller tells its first story from this).
         self._mode_dirty = False
 
     # --- mode ---
 
-    def set_demos(self, entries: list[dict]) -> None:
+    def set_demos(self, entries: list[dict], layout: Optional[dict] = None) -> None:
         """Tell the dashboard which demos exist. Called once at startup.
 
         Entries are the dicts demokit.registry.dashboard_entries produces:
         id, label, help, available, note.
+
+        `layout` rides along rather than having its own setter, for a reason
+        worth stating: with two setters, a poll landing between them returns
+        demo entries from one write and a layout revision from another -- and
+        the revision is exactly what the browser uses to tell "this is my own
+        change coming back" from "somebody on the other phone moved something".
         """
         with self._lock:
             self._demos = list(entries)
+            if layout is not None:
+                self._layout = dict(layout)
             known = {e["id"] for e in self._demos}
             was_unset = not self._mode
             current_missing = self._mode not in known
+            # entries[0] is the demo the robot boots into, and DEFAULT_MODE is
+            # "" so this runs on every start. dashboard_entries() is therefore
+            # in REGISTRY order (demo.order), never in the order the dashboard
+            # happens to show -- a staff member tidying the grid on a Tuesday
+            # must not change what the robot starts in on Wednesday morning.
+            # The folder arrangement is a separate document; see brain/layout.py.
             first = self._demos[0]["id"] if self._demos else self._mode
         if current_missing and self._demos:
             # The saved-or-default mode does not exist in this build. Better to
@@ -232,6 +255,56 @@ class RobotState:
         with self._lock:
             return self._capabilities
 
+    def show_links(self, links: list[dict]) -> None:
+        """Put pages on the dashboard for a visitor to scan, as QR codes.
+
+        The end of a spoken answer that somebody wants to keep. A robot cannot
+        hand over a leaflet and nobody remembers a URL read aloud -- and asking
+        for an email address turns a nice conversation into a data-collection
+        exercise, with a privacy surface to match. A code on the screen they
+        may or may not photograph is the whole transaction.
+
+        Cleared on the next demo switch (see set_mode) rather than on a timer,
+        because the person who was shown them is standing there until they are
+        not, and a stale QR belonging to the previous visitor is worse than
+        none. Empty list clears.
+        """
+        with self._lock:
+            self._links = [
+                {"label": str(link.get("label", ""))[:80], "url": str(link.get("url", ""))[:300]}
+                for link in (links or [])[:3]
+                # http(s) only, and checked here rather than trusted: this ends
+                # up as a scannable code somebody points a phone at, so it is
+                # the one place a bad value becomes somebody else's problem.
+                if str(link.get("url", "")).startswith(("http://", "https://"))
+            ]
+            self._links_at = time.time()
+
+    @property
+    def links(self) -> list[dict]:
+        with self._lock:
+            return list(self._links)
+
+    def set_capability(self, name: str, on: bool) -> frozenset:
+        """Turn one capability on or off while the robot is running.
+
+        Capabilities were fixed at startup because they described the machine
+        -- whether MediaPipe runs here, essentially. "study" is the first that
+        an operator flips mid-visit, and that exposed a split brain: the
+        dashboard published one set and DemoRunner held another, frozen at
+        construction. The grid showed Research session as available and the
+        runner refused the switch with "needs study", which from the outside
+        looked like research mode turning itself off.
+
+        So this is the one place capabilities change, and everything -- the
+        runner's own check included -- reads them back from here.
+        """
+        with self._lock:
+            caps = set(self._capabilities)
+            caps.add(name) if on else caps.discard(name)
+            self._capabilities = frozenset(caps)
+            return self._capabilities
+
     def hold_open_mic(self, held: bool) -> None:
         """Keep the microphone open for one exchange, whatever the switch says.
 
@@ -311,14 +384,20 @@ class RobotState:
         with self._lock:
             return dict(self._voices)
 
-    def refresh_demo_availability(self, entries: list[dict]) -> None:
+    def refresh_demo_availability(self, entries: list[dict], layout: Optional[dict] = None) -> None:
         """Update availability/notes without changing the selection.
 
         Called when a demo is set aside or re-enabled, so the dashboard greys
         the button and shows why while the session is still running.
+
+        `layout` rides along for the same reason it does on set_demos: one
+        acquisition of the lock, so a poll never sees the demo list from one
+        write beside the layout revision from another.
         """
         with self._lock:
             self._demos = list(entries)
+            if layout is not None:
+                self._layout = dict(layout)
 
     @property
     def mode(self) -> str:
@@ -327,6 +406,8 @@ class RobotState:
 
     def set_mode(self, mode: str) -> bool:
         with self._lock:
+            # Whatever the last visitor was shown is not for this one.
+            self._links = []
             known = {e["id"] for e in self._demos}
             label = next((e["label"] for e in self._demos if e["id"] == mode), mode)
             # Before any demo list arrives, accept anything: the voice loop
@@ -474,6 +555,13 @@ class RobotState:
                     None if self._last_heard_at is None else time.time() - self._last_heard_at
                 ),
                 "modes": list(self._demos),
+                # Held in memory and republished on write, never read from
+                # SQLite here: /api/events calls this every 700ms per open
+                # browser, so three phones during a visit would be four
+                # connections a second opened against the file the voice loop
+                # is writing memory notes to.
+                "layout": dict(self._layout),
+                "links": list(self._links),
                 "web_search": self._web_search,
                 "open_mic": self._open_mic,
                 "persona": self._persona,
