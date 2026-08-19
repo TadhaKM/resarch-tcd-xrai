@@ -359,14 +359,23 @@ class FeatureRequest(BaseModel):
 
 
 def _republish() -> None:
-    """Put the demo list in front of the operator now, not next cycle.
+    """Put the demo list and the folder layout in front of the operator now.
 
     The loop republishes every cycle anyway, but a cycle can be three seconds
     and "Save" followed by pressing the new button is the first thing anybody
     will do.
+
+    Both go out together. The voice loop publishes both every cycle too, and if
+    only one publisher carried the layout, the other's next cycle would put a
+    stale copy back -- so the grid would fall flat and then jump into folders
+    again a couple of seconds later.
     """
+    from brain import layout
+
     try:
-        STATE.refresh_demo_availability(REGISTRY.dashboard_entries(STATE.capabilities))
+        doc, available = layout.read()
+        doc["available"] = available
+        STATE.refresh_demo_availability(REGISTRY.dashboard_entries(STATE.capabilities), doc)
     except Exception:  # pragma: no cover - never worth failing a save over
         logger.exception("Could not refresh the demo list")
 
@@ -461,6 +470,13 @@ def delete_feature(feature_id: str) -> JSONResponse:
     if not features.delete(feature_id):
         return JSONResponse({"ok": False, "error": "no such feature"}, status_code=404)
     _stored.sync_one(feature_id)
+    # Not housekeeping. slug_for derives the id from the label, so a feature
+    # written months later with a similar name gets the same id -- and would
+    # inherit this one's place, which may be inside a collapsed folder. See
+    # layout.forget.
+    from brain import layout
+
+    layout.forget(feature_id)
     # Leaving the robot pointing at a demo that no longer exists would recover
     # on the next cycle anyway, but with an error banner in front of visitors.
     if STATE.mode == feature_id:
@@ -490,6 +506,189 @@ def enable_feature(feature_id: str, req: EnabledRequest) -> JSONResponse:
         STATE.set_mode(REGISTRY.default_id())
     _republish()
     return JSONResponse({"ok": True, "live": REGISTRY.get(feature_id) is not None})
+
+
+# --- the folder layout --------------------------------------------------
+#
+# Display only. Nothing here touches the demo list, the registry or the order
+# the robot picks a demo by -- see brain/layout.py's docstring for why that
+# separation is the whole design rather than an implementation detail.
+
+
+class LayoutRequest(BaseModel):
+    base: int = 0
+    items: list = []
+
+
+@app.get("/api/layout")
+def get_layout() -> JSONResponse:
+    """The stored arrangement.
+
+    Always 200; whether it can be written is reported in the body, the same way
+    /api/features reports its own availability. The dashboard normally gets
+    this on the 700ms poll instead -- this route is for a cold read and for
+    anybody driving the robot with curl.
+    """
+    from brain import layout
+
+    doc, available = layout.read()
+    return JSONResponse({
+        "ok": True, "available": available, **doc,
+        "limits": {
+            "max_folders": layout.MAX_FOLDERS,
+            "max_folder_name": layout.MAX_FOLDER_NAME_CHARS,
+        },
+    })
+
+
+@app.put("/api/layout")
+def put_layout(req: LayoutRequest) -> JSONResponse:
+    """Replace the arrangement, if the browser was looking at the current one."""
+    from brain import layout
+
+    status, doc, problems = layout.write(req.items, int(req.base or 0))
+    if status == layout.OK:
+        _republish()
+        return JSONResponse({"ok": True, **doc})
+    if status == layout.STALE:
+        # 409 carrying the winner's arrangement, so the loser can re-apply its
+        # one move on top rather than discarding the gesture. Two staff tidying
+        # up at once is an ordinary open day, not a theoretical race.
+        return JSONResponse({"ok": False, "stale": True, **doc}, status_code=409)
+    if status == layout.UNAVAILABLE:
+        return JSONResponse(
+            {"ok": False, "errors": [
+                "The robot's database is unavailable, so the layout cannot be changed."]},
+            status_code=503,
+        )
+    return JSONResponse({"ok": False, "errors": problems}, status_code=400)
+
+
+@app.delete("/api/layout")
+def reset_layout() -> JSONResponse:
+    """Put every button back on the main grid.
+
+    There is no undo stack, and the people using this are not technical. One
+    button that certainly gets them back to a grid they recognise is worth more
+    than any amount of care about not needing it.
+    """
+    from brain import layout
+
+    doc = layout.reset()
+    STATE.add("status", "Dashboard layout reset")
+    _republish()
+    return JSONResponse({"ok": True, **doc})
+
+
+# --- QR codes, visit stats -----------------------------------------------
+
+
+@app.get("/api/qr")
+def qr(url: str = "") -> JSONResponse:
+    """A QR matrix for one link, as rows of 0/1 for the browser to draw.
+
+    A matrix rather than an image: the dashboard builds it as SVG rects with
+    the same createElement discipline as everything else, so there is no image
+    endpoint to cache, no data-URI to get wrong, and it recolours itself with
+    the theme like the rest of the page.
+
+    segno is pure Python and generates offline, which matters -- the robot is
+    frequently on a hotspot or on nothing at all, and a QR that only works
+    with internet would fail on exactly the days a visit is happening.
+    """
+    url = (url or "").strip()
+    if not url.startswith(("http://", "https://")) or len(url) > 300:
+        return JSONResponse({"ok": False, "error": "not a link"}, status_code=400)
+    try:
+        import segno
+
+        # Error correction M: readable from a phone at arm's length even with
+        # a thumb over a corner, without the density that makes a code fail on
+        # a low-resolution screen.
+        code = segno.make(url, error="m")
+        matrix = [[int(bit) for bit in row] for row in code.matrix]
+    except Exception:
+        logger.exception("Could not build a QR code")
+        return JSONResponse({"ok": False, "error": "unavailable"}, status_code=503)
+    return JSONResponse({"ok": True, "size": len(matrix), "matrix": matrix})
+
+
+class StudyRequest(BaseModel):
+    running: bool = False
+    condition: str = ""
+
+
+@app.get("/api/study")
+def study_status() -> JSONResponse:
+    """Whether a research session is running, and what has been collected."""
+    from brain import study
+
+    return JSONResponse({**study.status(), "summary": study.summary()})
+
+
+@app.post("/api/study")
+def set_study(req: StudyRequest) -> JSONResponse:
+    """Switch research mode on or off.
+
+    Switching it ON only ARMS it: brain/study.py records nothing until the
+    participant has heard what is being recorded and agreed out loud, through
+    the Research session demo. There is deliberately no way to consent on
+    somebody's behalf from here.
+    """
+    from brain import study
+
+    if req.running and not study._available:
+        return JSONResponse(
+            {"ok": False, "error": "The robot's database is unavailable, so nothing "
+                                   "could be recorded."},
+            status_code=503,
+        )
+    state = study.start(req.condition) if req.running else study.stop()
+    # ONE place capabilities change, and everything reads them back from the
+    # state -- including DemoRunner, which used to hold its own frozen copy and
+    # refuse the demo the dashboard was showing as available.
+    STATE.set_capability("study", bool(req.running))
+    STATE.add("status", "Research mode on -- awaiting participant consent"
+                       if req.running else "Research mode off")
+    # Switching OFF while the research demo is showing: step the robot back to
+    # conversation HERE, deliberately, rather than leaving the runner to notice
+    # the capability has gone and evict it. Both end in the same place, but the
+    # runner's route reports "study is unavailable (needs study)" as an ERROR --
+    # which is what an operator saw on the dashboard after pressing the off
+    # switch, reading as a fault rather than as the switch doing its job.
+    if not req.running and STATE.mode == "study":
+        fallback = REGISTRY.default_id()
+        if fallback and fallback != "study":
+            STATE.set_mode(fallback)
+    # The demo is gated on the "study" capability, so the grid has to be
+    # republished for it to appear or grey out.
+    _republish()
+    return JSONResponse({"ok": True, **state})
+
+
+@app.delete("/api/study")
+def withdraw_study(session: str = "") -> JSONResponse:
+    """Delete a participant's data. The whole session, not a flag."""
+    from brain import study
+
+    gone = study.withdraw(session or None)
+    STATE.add("status", f"Study data withdrawn ({gone} turn(s) deleted)")
+    return JSONResponse({"ok": True, "deleted": gone})
+
+
+@app.get("/api/stats")
+def stats(day: str = "") -> JSONResponse:
+    """What happened during a visit: counters, demos run, questions asked.
+
+    Aggregate only -- no names, and no link between a question and a person.
+    See brain/stats.py for why that boundary is where it is.
+    """
+    from brain import stats as visit_stats
+
+    return JSONResponse({
+        "today": visit_stats.day(day or None),
+        "days": visit_stats.recent_days(),
+    })
 
 
 #: Room for a draft. The standing llm_max_tokens is 140 -- enough for what the

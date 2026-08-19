@@ -1,6 +1,6 @@
 """Prompt construction: builds the chat message list sent to the LLM."""
 
-from . import hub
+from . import courses, hub
 from .emotion import VALID_EMOTION_TAGS
 
 _TAG_LIST = ", ".join(sorted(VALID_EMOTION_TAGS))
@@ -26,23 +26,47 @@ _CAPABILITIES = (
     "also do not have."
 )
 
-#: Replaces the two "cannot browse / no live information" sentences when web
-#: search is switched on. The rest of the capability block is unchanged and
-#: still load-bearing: turning on search must not quietly also grant the robot
-#: wheels. Swapped rather than appended, because leaving the original in and
-#: adding a contradiction is how you get a robot that refuses to look something
-#: up and then looks it up in the same breath.
-_CAPABILITIES_WEB = _CAPABILITIES.replace(
-    "browse the internet, control other devices",
-    "control other devices",
-).replace(
-    "You have no live information: no weather, news, or current date and time. ",
-    "You can search the web when a question genuinely needs current information "
-    "-- today's weather, recent news, a fact that changes. Search only when the "
-    "question needs it, answer from what you know otherwise, and keep the answer "
-    "to the same one or two spoken sentences. Never read out URLs or describe "
-    "the search itself; just say what you found. ",
-)
+def _capabilities_text(web: bool) -> str:
+    """The capability block, with the two "cannot browse / no live information"
+    sentences replaced when web search is switched on. The rest is unchanged
+    and still load-bearing: turning on search must not quietly also grant the
+    robot wheels. Swapped rather than appended, because leaving the original in
+    and adding a contradiction is how you get a robot that refuses to look
+    something up and then looks it up in the same breath.
+
+    The web variant carries TODAY'S DATE, and that is the fix for a failure
+    seen live: asked for today's headlines, the model -- which is told nothing
+    about the date -- searched without one, got undated archive pages back, and
+    could only say "nothing reliably current". A model that knows the date
+    anchors the query and can judge freshness. The date deliberately does NOT
+    go in the offline prompt: offline answers are cached by qa_cache with no
+    date in the key, so a date there would freeze into answers replayed on the
+    wrong day. Web replies are never cached, which is what makes this safe.
+
+    A function rather than a constant so the date is fresh per request -- this
+    process runs for days. The Anthropic cache-split (base_prompts below) sees
+    the same day's text on both sides of a request except across midnight
+    itself, where the mismatch merely skips the prompt cache for one turn.
+    """
+    if not web:
+        return _CAPABILITIES
+    import time as _time
+
+    today = _time.strftime("%A %d %B %Y")
+    return _CAPABILITIES.replace(
+        "browse the internet, control other devices",
+        "control other devices",
+    ).replace(
+        "You have no live information: no weather, news, or current date and time. ",
+        f"Today is {today}. "
+        "You can search the web when a question genuinely needs current information "
+        "-- today's weather, recent news, a fact that changes. Search only when the "
+        "question needs it, answer from what you know otherwise, and keep the answer "
+        "to the same one or two spoken sentences. When you search for news or "
+        "anything current, put today's date in the query and trust only results "
+        "dated today or yesterday -- an undated page is an old page. Never read "
+        "out URLs or describe the search itself; just say what you found. ",
+    )
 
 # How to speak, as opposed to what to say. Every rule here was earned by
 # hearing the robot break it out loud in front of people.
@@ -69,7 +93,14 @@ _HUB_CONTEXT = (
     "the robot -- but 'your research projects' or 'your partners' means the "
     "Hub's, because you are part of it. Answer for the Hub in those cases "
     "rather than saying you have no projects.\n\n"
-    f"{hub.GROUNDING}"
+    f"{hub.GROUNDING}\n\n"
+    # NAMES ONLY, standing on every turn. The detail is retrieved per turn by
+    # brain/courses.py: thirteen programmes in full would be several times the
+    # block above, for something most turns never touch. But the LIST has to be
+    # standing, because the failure it prevents happens before anybody asks a
+    # real question -- told nothing, a model asked whether Trinity does a risk
+    # management masters will happily say it does not.
+    f"{courses.STANDING}"
 )
 
 def _base_prompt(web: bool = False) -> str:
@@ -78,7 +109,7 @@ def _base_prompt(web: bool = False) -> str:
     "You are Reachy Mini, a small expressive robot having a spoken conversation. "
     "Keep replies to one or two short sentences. "
     f"{_DELIVERY} "
-    f"{_CAPABILITIES_WEB if web else _CAPABILITIES} "
+    f"{_capabilities_text(web)} "
     "Never claim to have done something physical unless it is one of the "
     "abilities listed above. "
     f"\n\n{_HUB_CONTEXT}\n\n"
@@ -111,6 +142,25 @@ _STORYTELLER_SYSTEM_PROMPT = (
     f"End with exactly one emotion tag from this list: {_TAG_LIST} -- formatted like "
     "'[emotion: happy]', as the very last thing you say."
 )
+
+
+def base_prompts() -> tuple[str, ...]:
+    """Every standing prompt a system message can begin with, longest first.
+
+    For llm_backends: the Anthropic API can cache a prompt prefix across
+    requests, but only if it is told where the stable part ends -- and
+    build_messages (below) hands it one concatenated string. These are the
+    exact prefixes it concatenates onto, so the backend can split the static
+    part back out and mark it cacheable. Longest first so the web variant is
+    tried before the plain one it extends.
+    """
+    return tuple(
+        sorted(
+            {_base_prompt(True), _base_prompt(False), _STORYTELLER_SYSTEM_PROMPT},
+            key=len,
+            reverse=True,
+        )
+    )
 
 
 def build_messages(

@@ -175,6 +175,9 @@ class StoredFeature(Demo):
         if block.kind == features.WAIT:
             return self._wait(ctx, block)
 
+        if block.kind == features.PLAY:
+            return self._play(ctx, block)
+
         # Unknown kind. parse_blocks drops these, so reaching here means a
         # build that knows fewer kinds than the one that wrote the row.
         store["cursor"] = store.get("cursor", 0) + 1
@@ -206,6 +209,48 @@ class StoredFeature(Demo):
             # next slice now. It is always followed by a slice that speaks.
             return IdleResult(listen_for=0.0)
         store["cursor"] = store.get("cursor", 0) + 1
+        return IdleResult(listen_for=_BETWEEN_LINES_S)
+
+    def _play(self, ctx: DemoContext, block: features.Block) -> IdleResult:
+        """Hand the visit to another demo, and stop.
+
+        This is what turns a feature into a running order: welcome the group,
+        then play the tour, then play the quiz. Staff currently improvise that
+        sequence live and lose their place; scripting it is the same act as
+        scripting one welcome.
+
+        The cursor advances BEFORE the switch, so coming back to this feature
+        later resumes after the step that already ran rather than looping
+        through the same handover forever -- a two-line mistake that would look
+        like the robot being stuck in the tour.
+
+        Deliberately a HANDOVER, not a nested run: the other demo takes the
+        floor and keeps it. A feature that resumed afterwards would have to sit
+        watching for the other demo to finish, and demos here have no notion of
+        finishing -- the storyteller and the conversation both run until
+        somebody switches away.
+        """
+        store = ctx.store
+        store["cursor"] = store.get("cursor", 0) + 1
+        target = (block.demo or "").strip()
+        # Checked now rather than at parse time: the registry is still being
+        # built when features are first read, and a demo can be disabled or
+        # deleted between saving this step and running it.
+        from demokit.registry import REGISTRY
+
+        demo = REGISTRY.get(target)
+        if demo is None:
+            ctx.status(f"{self.label}: '{target}' is not installed; skipping that step.")
+            return IdleResult(listen_for=_BETWEEN_LINES_S)
+        available, reason = REGISTRY.is_available(target, ctx.state.capabilities)
+        if not available:
+            ctx.status(f"{self.label}: {target} is {reason}; skipping that step.")
+            return IdleResult(listen_for=_BETWEEN_LINES_S)
+        ctx.status(f"{self.label}: handing over to {demo.label}.")
+        # set_mode rather than anything more direct: it is the one path that
+        # notifies the runner, clears the last visitor's QR links, and leaves
+        # the dashboard showing what is actually running.
+        ctx.state.set_mode(target)
         return IdleResult(listen_for=_BETWEEN_LINES_S)
 
     def _wait(self, ctx: DemoContext, block: features.Block) -> IdleResult:

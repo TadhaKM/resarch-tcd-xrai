@@ -45,8 +45,8 @@ logger = logging.getLogger(__name__)
 #: Step kinds a feature may use. Anything else is dropped on read, so a build
 #: that knows a fifth kind writes rows an older build merely skips a step in,
 #: rather than failing to load the feature at all.
-SAY, ASK, DANCE, WAIT = "SAY", "ASK", "DANCE", "WAIT"
-BLOCK_KINDS = (SAY, ASK, DANCE, WAIT)
+SAY, ASK, DANCE, WAIT, PLAY = "SAY", "ASK", "DANCE", "WAIT", "PLAY"
+BLOCK_KINDS = (SAY, ASK, DANCE, WAIT, PLAY)
 
 #: Ceilings. Every one is a guess informed by something already measured:
 #: hub.py records that a 39-second welcome was "long enough for a group to start
@@ -86,6 +86,10 @@ _FUNCTION_WORDS = frozenset({
     "your",
 })
 
+#: What a demo id can look like, for a PLAY step. Module stems and the slugs
+#: features.slug_for produces.
+_DEMO_ID_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,64}$")
+
 #: A placeholder the drafting model was told to leave when it does not know a
 #: fact. Rejected at save time, which is what makes that instruction enforce
 #: itself: ctx.say strips nothing, so "[name of the visiting professor]" would
@@ -112,6 +116,9 @@ class Block:
     emotion: str = "neutral"
     ai_reply: bool = False
     seconds: int = DEFAULT_WAIT_SECONDS
+    #: For PLAY: the demo to hand the visit over to. A demo id, not a label --
+    #: labels are staff-editable and would break the step when renamed.
+    demo: str = ""
 
     def as_dict(self) -> dict:
         if self.kind == SAY:
@@ -121,6 +128,8 @@ class Block:
                     "ai_reply": bool(self.ai_reply)}
         if self.kind == WAIT:
             return {"kind": WAIT, "seconds": int(self.seconds)}
+        if self.kind == PLAY:
+            return {"kind": PLAY, "demo": self.demo}
         return {"kind": DANCE}
 
 
@@ -174,6 +183,17 @@ def _coerce_block(raw: Any) -> Optional[Block]:
 
     if kind == DANCE:
         return Block(kind=DANCE)
+
+    if kind == PLAY:
+        # The demo is NOT resolved against the registry here. _coerce_block is
+        # called on every read, including at startup while demos are still
+        # being discovered, and a step that vanished because the registry was
+        # half-built would be a feature that silently lost a stage. The
+        # interpreter checks at the moment it runs, when the answer is knowable.
+        demo = raw.get("demo")
+        if not isinstance(demo, str) or not _DEMO_ID_RE.match(demo):
+            return None
+        return Block(kind=PLAY, demo=demo)
 
     if kind == WAIT:
         try:
@@ -392,6 +412,22 @@ def validate(feature: Feature, *, existing: Optional[list[Feature]] = None) -> l
                 problems.append(f"{where} must wait between {low} and {high} seconds.")
             if index == len(blocks):
                 problems.append("The last step cannot be a wait -- nothing would follow it.")
+        if block.kind == PLAY:
+            if not block.demo:
+                problems.append(f"{where} does not say which demo to play.")
+            elif block.demo == feature.id:
+                # A feature playing itself restarts from step one, forever, in
+                # front of a group. Caught here because it is easy to build by
+                # accident and impossible to stop once it is running.
+                problems.append(f"{where} plays this same feature, which would loop forever.")
+            elif index < len(blocks):
+                # Nothing after a handover ever runs: the other demo takes the
+                # floor and keeps it (see _stored._play). Better to say so than
+                # to let staff write a script whose second half is dead.
+                problems.append(
+                    f"{where} hands over to another demo, so it has to be the last step. "
+                    "Anything after it would never run."
+                )
         if (block.kind == DANCE and index > 1 and blocks[index - 2].kind == DANCE):
             # MotionController.dance drops a second dance while one is running,
             # so back-to-back would silently be a single dance.

@@ -27,10 +27,53 @@ runner's guard see them -- see the comment there.
 """
 
 import logging
+import time
 
 from brain import hub
 from demokit import Demo, DemoContext, IdleResult
 from demokit.base import DemoStopped, Interrupted, MAX_LISTEN_WINDOW_S
+
+#: Ways people ask the clock. Multi-word and question-shaped on purpose: a
+#: bare "time" is inside "sometimes" and "storytime", and "the date" is inside
+#: sentences about dates that are not questions about today.
+_TIME_ASKS = (
+    "what time is it", "whats the time", "what is the time", "have you got the time",
+    "do you know the time", "tell me the time", "what time it is",
+)
+_DATE_ASKS = (
+    "what day is it", "whats the date", "what is the date", "what date is it",
+    "whats todays date", "what is todays date", "what day is it today",
+)
+
+
+def _clock_answer(text: str) -> str:
+    """A spoken answer for a time/date question, or "" when it is not one.
+
+    Written for the ear: "16:01" synthesises as "sixteen oh one", so the hour
+    is spoken the way a person says it, with the part of day doing the am/pm
+    work.
+    """
+    from demokit.runner import _word_stream
+
+    words = _word_stream(text)
+    asked_time = any(f" {p} " in words for p in (_word_stream(p).strip() for p in _TIME_ASKS))
+    asked_date = any(f" {p} " in words for p in (_word_stream(p).strip() for p in _DATE_ASKS))
+    if not asked_time and not asked_date:
+        return ""
+    now = time.localtime()
+    if asked_time:
+        hour = now.tm_hour % 12 or 12
+        part = "in the morning" if now.tm_hour < 12 else (
+            "in the afternoon" if now.tm_hour < 18 else "in the evening")
+        minute = now.tm_min
+        if minute == 0:
+            clock = f"exactly {hour} o'clock {part}"
+        elif minute < 10:
+            clock = f"{hour} oh {minute} {part}"
+        else:
+            clock = f"{hour} {minute} {part}"
+        return f"It's {clock}."
+    return time.strftime("It's %A the %d of %B.").replace(" 0", " ")
 
 
 logger = logging.getLogger(__name__)
@@ -94,6 +137,15 @@ class Conversation(Demo):
 
     def on_utterance(self, ctx: DemoContext, text: str) -> bool:
         """Answer with the Hub's facts in front of the model, and never hand the turn back."""
+        # The clock, answered from the clock. The model deliberately does not
+        # know the time -- a clock in the prompt would churn every cache every
+        # minute -- so asked the time it said it had no live information, and
+        # the first visitor to hear that concluded the robot "does not work".
+        # The laptop knows what time it is; no model, no cache, no delay.
+        spoken_clock = _clock_answer(text)
+        if spoken_clock:
+            ctx.say(spoken_clock, "happy")
+            return True
         try:
             ctx.reply(text, person_id=ctx.person_id(), system=_HUB_BRIEFING)
         except (DemoStopped, Interrupted):

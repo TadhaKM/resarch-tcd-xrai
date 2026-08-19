@@ -127,6 +127,15 @@ def init_db() -> None:
             "ON people_embeddings(person_id)"
         )
 
+        # Migration: how a name is SAID, when the spelling misleads the voice.
+        # Added rather than rebuilt, so existing people keep their faces, notes
+        # and names -- an absent column simply reads as "say it as written",
+        # which is what every row already meant.
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(people)")}
+        if "say_as" not in columns:
+            logger.info("Adding say_as to people for name pronunciations.")
+            conn.execute("ALTER TABLE people ADD COLUMN say_as TEXT")
+
         # Migration. The table used to key on person_id, which allowed exactly
         # one face per person: whatever angle and light they happened to be in
         # when they gave their name, kept forever. Nothing deleted their name --
@@ -219,6 +228,50 @@ def get_person_name(person_id: int) -> Optional[str]:
         logger.exception("Failed to read person name")
         return None
     return row[0] if row and row[0] else None
+
+
+def set_pronunciation(person_id: int, say_as: str) -> bool:
+    """Record how a name should be SAID, when the spelling misleads the voice.
+
+    Separate from the name because they are different facts. Trinity is full of
+    Irish names whose spelling and sound part company -- Tadhg, Saoirse,
+    Caoimhe, Sadhbh -- and piper reads the letters. Getting the spelling right
+    and the sound wrong is its own failure, and the person it happens to is the
+    only one who can fix it, out loud, in the moment.
+
+    The stored name is never overwritten by this: the database keeps who they
+    are, and this keeps how to say it.
+    """
+    try:
+        with _write_lock, _connection() as conn:
+            conn.execute(
+                "UPDATE people SET say_as = ? WHERE id = ?",
+                ((say_as or "").strip()[:60], person_id),
+            )
+    except sqlite3.Error:
+        logger.exception("Failed to store a pronunciation for person %s", person_id)
+        return False
+    return True
+
+
+def get_spoken_name(person_id: int) -> Optional[str]:
+    """How to SAY this person's name: the pronunciation if one was given.
+
+    Everything that speaks a name should come through here; everything that
+    displays or matches one wants get_person_name. Falls back to the name, so
+    a caller never has to know whether a pronunciation exists.
+    """
+    try:
+        with _connection() as conn:
+            row = conn.execute(
+                "SELECT name, say_as FROM people WHERE id = ?", (person_id,)
+            ).fetchone()
+    except sqlite3.Error:
+        logger.exception("Failed to read person name")
+        return None
+    if not row:
+        return None
+    return (row[1] or "").strip() or (row[0] or "").strip() or None
 
 
 def list_people() -> list[dict[str, object]]:
