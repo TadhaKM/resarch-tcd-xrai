@@ -1778,24 +1778,32 @@ check("stats unavailable still returns a usable day", _st.day()["counts"], {})
 check("and swallows writes", _st.bump("turns"), None)
 _st._available = True
 
-# --- the study: consent is a gate, not a label ---
+# --- the study: arming IS the consent, and withdrawal still deletes ---
+# The robot no longer reads a notice and waits for a spoken yes. The Hub's
+# call: consent is taken on paper before the session, as HRI studies normally
+# take it, and the operator arming this has done that. What replaces the
+# spoken record is `operator` -- see brain/study.start.
 _sy.stop()
-_sy.start("friendly")
-_sy.record("said before consent", "reply", 1.0)
-check("nothing is recorded before consent", _sy.summary()["turns"], 0)
-_sy.consent(True)
-_sy.record("said after consent", "reply", 1.0)
-check("and recorded after it", _sy.summary()["turns"], 1)
+_sy.start("friendly", operator="Test Operator")
+check("arming a session consents immediately", _sy.status()["consented"], True)
+check("and records who armed it", _sy.status()["operator"], "Test Operator")
+_sy.record("said right away", "reply", 1.0, persona="friendly")
+check("so a turn is recorded with no spoken exchange first",
+      _sy.summary()["turns"], 1)
 _session = _sy.status()["session"]
 check("a session id is random, not a person id", len(_session) >= 16, True)
+# Withdrawal is unchanged and still the thing that matters most: it deletes
+# rather than flags, and it ends the session so a later turn cannot quietly
+# start recording the same person again.
 _sy.consent(False)
 _sy.record("said after withdrawal", "reply", 1.0)
-check("declining stops the session outright", _sy.running(), False)
+check("withdrawing stops the session outright", _sy.running(), False)
 check("and nothing more is recorded", _sy.summary()["turns"], 1)
 check("withdrawing deletes rather than flags", _sy.withdraw(_session), 1)
 check("leaving nothing behind", _sy.summary()["turns"], 0)
 _sy.stop()
 check("research mode is OFF unless deliberately started", _sy.running(), False)
+check("and stopping clears the operator too", _sy.status()["operator"], "")
 # The table must not be able to hold a person. Checked structurally, because
 # this is the property an ethics reviewer would ask about.
 with _db._connection() as _conn:
@@ -2105,57 +2113,15 @@ finally:
     _capmod.REGISTRY, _capregmod.REGISTRY = _held
 
 print()
-print("[35] a consent answer is read in the language people consent in")
-# Found live, and it made the whole research feature unusable: the consent
-# question was answered "I consent to be recorded" and the robot replied "I'll
-# take that as a no". The general yes/no reader was written for "want me to
-# remember you?" and holds no word from a consent form -- not "consent", not
-# "agree", not "take part" -- so the clearest consent there is scored unclear.
-from demos.study import _explicit_consent as _ec  # noqa: E402
-from demos.vision import _read_answer as _ra  # noqa: E402
-
-for _text, _want in (
-    ("I consent to be recorded.", "yes"),
-    ("I consent", "yes"),
-    ("I agree", "yes"),
-    ("I am happy to take part", "yes"),
-    ("count me in", "yes"),
-    ("yeah go on then", "yes"),          # the old reader still works
-    ("yes", "yes"),
-    ("no thanks", "no"),
-    ("I would rather not take part", "no"),
-    ("Everything", "unclear"),           # the live mis-transcription
-):
-    check(f"{_text!r} reads as {_want}", _ec(_text) or _ra(_text), _want)
-
-# THE ONE THIS FILE MUST NEVER GET WRONG. "I do not consent to be recorded"
-# contains "consent to", so a yes-list checked before the no-list reads an
-# explicit refusal as agreement and starts recording somebody who just said no.
-for _refusal in ("I do not consent to be recorded", "I do not consent",
-                 "I don't consent to that", "please do not record me"):
-    check(f"{_refusal!r} is a refusal", _ec(_refusal) or _ra(_refusal), "no")
-
-# Explicit consent can be honoured after the asking stops, so a misheard
-# answer is recoverable -- but ONLY the consent-form wording. A bare "yes"
-# later in a conversation is answering something else and must never start a
-# recording, so _explicit_consent has to stay silent on it.
-check("a bare 'yes' is not explicit consent", _ec("yes"), "")
-check("a bare 'yeah sure' is not explicit consent", _ec("yeah sure"), "")
-check("but 'I consent' is", _ec("I consent"), "yes")
-
-print()
-print("[36] a misheard consent answer is asked again; silence still ends it")
-# Driven through the real demo rather than asserted on the reader, because the
-# live failure was in the FLOW, not the vocabulary: one unreadable answer ended
-# the exchange, and the participant's actual consent arrived at a robot that
-# had stopped asking. The store is stubbed so no test can reach the real
-# research table.
+print("[35] arming records straight away, and an objection still stops it")
 import demos.study as _sd  # noqa: E402
 
 
 class _FakeStudyStore:
+    """Stands in for brain.study so no test reaches the real research table."""
+
     def __init__(self):
-        self.consents, self.records, self.on = [], [], True
+        self.records, self.consents, self.withdrew, self.on = [], [], 0, True
 
     def running(self):
         return self.on
@@ -2165,59 +2131,64 @@ class _FakeStudyStore:
 
     def consent(self, ok):
         self.consents.append(bool(ok))
+        if not ok:
+            self.on = False
 
-    def record(self, said, replied, latency):
+    def record(self, said, replied, latency, **kw):
         self.records.append((said, replied))
 
     def withdraw(self):
-        return 0
+        self.withdrew += 1
+        return 3
 
 
-def _run_consent(transcripts, slices=7):
-    """Drive Study from on_enter through the consent decision."""
+def _run_study(transcripts, slices=4):
     fake = _FakeStudyStore()
     held, _sd.store = _sd.store, fake
     try:
         demo = _sd.Study()
-        runner, st, aud, _ = build([Chatty(), demo], transcripts=list(transcripts))
+        runner, st, aud, _ = build([Chatty(), demo], wake_at=tuple(range(1, slices + 1)),
+                                   transcripts=list(transcripts))
         st.set_capability("study", True)
         st.set_mode(demo.id)
         for _ in range(slices):
             runner.cycle()
-        return fake, aud.said, demo, runner, st
+        return fake, aud.said
     finally:
         _sd.store = held
 
 
-_f, _said, _d, _rn, _stt = _run_consent(["Everything", "still nonsense"])
-# PROVE THE FLOW RAN before trusting anything below. Two of the checks here are
-# "this was NOT said", which pass just as happily when the demo never started
-# -- and a hook that raises is absorbed by the runner's guard, so a broken demo
-# looks like a quiet one. This file has already shipped one whole test section
-# that passed while exercising nothing; these three lines are the price of not
-# doing it twice.
-check("the consent notice was actually read out",
-      any(_sd._SCRIPT[0] in s for s in _said), True)
-check("and the question was actually asked",
-      any(_sd._ASK in s for s in _said), True)
-check("a misheard answer is not booked as a refusal on the spot",
-      _f.consents, [False])
-check("it asked a second time before deciding",
-      any(_sd._REASK in s for s in _said), True)
+_f, _said = _run_study(["what is xr"])
+# No consent notice, no "would you like to take part", no waiting. The three
+# script lines used to cost ~50 seconds before the first real exchange.
+check("nothing is read out before recording starts",
+      any("would you like to take part" in s.lower() for s in _said), False)
+check("and the first thing said is not a consent notice",
+      any("hub is researching" in s.lower() for s in _said), False)
+check("the very first utterance is recorded", len(_f.records), 1)
 
-_f2, _said2, _, _, _ = _run_consent([])          # nobody says anything
-check("silence: the question was still asked",
-      any(_sd._ASK in s for s in _said2), True)
-check("silence is still a refusal", _f2.consents, [False])
-check("and silence is NOT re-asked -- that would be pestering",
-      any(_sd._REASK in s for s in _said2), False)
+# The half that must NOT have been thrown away with the script. Since the robot
+# no longer asks, an objection raised mid-session is the only way somebody in
+# the room can stop this -- and it has to delete, not mute.
+for _objection in ("stop recording", "delete my data", "I changed my mind",
+                   "I do not consent to being recorded", "please dont record me"):
+    _f2, _ = _run_study([_objection])
+    check(f"{_objection!r} withdraws and deletes", (_f2.withdrew, _f2.consents), (1, [False]))
+    check("  and the objection itself is never recorded", _f2.records, [])
 
-_f3, _said3, _, _, _ = _run_consent(["I consent to be recorded."])
-check("consent: the question was still asked",
-      any(_sd._ASK in s for s in _said3), True)
-check("consent-form wording is accepted", _f3.consents, [True])
-check("and it did not need a second ask",
-      any(_sd._REASK in s for s in _said3), False)
+# Export. Written through the csv module because a turn can contain a quote and
+# a comma -- "I said \"no\", then left" -- and hand-rolled CSV corrupts that row
+# silently, which is damage found weeks later in analysis.
+import csv as _csv, io as _io  # noqa: E402
+
+_buf = _io.StringIO()
+_w = _csv.writer(_buf, lineterminator="\n")
+_w.writerow(["said", "replied"])
+_w.writerow(['I said "no", then left', "Understood, no bother"])
+_parsed = list(_csv.reader(_io.StringIO(_buf.getvalue())))
+check("a quote and a comma survive the CSV round trip",
+      _parsed[1][0], 'I said "no", then left')
+check("without splitting the row", len(_parsed[1]), 2)
 
 print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")

@@ -130,15 +130,59 @@ people actually asked, per day. It is counted as it happens and it is
 
 ### Research mode
 
-For Professor Berry's HRI work. Switch it on and the **Research session** demo
-appears; run that and the robot explains what is being recorded and asks the
-participant, out loud, before anything is kept. No names, no faces, no person
-ids — just the condition, what was said, and the timing. Saying no ends the
-session; *"delete my data"* deletes it outright at any point.
+For Professor Berry's HRI work. Put your name in **Armed by**, tick **Recording
+armed**, then run the **Research session** demo. No names, no faces, no person
+ids are stored — just the condition, the persona, what was said, and the
+timing.
+
+**Switching it on is the consent.** The robot does not read a notice or ask
+anybody out loud; it starts recording as soon as the session runs. So take
+consent from your participants *before* you switch it on, the way an approved
+protocol normally does it — on paper, before they sit down.
+
+Because the robot no longer collects consent itself, the **Armed by** name is
+the only record of somebody accountable for the data, so it is required and it
+is written against every turn. It is an audit note, not a login: the dashboard
+has no accounts and anybody on the network can type any name.
+
+Anybody in the room can still stop it by saying so — *"stop recording"*,
+*"delete my data"*, *"I changed my mind"*, or *"I do not consent"*. That
+**deletes the session outright**, it does not merely mute it, and the sentence
+that stopped it is not recorded either.
 
 **It is not ethics approval.** Trinity requires approval before collecting data
 from participants. This only makes the robot able to do it properly once you
-have that. It is also off after every restart, on purpose.
+have that. It is also off after every restart, on purpose — and since the robot
+restarts whenever the wifi drops, check it is still armed if you have been
+running a long session.
+
+#### Getting the recordings out
+
+The **Recordings** list at the bottom of the Research mode panel shows every
+session: when it started, the condition, who armed it, how many turns, and the
+average time to first word. The one being recorded into right now is marked
+*live*.
+
+- **View** shows the transcript in the page, so you can check a session is what
+  you think it is before exporting it.
+- **CSV** downloads it for analysis — one row per turn, with the persona, both
+  timings and which model answered.
+- **Text** downloads the same thing laid out to read.
+- **Delete** removes that session outright. Use this if a participant asks
+  afterwards; it is the same deletion the spoken withdrawal does.
+
+Downloads are named `reachy-session-<id>.csv`, so a folder of them stays
+identifiable.
+
+**Two timings, and they mean different things.** `first_word_s` is how long the
+participant waited before hearing anything — that is responsiveness.
+`latency_s` is the whole turn including the robot speaking the answer, so it
+grows with how long the reply was. For a study of responsiveness, use the
+first; the second will make a talkative robot look like a slow one.
+
+`backend` says whether Anthropic or the local model answered. They differ
+enough in speed that a wifi drop mid-session changes your condition without
+anybody choosing to, which is why it is recorded.
 
 ### Colour themes
 

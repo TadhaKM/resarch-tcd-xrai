@@ -1,10 +1,20 @@
-"""Runs an HRI study session: asks for consent, then records the exchanges.
+"""Runs an HRI study session: records the exchanges, and can be stopped aloud.
 
-The consent conversation is a demo rather than a dashboard checkbox because
-consent is something a participant gives, not something an operator ticks on
-their behalf. The robot says what is being recorded, waits for a yes, and
-records nothing until it has one -- and a no ends the session rather than
-merely muting it.
+ARMING IS THE CONSENT. Earlier versions read a participant information notice
+out loud and waited for a spoken yes. That is gone at the Hub's request: the
+people who run this robot are Trinity researchers who take consent the way HRI
+studies normally take it -- on paper, before the session -- and the spoken
+version cost about fifty seconds of a visitor's attention before the first real
+exchange, on top of misreading answers like "I consent to be recorded".
+
+What that costs is that the DATABASE no longer evidences consent, so
+brain/study.py records who armed the session against every row instead. That
+is the trail an ethics reviewer asks for.
+
+What it does NOT cost is the ability to stop. The refusal vocabulary from the
+old consent reader was kept and folded into _WITHDRAW, because with the robot
+no longer asking, an objection raised mid-session is the only way somebody in
+the room can end this -- and it still deletes rather than mutes.
 
 NOT A SUBSTITUTE FOR ETHICS APPROVAL. brain/study.py's docstring says this at
 length and it is repeated here because this is the file somebody opens when
@@ -23,85 +33,27 @@ from brain import study as store
 from demokit import Demo, DemoContext, IdleResult
 from demokit.base import MAX_LISTEN_WINDOW_S
 
-_CONSENT = "consent"
 _RUNNING = "running"
 _DONE = "done"
 
-_ANSWER_WAIT_S = 6.0
 _BETWEEN_LINES_S = 1.0
 
-#: Said before anything is recorded. Every clause is here because a
-#: participant information sheet would require it: what is collected, what is
-#: not, what it is for, and that they can stop.
-_SCRIPT = (
-    "Before we start -- the Hub is researching how people talk with robots.",
-    "If you agree, I'll keep a written record of what we say to each other, "
-    "with no name and no photo attached to it.",
-    "You can ask me to delete it at any point, and you can say no now and we "
-    "will just have a normal chat.",
-)
-
-_ASK = "Would you like to take part?"
-
-#: Asked when the first answer arrived but could not be read. Short, because
-#: the participant has already heard the whole notice and is being asked to
-#: repeat one word.
-_REASK = "Sorry -- I did not catch that. Is that a yes or a no?"
-
-#: Consent language, read BEFORE the general yes/no reader from the enrolment
-#: exchange. That reader's vocabulary was built for "want me to remember you?"
-#: and contains no word anybody uses on a consent form: live, a participant
-#: said "I consent to be recorded" -- the most explicit consent there is -- and
-#: was told "I'll take that as a no", because not one of "i/consent/to/be/
-#: recorded" is in it. Somebody answering a consent question answers it in
-#: consent language, so that language has to be read here.
-_CONSENT_YES = (
-    "i consent", "consent to", "i agree", "happy to take part", "happy to",
-    "id like to take part", "i want to take part", "take part", "participate",
-    "count me in", "you can record", "you may record", "feel free to record",
-    "thats fine", "that is fine", "no objection", "i accept", "im in",
-)
-
-#: Refusals in the same register, and they are checked FIRST and always. "I do
-#: not consent to be recorded" contains "consent to", so any other order reads
-#: the clearest possible refusal as agreement -- which is the one mistake this
-#: file must never make.
-_CONSENT_NO = (
-    "do not consent", "dont consent", "not consent", "i refuse", "opt out",
-    "do not record", "dont record", "no recording", "rather not take part",
-    "do not want to take part", "dont want to take part",
-)
-
-
-def _phrase_in(phrase: str, words: str) -> bool:
-    from demokit.runner import _word_stream
-
-    return f" {_word_stream(phrase).strip()} " in words
-
-
-def _explicit_consent(text: str) -> str:
-    """"yes"/"no" for consent-form language, "" for anything else.
-
-    Separate from the general reader so a BARE "yes" cannot reach the paths
-    that accept consent outside the question -- a stray "yeah" in a later
-    conversation must never start a recording.
-    """
-    from demokit.runner import _word_stream
-    from demos.vision import _NO, _YES
-
-    words = _word_stream(text)
-    if any(_phrase_in(p, words) for p in _CONSENT_NO):
-        return _NO
-    if any(_phrase_in(p, words) for p in _CONSENT_YES):
-        return _YES
-    return ""
-
-#: Ways somebody withdraws mid-session. Checked on every utterance, because a
+#: Ways somebody stops the recording, checked on EVERY utterance -- a
 #: withdrawal that only works when the robot happens to ask is not a
-#: withdrawal.
+#: withdrawal. It deletes; it does not mute.
+#:
+#: The second group are refusals of consent rather than withdrawals of it.
+#: They are here because the robot no longer asks for consent out loud, so
+#: this is the only place an objection can land: somebody who says "I do not
+#: consent to being recorded" mid-session has not been asked a question, they
+#: have raised one, and the answer has to be the same either way. Keeping them
+#: was the point of not deleting the consent vocabulary along with the script.
 _WITHDRAW = (
     "delete my data", "delete that", "withdraw", "take me out of the study",
     "forget what i said", "stop recording", "i changed my mind",
+    "do not consent", "dont consent", "don't consent", "i refuse", "opt out",
+    "do not record", "dont record", "don't record", "no recording",
+    "do not want to be recorded", "dont want to be recorded",
 )
 
 
@@ -123,68 +75,30 @@ class Study(Demo):
             ctx.say("Research mode is not switched on, so there is nothing to record.",
                     "neutral")
             return
-        ctx.store.update(stage=_CONSENT, line=0)
-        ctx.status(f"Study session {store.status()['session']}: awaiting consent.")
+        # ARMING IS THE CONSENT. The robot no longer reads a consent notice and
+        # waits for a spoken yes; brain/study.start() marks the session
+        # consented the moment an operator switches research mode on.
+        #
+        # The Hub's decision, and a normal one: in most HRI studies consent is
+        # taken on paper before the session and the robot never asks. The
+        # spoken version cost about fifty seconds of a visitor's attention
+        # before the first real exchange, and the operator switching it on is a
+        # Trinity researcher who has already done the ethics work.
+        #
+        # What is lost is that the DATABASE no longer evidences consent -- so
+        # brain/study.py records who armed the session instead. That is the
+        # trail an ethics reviewer would ask for, and it is why the operator
+        # field exists.
+        ctx.store.update(stage=_RUNNING)
+        ctx.status(f"Study session {store.status()['session']}: recording.")
 
     def on_idle(self, ctx: DemoContext) -> IdleResult:
         store_ = ctx.store
         stage = store_.get("stage")
 
-        if stage == _CONSENT:
-            index = store_.get("line", 0)
-            if index < len(_SCRIPT):
-                # One sentence per slice, as everything scripted here is: the
-                # robot must stay switchable while it reads a consent notice.
-                ctx.say(_SCRIPT[index], "neutral")
-                store_["line"] = index + 1
-                return IdleResult(listen_for=_BETWEEN_LINES_S)
-            return self._ask_consent(ctx)
-
         if stage == _RUNNING:
             return IdleResult(listen_for=MAX_LISTEN_WINDOW_S)
 
-        return IdleResult(listen_for=MAX_LISTEN_WINDOW_S)
-
-    def _ask_consent(self, ctx: DemoContext) -> IdleResult:
-        reasked = bool(ctx.store.get("reasked"))
-        ctx.state.hold_open_mic(True)
-        answer = ctx.ask(_REASK if reasked else _ASK, "curious",
-                         wait_for_speech_s=_ANSWER_WAIT_S)
-        ctx.state.hold_open_mic(False)
-        # Consent-form language first, then the three-way reader from the
-        # enrolment exchange -- which already knows "why not" and "go on then"
-        # are yes, and that silence is not consent.
-        from demos.vision import _NO, _YES, _read_answer
-
-        verdict = _explicit_consent(answer) or _read_answer(answer)
-        if verdict is _YES:
-            store.consent(True)
-            ctx.store["stage"] = _RUNNING
-            ctx.status("Consent given; recording this session.")
-            ctx.say("Thank you. Ask me anything.", "happy")
-            return IdleResult(listen_for=MAX_LISTEN_WINDOW_S)
-        if verdict is _NO:
-            store.consent(False)
-            ctx.store["stage"] = _DONE
-            ctx.say("No bother at all. Nothing is being recorded -- ask me anything.",
-                    "happy")
-            return IdleResult(listen_for=MAX_LISTEN_WINDOW_S)
-        # Somebody SPOKE and was misheard -- ask once more before deciding for
-        # them. Live, a participant's answer came back from the recogniser as
-        # the single word "Everything" and was booked as a refusal on the spot;
-        # they then said "I consent to be recorded" to a robot that had already
-        # stopped asking. Silence still ends it, unchanged and deliberately: a
-        # participant who says nothing to a consent question has answered it,
-        # and re-asking silence is pestering somebody who is walking away.
-        if answer and answer.strip() and not reasked:
-            ctx.store["reasked"] = True
-            ctx.status("Answer unclear; asking once more.")
-            return IdleResult(listen_for=_BETWEEN_LINES_S)
-
-        store.consent(False)
-        ctx.store["stage"] = _DONE
-        ctx.status("No clear consent; nothing recorded.")
-        ctx.say("I'll take that as a no. Nothing recorded -- ask away.", "neutral")
         return IdleResult(listen_for=MAX_LISTEN_WINDOW_S)
 
     def on_utterance(self, ctx: DemoContext, text: str) -> bool:
@@ -198,24 +112,7 @@ class Study(Demo):
                     "neutral")
             return True
 
-        stage = ctx.store.get("stage")
-        # Consent offered AFTER the asking stopped. Live, the robot misheard an
-        # answer, said "I'll take that as a no", and thirty seconds later the
-        # participant said "I consent to be recorded" -- which fell through to
-        # the conversation demo and got "Thanks for letting me know!". They had
-        # heard the notice in full and could not have been clearer, so this
-        # honours it. Only the explicit consent-form wording counts: a bare
-        # "yeah" later in a chat is answering something else, and must never
-        # start a recording.
-        if stage == _DONE and store.running() and _explicit_consent(text) == "yes":
-            store.consent(True)
-            ctx.store["stage"] = _RUNNING
-            ctx.status("Consent given after the question; recording this session.")
-            ctx.say("Thank you -- I have you down as taking part. Ask me anything.",
-                    "happy")
-            return True
-
-        if stage != _RUNNING:
+        if ctx.store.get("stage") != _RUNNING:
             return False
 
         started = time.monotonic()

@@ -10,6 +10,8 @@ mode; there's no authentication, which is fine for a home network and worth
 knowing before putting it on a shared one.
 """
 
+import csv
+import io
 import logging
 import threading
 from pathlib import Path
@@ -18,7 +20,7 @@ import time
 
 import requests
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 
@@ -616,6 +618,10 @@ def qr(url: str = "") -> JSONResponse:
 class StudyRequest(BaseModel):
     running: bool = False
     condition: str = ""
+    #: Who is arming this. Since switching research mode on IS the consent
+    #: now, this is the only record of somebody accountable for the data --
+    #: an audit note, not authentication; this dashboard has no accounts.
+    operator: str = ""
 
 
 @app.get("/api/study")
@@ -643,13 +649,15 @@ def set_study(req: StudyRequest) -> JSONResponse:
                                    "could be recorded."},
             status_code=503,
         )
-    state = study.start(req.condition) if req.running else study.stop()
+    state = (study.start(req.condition, operator=req.operator)
+             if req.running else study.stop())
     # ONE place capabilities change, and everything reads them back from the
     # state -- including DemoRunner, which used to hold its own frozen copy and
     # refuse the demo the dashboard was showing as available.
     STATE.set_capability("study", bool(req.running))
-    STATE.add("status", "Research mode on -- awaiting participant consent"
-                       if req.running else "Research mode off")
+    STATE.add("status",
+              (f"Recording on{' -- armed by ' + req.operator.strip() if req.operator.strip() else ''}"
+               if req.running else "Recording off"))
     # Switching OFF while the research demo is showing: step the robot back to
     # conversation HERE, deliberately, rather than leaving the runner to notice
     # the capability has gone and evict it. Both end in the same place, but the
@@ -674,6 +682,84 @@ def withdraw_study(session: str = "") -> JSONResponse:
     gone = study.withdraw(session or None)
     STATE.add("status", f"Study data withdrawn ({gone} turn(s) deleted)")
     return JSONResponse({"ok": True, "deleted": gone})
+
+
+@app.get("/api/study/sessions")
+def study_sessions() -> JSONResponse:
+    """Every recorded session: counts and timings, no transcript text."""
+    from brain import study
+
+    return JSONResponse({"sessions": study.sessions()})
+
+
+@app.get("/api/study/transcript")
+def study_transcript(session: str = "") -> JSONResponse:
+    """One session's turns, for reading in the dashboard before downloading."""
+    from brain import study
+
+    if not session:
+        return JSONResponse({"ok": False, "error": "No session given."}, status_code=400)
+    return JSONResponse({"session": session, "turns": study.transcript(session)})
+
+
+@app.get("/api/study/download")
+def study_download(session: str = "", fmt: str = "csv") -> Response:
+    """Download one session as CSV (for analysis) or text (for reading).
+
+    Served as an attachment with the session id in the filename, because these
+    files get dragged into a folder next to a dozen others and a download
+    called "download" is one somebody has to open to identify.
+
+    CSV is written through the csv module rather than by joining commas: a
+    participant saying 'I said "no", then left' has a quote and a comma in one
+    turn, and hand-rolled CSV corrupts the row silently -- the kind of damage
+    found weeks later, in analysis, with the robot packed away.
+    """
+    from brain import study
+
+    if not session:
+        return JSONResponse({"ok": False, "error": "No session given."}, status_code=400)
+    turns = study.transcript(session)
+    if not turns:
+        return JSONResponse({"ok": False, "error": "No such session."}, status_code=404)
+
+    safe = "".join(c for c in session if c.isalnum() or c in "-_")[:32] or "session"
+    if fmt == "txt":
+        lines = [
+            f"Reachy Mini research session {session}",
+            f"Condition: {turns[0]['condition'] or '(none)'}",
+            f"Armed by:  {turns[0]['operator'] or '(unnamed)'}",
+            f"Turns:     {len(turns)}",
+            "",
+            "-" * 60,
+            "",
+        ]
+        for t in turns:
+            lines.append(f"[{t['at']}]  persona={t['persona'] or '-'}  "
+                         f"first word {t['first_word_s']:.2f}s  ({t['backend'] or '-'})")
+            lines.append(f"  Person: {t['said']}")
+            lines.append(f"  Reachy: {t['replied']}")
+            lines.append("")
+        body = "\n".join(lines)
+        media, ext = "text/plain; charset=utf-8", "txt"
+    else:
+        buf = io.StringIO()
+        writer = csv.writer(buf, lineterminator="\n")
+        writer.writerow(["at", "session", "condition", "persona", "operator",
+                         "said", "replied", "first_word_s", "latency_s", "backend"])
+        for t in turns:
+            writer.writerow([t["at"], session, t["condition"], t["persona"],
+                             t["operator"], t["said"], t["replied"],
+                             f"{t['first_word_s']:.3f}", f"{t['latency_s']:.3f}",
+                             t["backend"]])
+        body = buf.getvalue()
+        media, ext = "text/csv; charset=utf-8", "csv"
+
+    return Response(
+        content=body,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="reachy-session-{safe}.{ext}"'},
+    )
 
 
 @app.get("/api/stats")

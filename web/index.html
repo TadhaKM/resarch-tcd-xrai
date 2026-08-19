@@ -1170,6 +1170,35 @@
   .ctl-row { display: flex; gap: var(--s2); flex-wrap: wrap; align-items: center; }
   .ctl-row input { flex: 1 1 240px; min-width: 0; width: auto; }
 
+  /* recordings list. The table scrolls inside its own box rather than pushing
+     the page sideways -- this panel is read on a phone at the back of the room
+     as often as on the laptop. */
+  h3.sub { font-size: var(--fs-body); margin: var(--s5) 0 var(--s2); }
+  .rec-scroll, table.data { display: block; overflow-x: auto; max-width: 100%; }
+  table.data { border-collapse: collapse; width: 100%; font-size: var(--fs-small); }
+  table.data th, table.data td {
+    text-align: left; padding: var(--s2) var(--s3); white-space: nowrap;
+    border-bottom: 1px solid var(--line);
+  }
+  table.data th { color: var(--dim); font-weight: 600; }
+  /* Numbers in the monospace face so columns of times line up on the decimal --
+     the same rule the rest of this dashboard uses for data. */
+  table.data td.num, table.data th.num { font-family: var(--mono); text-align: right; }
+  table.data td:last-child { display: flex; gap: var(--s1); white-space: nowrap; }
+  table.data a.act {
+    display: inline-flex; align-items: center; text-decoration: none;
+    min-height: var(--tap); padding: 0 12px; font-size: var(--fs-small);
+  }
+
+  #rec-view { margin-top: var(--s4); }
+  .transcript { max-height: 320px; overflow-y: auto; margin-top: var(--s2); }
+  .transcript .turn { padding: var(--s3) 0; border-bottom: 1px solid var(--line); }
+  .transcript p { margin: var(--s1) 0 0; }
+  /* Same two voices as the live transcript above, so a recording reads the way
+     the thing being recorded looked. */
+  .transcript .said { color: var(--heard); }
+  .transcript .replied { color: var(--said); }
+
   button.act {
     font-size: var(--fs-body); font-weight: 600; cursor: pointer;
     color: var(--text); white-space: nowrap;
@@ -1599,10 +1628,10 @@
   <details class="panel" id="research">
     <summary><h2>Research mode</h2> <span class="dim" id="research-state"></span></summary>
     <p class="dim">
-      Records what is said for human-robot interaction research. Nothing is
-      recorded until the participant hears what is being kept and says yes, out
-      loud &mdash; switch this on, then run <strong>Research session</strong>.
-      No names or faces are stored with it.
+      Records what is said for human-robot interaction research, then run
+      <strong>Research session</strong>. No names or faces are stored with it.
+      <strong>Switching this on is the consent</strong> &mdash; the robot does
+      not ask out loud, so take consent from participants before you start.
     </p>
     <p class="dim"><strong>This is not ethics approval.</strong> Trinity requires
       approval before collecting data from participants. This only makes the
@@ -1612,9 +1641,28 @@
         <input type="checkbox" id="study-on"> Recording armed
       </label>
       <select id="study-condition" aria-label="Condition"></select>
+      <input type="text" id="study-operator" maxlength="60" placeholder="Armed by (your name)"
+             aria-label="Who is arming this session">
       <button id="study-withdraw" class="act sm danger" type="button">Delete this session's data</button>
     </div>
     <p class="dim" id="study-summary"></p>
+
+    <h3 class="sub">Recordings</h3>
+    <p class="dim" id="rec-empty">No sessions recorded yet.</p>
+    <table class="data" id="rec-table" hidden>
+      <thead>
+        <tr><th>Started</th><th>Condition</th><th>Armed by</th><th class="num">Turns</th>
+            <th class="num">First word</th><th>Persona</th><th></th></tr>
+      </thead>
+      <tbody id="rec-rows"></tbody>
+    </table>
+    <div id="rec-view" hidden>
+      <div class="ctl-row">
+        <strong id="rec-view-title"></strong>
+        <button class="act sm" type="button" id="rec-close">Close</button>
+      </div>
+      <div class="transcript" id="rec-turns"></div>
+    </div>
   </details>
 
   <div class="panel">
@@ -3551,9 +3599,13 @@
   })();
 
   // ── research mode ────────────────────────────────────────────────────────
-  // Arms recording; it does NOT consent on anybody's behalf. The consent
-  // conversation is the Research session demo, because consent is given by a
-  // participant rather than ticked by an operator.
+  // Arming this IS the consent: the robot no longer reads a notice and waits
+  // for a spoken yes. So the operator name is not decoration -- it is the only
+  // record of somebody accountable for the data, and it travels with every row.
+  //
+  // NOTHING from the server reaches innerHTML anywhere below. Every cell is
+  // built with createElement and textContent, because this page has no
+  // authentication and now renders text typed by staff and spoken by visitors.
   (() => {
     const box = $("study-on"), pill = $("p-study"), sel = $("study-condition");
     if (!box) return;
@@ -3564,8 +3616,7 @@
       try { d = await (await fetch("/api/study")).json(); } catch (e) { return; }
       if (document.activeElement !== box) box.checked = !!d.running;
       pill.classList.toggle("is-on", !!d.running);
-      $("research-state").textContent = d.running
-        ? (d.consented ? "recording" : "armed, awaiting consent") : "off";
+      $("research-state").textContent = d.running ? "recording" : "off";
       const s = d.summary || {};
       $("study-summary").textContent = s.turns
         ? `${s.turns} turn(s) across ${s.sessions} session(s).`
@@ -3577,13 +3628,119 @@
         for (const p of (window.__personas || [])) sel.appendChild(new Option(p.label, p.id));
         loaded = true;
       }
+      loadSessions();
     }
 
+    function shortTime(iso) {
+      if (!iso) return "";
+      const d = new Date(iso);
+      return isNaN(d) ? String(iso).slice(0, 16).replace("T", " ")
+                      : d.toLocaleString([], {month: "short", day: "numeric",
+                                              hour: "2-digit", minute: "2-digit"});
+    }
+
+    function linkButton(label, href) {
+      const a = document.createElement("a");
+      a.className = "act sm";
+      a.textContent = label;          // never innerHTML
+      a.href = href;                  // same-origin, built from an id we filter
+      a.setAttribute("download", "");
+      return a;
+    }
+
+    async function loadSessions() {
+      let rows = [];
+      try {
+        rows = (await (await fetch("/api/study/sessions")).json()).sessions || [];
+      } catch (e) { return; }
+      const table = $("rec-table"), body = $("rec-rows"), empty = $("rec-empty");
+      if (!table) return;
+      table.hidden = rows.length === 0;
+      empty.hidden = rows.length !== 0;
+      body.textContent = "";
+      for (const s of rows) {
+        const tr = document.createElement("tr");
+        const cells = [
+          shortTime(s.started) + (s.live ? "  ● live" : ""),
+          s.condition || "—",
+          s.operator || "—",
+          String(s.turns),
+          s.avg_first_word_s ? s.avg_first_word_s.toFixed(2) + "s" : "—",
+          (s.personas || []).join(", ") || "—",
+        ];
+        cells.forEach((text, i) => {
+          const td = document.createElement("td");
+          td.textContent = text;
+          if (i === 3 || i === 4) td.className = "num";
+          tr.appendChild(td);
+        });
+        const actions = document.createElement("td");
+        const view = document.createElement("button");
+        view.type = "button"; view.className = "act sm"; view.textContent = "View";
+        view.onclick = () => showTranscript(s.session);
+        actions.appendChild(view);
+        const id = encodeURIComponent(s.session);
+        actions.appendChild(linkButton("CSV", `/api/study/download?session=${id}&fmt=csv`));
+        actions.appendChild(linkButton("Text", `/api/study/download?session=${id}&fmt=txt`));
+        const del = document.createElement("button");
+        del.type = "button"; del.className = "act sm danger"; del.textContent = "Delete";
+        del.onclick = async () => {
+          if (!confirm("Delete this session outright? This cannot be undone.")) return;
+          try { await fetch(`/api/study?session=${id}`, {method: "DELETE"}); } catch (e) {}
+          refresh();
+        };
+        actions.appendChild(del);
+        tr.appendChild(actions);
+        body.appendChild(tr);
+      }
+    }
+
+    async function showTranscript(session) {
+      let turns = [];
+      try {
+        turns = (await (await fetch(
+          `/api/study/transcript?session=${encodeURIComponent(session)}`)).json()).turns || [];
+      } catch (e) { return; }
+      const view = $("rec-view"), holder = $("rec-turns");
+      $("rec-view-title").textContent = `Session ${session} — ${turns.length} turn(s)`;
+      holder.textContent = "";
+      for (const t of turns) {
+        const wrap = document.createElement("div");
+        wrap.className = "turn";
+        const meta = document.createElement("div");
+        meta.className = "dim mono";
+        meta.textContent = `${shortTime(t.at)} · ${t.persona || "default"} · `
+          + `first word ${Number(t.first_word_s).toFixed(2)}s · ${t.backend || "?"}`;
+        const said = document.createElement("p");
+        said.className = "said";
+        said.textContent = t.said;             // spoken by a visitor: never innerHTML
+        const replied = document.createElement("p");
+        replied.className = "replied";
+        replied.textContent = t.replied;
+        wrap.append(meta, said, replied);
+        holder.appendChild(wrap);
+      }
+      view.hidden = false;
+      view.scrollIntoView({behavior: "smooth", block: "nearest"});
+    }
+
+    $("rec-close").onclick = () => { $("rec-view").hidden = true; };
+
     box.onchange = async () => {
+      const who = ($("study-operator").value || "").trim();
+      // Arming is the consent, so refusing to do it anonymously is the one
+      // piece of accountability left. Cheap to type, and it is what makes an
+      // exported CSV traceable to a person weeks later.
+      if (box.checked && !who) {
+        alert("Put your name in “Armed by” first — switching recording on is the consent, "
+              + "so the data needs somebody's name against it.");
+        box.checked = false;
+        return;
+      }
       try {
         await fetch("/api/study", {
           method: "POST", headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({running: box.checked, condition: sel.value})
+          body: JSON.stringify({running: box.checked, condition: sel.value, operator: who})
         });
       } catch (e) { box.checked = !box.checked; }
       refresh();
