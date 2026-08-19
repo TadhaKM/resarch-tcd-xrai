@@ -116,7 +116,15 @@ class Study(Demo):
             return False
 
         started = time.monotonic()
-        spoken = ctx.reply(text, person_id=ctx.person_id())
+        # cache=False, like demos/_stored.py and for a stronger reason. The QA
+        # cache replays an answer already given to an earlier question, which
+        # in a study means one participant is served the answer generated for
+        # another -- and served it in about no time, so the turn is recorded
+        # with a first_word_s of 0.0 that measures a dictionary lookup rather
+        # than the robot. Cached turns are labelled backend="cache" so they can
+        # be filtered, but a study should not be producing rows that have to be
+        # filtered. Every participant gets the robot answering them.
+        spoken = ctx.reply(text, person_id=ctx.person_id(), cache=False)
         # Recorded only from here, where consent is known to have been given
         # and the exchange actually happened.
         #
