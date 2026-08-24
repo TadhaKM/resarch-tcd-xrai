@@ -36,6 +36,15 @@ logger = logging.getLogger(__name__)
 #: unrepairable in-process rather than that the operator asked to stop.
 _EXIT_LINK_LOST = 3
 
+#: Backoff between reconnect attempts, growing per attempt to this cap. The
+#: robot is usually back within a minute of a wifi blip; hammering the daemon
+#: in the meantime achieves nothing.
+_RECONNECT_BACKOFF_S = 3.0
+_RECONNECT_BACKOFF_MAX_S = 30.0
+
+#: How often the main loop checks whether the link came back.
+_LINK_DOWN_POLL_S = 0.5
+
 #: How long to wait for the daemon to come back after _ensure_daemon_advertises
 #: restarts it. Measured at roughly a minute on this hardware.
 _DAEMON_RESTART_TIMEOUT_S = 90.0
@@ -239,16 +248,90 @@ def run_forever(target: HardwareTarget) -> None:
     # log, and doubles as a check that the motors are actually holding.
     motion.wake_up()
 
-    # This session cannot repair its own connection: the SDK's websocket client
-    # has no reconnect (disconnect() is terminal), and this connection carries
-    # audio and camera too, so rebuilding it means rebuilding everything.
-    # Rather than keep listening and replying with a frozen head -- which is
-    # what happened, for thousands of consecutive dropped frames -- end the
-    # process so the launcher can start a fresh session.
+    # A dropped link used to end the process: the SDK's websocket client has no
+    # reconnect (disconnect() is terminal), and this connection carries audio
+    # and camera too, so rebuilding it means rebuilding the ReachyMini itself.
+    # The launcher then relaunched, which cost ~40s of dead robot -- five times
+    # in one morning -- and threw away everything expensive along with it: the
+    # loaded speech models, the demo registry, the warm language model, and the
+    # research session, which is module state and so silently disarmed.
+    #
+    # Only ONE object actually dies. The ReachyMini is referenced by exactly
+    # three wrappers; demos hold the WRAPPERS (DemoContext.audio/.motion), not
+    # the SDK object, so rebuilding it underneath them invalidates nothing --
+    # not a demo's store, not the runner, not the tracker, not the dashboard.
+    # So rebuild in place and keep the session.
+    link_down = threading.Event()
+
+    def _rebuild_link() -> bool:
+        """One attempt at a fresh connection. True if the robot is back."""
+        # The daemon advertises its own address for the media session, and a
+        # stale one is exactly the failure _ensure_daemon_advertises exists to
+        # prevent -- doubly likely here, since the address changing is often
+        # WHY the link dropped.
+        if target.media_backend == "webrtc":
+            _ensure_daemon_advertises(target.daemon_host, target.daemon_port)
+        fresh = ReachyMini(
+            host=target.daemon_host,
+            port=target.daemon_port,
+            media_backend=target.media_backend,
+            log_level="WARNING",
+        )
+        fresh.__enter__()
+        audio.adopt_robot(fresh)
+        camera.adopt_robot(fresh)
+        motion.adopt_robot(fresh)
+        return True
+
     def _watch_link() -> None:
-        motion.link_lost.wait()
-        logger.error("Motion link unrecoverable -- exiting for a clean restart.")
-        os._exit(_EXIT_LINK_LOST)
+        nonlocal robot
+        while True:
+            motion.link_lost.wait()
+            link_down.set()
+            STATE.set_flags(ready=False)
+            STATE.add("error", "Lost the connection to the robot -- reconnecting.")
+            logger.error("Motion link lost; rebuilding the connection in place.")
+
+            # Detach the wrappers BEFORE tearing the old one down, so nothing
+            # dereferences a half-closed connection mid-turn.
+            audio.adopt_robot(None)
+            camera.adopt_robot(None)
+            old, robot = robot, None
+            if old is not None:
+                try:
+                    old.__exit__(None, None, None)
+                except Exception:
+                    logger.debug("Old connection did not close cleanly", exc_info=True)
+
+            attempt = 0
+            while True:
+                attempt += 1
+                try:
+                    _rebuild_link()
+                except Exception as exc:
+                    delay = min(_RECONNECT_BACKOFF_S * attempt, _RECONNECT_BACKOFF_MAX_S)
+                    logger.warning("Reconnect attempt %d failed (%s); retrying in %.0fs.",
+                                   attempt, exc, delay)
+                    if attempt == 1 or attempt % 10 == 0:
+                        STATE.add("error", f"Still trying to reach the robot ({attempt}).")
+                    time.sleep(delay)
+                    continue
+                break
+
+            link_down.clear()
+            STATE.set_flags(ready=True)
+            STATE.add("status", "Robot reconnected.")
+            logger.info("Motion link rebuilt after %d attempt(s); session kept.", attempt)
+            # Said aloud because the visitor watched it freeze mid-sentence and
+            # is owed an explanation rather than a robot that simply resumes.
+            #
+            # QUEUED, not spoken here. audio.speak is loop-thread-only -- its
+            # sibling speak_rendered says so in one line -- and this runs on the
+            # watchdog thread, so speaking directly would interleave with
+            # whatever the loop is already saying and corrupt the media stream.
+            # STATE.request is the established cross-thread path; the dashboard's
+            # "Say it" box reaches the speaker exactly this way.
+            STATE.request("say", "Sorry about that -- I lost my connection for a moment.")
 
     threading.Thread(target=_watch_link, name="link-watchdog", daemon=True).start()
 
@@ -258,6 +341,12 @@ def run_forever(target: HardwareTarget) -> None:
     try:
         while True:
             try:
+                if link_down.is_set():
+                    # The link is being rebuilt. Cycling now would drive a
+                    # detached wrapper; wait it out rather than logging a
+                    # failure per cycle at loop speed.
+                    time.sleep(_LINK_DOWN_POLL_S)
+                    continue
                 runner.cycle()
                 # Availability changes when a demo is set aside or re-enabled,
                 # and the operator needs to see that while the session runs.

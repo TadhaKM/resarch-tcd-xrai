@@ -565,10 +565,17 @@ class AudioIO:
         dropped WebRTC media session looks like from this side.
         """
         if self.target.mode == "robot":
+            if self._robot is None:
+                # The link is being rebuilt underneath us. Ending the generator
+                # is right: the caller opens a new one on the next turn, and
+                # dereferencing media here would raise mid-sentence.
+                return
             input_rate = self._robot.media.get_input_audio_samplerate()
             stalled_since: Optional[float] = None
             while True:
                 if deadline is not None and time.monotonic() >= deadline:
+                    return
+                if self._robot is None:
                     return
                 sample = self._robot.media.get_audio_sample()
                 if sample is None:
@@ -671,6 +678,19 @@ class AudioIO:
         for _ in self._mic_frames(deadline=deadline):
             if time.monotonic() >= deadline:
                 return
+
+    def adopt_robot(self, robot: Any) -> None:
+        """Rebind to a rebuilt connection and start its media flowing.
+
+        The spotter stream is dropped rather than reused: it holds decoder
+        state fed by the old connection's audio, and _kws_stream is already
+        documented as "None means build a fresh one, flushing first".
+        """
+        self._robot = robot
+        self._kws_stream = None
+        if robot is not None:
+            robot.media.start_recording()
+            robot.media.start_playing()
 
     def available_voices(self) -> list[str]:
         """Voice names installed alongside the configured one.

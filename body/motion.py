@@ -700,6 +700,21 @@ class MotionController:
             "Dropping Reachy Mini pose updates (%d so far): %s", self._send_failures, exc
         )
 
+    def adopt_robot(self, robot: Any) -> None:
+        """Take a freshly built connection after the OWNER rebuilt a shared one.
+
+        _maybe_reconnect can only rebuild a connection this controller owns; a
+        shared one carries audio and camera too, so the caller has to rebuild
+        it and hand it back here. Clearing link_lost is the part that matters:
+        it is a one-shot flag, and until this ran nothing ever cleared it, so
+        the process could only ever die once and be relaunched.
+        """
+        self._robot = robot
+        self._failing_since = None
+        self._send_failures = 0
+        self._last_reconnect_at = time.monotonic()
+        self.link_lost.clear()
+
     def _maybe_reconnect(self) -> None:
         """Rebuild a connection that has stopped coming back on its own.
 

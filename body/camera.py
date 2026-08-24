@@ -53,6 +53,8 @@ class Camera:
     def get_frame(self) -> Optional[np.ndarray]:
         """Return the latest BGR camera frame, or None if capture fails."""
         if self.target.mode == "robot":
+            if self._robot is None:
+                return None
             return self._robot.media.get_frame()
         capture = self._get_capture()
         ok, frame = capture.read()
@@ -68,6 +70,10 @@ class Camera:
         output = Path(path)
         output.parent.mkdir(parents=True, exist_ok=True)
         return bool(cv2.imwrite(str(output), frame))
+
+    def adopt_robot(self, robot: Any) -> None:
+        """Rebind to a rebuilt connection. Frames resume on the next read."""
+        self._robot = robot
 
     def close(self) -> None:
         """Release the underlying camera handle."""

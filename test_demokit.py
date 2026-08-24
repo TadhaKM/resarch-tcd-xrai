@@ -2215,5 +2215,42 @@ check("the server tells the editor what a handover can target",
       True)
 
 print()
+print("[37] a dropped robot link is rebuilt in place, not by killing the process")
+# A wifi blip used to end the process: os._exit(3), then the launcher relaunched
+# and paid ~40s reloading speech models, the demo registry and the language
+# model -- five times in one morning. It also skipped the finally: block, so
+# runner.end_conversations() never ran and the day's conversations were never
+# summarised into long-term memory. That loss was silent.
+import threading as _th37  # noqa: E402
+from body.motion import MotionController as _MC  # noqa: E402
+from body.audio_io import AudioIO as _AIO  # noqa: E402
+from body.camera import Camera as _Cam  # noqa: E402
+
+for _cls in (_MC, _AIO, _Cam):
+    check(f"{_cls.__name__} can adopt a rebuilt connection",
+          hasattr(_cls, "adopt_robot"), True)
+
+# link_lost was a ONE-SHOT flag: set once, cleared nowhere, so the session could
+# only ever die. Clearing it is what makes the process survivable.
+_m = object.__new__(_MC)          # the real method, without __init__'s thread
+_m._robot, _m._failing_since, _m._send_failures, _m._last_reconnect_at = None, 123.0, 9, 0.0
+_m.link_lost = _th37.Event()
+_m.link_lost.set()
+_MC.adopt_robot(_m, "fresh-connection")
+check("adopting clears the fatal flag", _m.link_lost.is_set(), False)
+check("and rebinds to the new connection", _m._robot, "fresh-connection")
+check("and forgets the old failure streak", (_m._failing_since, _m._send_failures), (None, 0))
+
+_vl = (_pl36.Path(__file__).parent / "body" / "voice_loop.py").read_text(encoding="utf-8")
+check("the link watchdog no longer kills the process",
+      "os._exit" in _vl, False)
+# Speaking from the watchdog thread would interleave with whatever the loop is
+# already saying; STATE.request is the sanctioned cross-thread path.
+check("and announces the recovery on the loop thread, not its own",
+      'STATE.request("say"' in _vl, True)
+check("the main loop stops driving detached wrappers while it rebuilds",
+      "link_down.is_set()" in _vl, True)
+
+print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")
 sys.exit(1 if failures else 0)
