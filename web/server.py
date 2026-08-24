@@ -404,6 +404,37 @@ def model() -> JSONResponse:
     return JSONResponse(llm.describe())
 
 
+class PaceRequest(BaseModel):
+    pace: float = 0.0
+
+
+@app.get("/api/pace")
+def get_pace() -> JSONResponse:
+    from body.audio_io import SPEECH_PACE_DEFAULT, SPEECH_PACE_RANGE, speech_pace
+
+    low, high = SPEECH_PACE_RANGE
+    return JSONResponse({"pace": speech_pace(), "min": low, "max": high,
+                         "default": SPEECH_PACE_DEFAULT})
+
+
+@app.post("/api/pace")
+def set_pace(req: PaceRequest) -> JSONResponse:
+    """How fast the robot talks. Takes effect on the very next line.
+
+    Stored in settings rather than held in memory, because the robot relaunches
+    on every wifi drop and an operator who slowed it down for a hard-surfaced
+    foyer should not have to do it again after every blip.
+    """
+    from body.audio_io import SPEECH_PACE_KEY, SPEECH_PACE_RANGE
+    from brain import settings
+
+    low, high = SPEECH_PACE_RANGE
+    pace = max(low, min(high, float(req.pace or 0.0)))
+    settings.put(SPEECH_PACE_KEY, f"{pace:.2f}")
+    STATE.add("status", f"Speaking speed set to {pace:.2f} (higher is slower)")
+    return JSONResponse({"ok": True, "pace": pace})
+
+
 @app.get("/api/voices")
 def voices() -> JSONResponse:
     """Installed voices and the one in use.

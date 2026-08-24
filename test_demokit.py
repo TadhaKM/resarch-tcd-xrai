@@ -2689,5 +2689,44 @@ check("and is downscaled before it leaves the laptop",
 check("no frame means no request at all", _lk.describe(None), "")
 
 print()
+print("[48] the robot talks at a speed the operator sets")
+import body.audio_io as _aio48  # noqa: E402
+from brain import settings as _set48  # noqa: E402
+
+# Reported from the actual room: too fast. The conversational voice set no
+# length_scale at all, so it ran at piper's bare default, and one persona
+# (professional, 0.95) was faster still.
+check("the default is slower than the synthesiser's own",
+      _aio48.SPEECH_PACE_DEFAULT > 1.0, True)
+
+_held48 = _set48.get(_aio48.SPEECH_PACE_KEY, "")
+try:
+    _low48, _high48 = _aio48.SPEECH_PACE_RANGE
+    _set48.put(_aio48.SPEECH_PACE_KEY, "1.30")
+    check("a set value is used", abs(_aio48.speech_pace() - 1.30) < 0.001, True)
+    # Bounded, because piper drawls past about 1.4 and gabbles below 0.85 --
+    # a slider that can make the robot unintelligible is a slider somebody
+    # will make the robot unintelligible with.
+    _set48.put(_aio48.SPEECH_PACE_KEY, "9.0")
+    check("absurdly slow is clamped", _aio48.speech_pace(), _high48)
+    _set48.put(_aio48.SPEECH_PACE_KEY, "0.1")
+    check("absurdly fast is clamped", _aio48.speech_pace(), _low48)
+    # Nonsense in the table must never cost the robot its voice.
+    _set48.put(_aio48.SPEECH_PACE_KEY, "not a number")
+    check("rubbish falls back to the default",
+          _aio48.speech_pace(), _aio48.SPEECH_PACE_DEFAULT)
+
+    # And it has to reach the synthesiser, not just the number.
+    _set48.put(_aio48.SPEECH_PACE_KEY, "1.30")
+    _fast = _aio48._voice_config(1.0, 0.667).length_scale
+    _slow = _aio48._voice_config(1.0 * _aio48.speech_pace(), 0.667).length_scale
+    check("and a slower setting really lengthens the speech", _slow > _fast, True)
+finally:
+    if _held48:
+        _set48.put(_aio48.SPEECH_PACE_KEY, _held48)
+    else:
+        _set48.put(_aio48.SPEECH_PACE_KEY, "")
+
+print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")
 sys.exit(1 if failures else 0)

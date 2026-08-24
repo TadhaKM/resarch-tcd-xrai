@@ -69,6 +69,57 @@ _STORY_SYNTHESIS = SynthesisConfig(
 _BASE_NOISE_SCALE = 0.667
 
 
+#: The conversational voice's own rate, before the operator's setting. This
+#: used to be piper's bare default -- _CHAT_SYNTHESIS set no length_scale at
+#: all -- and was reported as too fast in a real room. It is written down here
+#: so the default has a value somebody can see and change, rather than being
+#: whatever the synthesiser happens to do.
+_BASE_PACE = 1.0
+
+#: What the operator's "speaking speed" control means at each end. Higher is
+#: slower, matching `pace` everywhere else. The range is bounded by what piper
+#: still sounds like a person at: past about 1.4 it drawls, below 0.85 it
+#: gabbles, and _voice_config clamps anyway.
+SPEECH_PACE_KEY = "speech_pace"
+SPEECH_PACE_RANGE = (0.9, 1.4)
+
+#: Slower than the synthesiser's default, on purpose. "Too fast" was the
+#: report from the room this robot actually lives in, and a foyer with hard
+#: surfaces needs more space between words than a desk does.
+SPEECH_PACE_DEFAULT = 1.15
+
+
+def speech_pace() -> float:
+    """The operator's speaking-speed multiplier, or the default.
+
+    Read per line rather than cached, so moving the slider changes the very
+    next thing the robot says instead of the next time it is restarted.
+    """
+    try:
+        from brain import settings
+
+        raw = settings.get(SPEECH_PACE_KEY, "")
+        if raw:
+            value = float(raw)
+            low, high = SPEECH_PACE_RANGE
+            return max(low, min(high, value))
+    except Exception:
+        # A settings table that will not read must never cost the robot its
+        # voice; the default is a perfectly good answer.
+        pass
+    return SPEECH_PACE_DEFAULT
+
+
+def _story_synthesis(slower: float) -> SynthesisConfig:
+    """The storyteller's voice, following the operator's speed setting."""
+    return SynthesisConfig(
+        length_scale=max(0.8, min(1.6, 1.08 * slower)),
+        noise_scale=0.85,
+        noise_w_scale=1.0,
+        normalize_audio=False,
+    )
+
+
 def _voice_config(pace: float, variation: float) -> SynthesisConfig:
     """Build a synthesis config from an abstract voice character.
 
@@ -1183,24 +1234,29 @@ class AudioIO:
         pace: Optional[float] = None,
         variation: Optional[float] = None,
     ) -> SynthesisConfig:
-        """How this line should sound, resolved exactly as speak() always has."""
+        """How this line should sound, resolved exactly as speak() always has.
+
+        Everything ends up here -- demos, personas, the storyteller and the
+        runner's own lines -- which is why the operator's speaking-speed
+        setting is applied at this one point rather than at each caller.
+        """
+        slower = speech_pace()
         if pace is not None or variation is not None:
-            return _voice_config(pace if pace is not None else 1.0,
+            return _voice_config((pace if pace is not None else 1.0) * slower,
                                  variation if variation is not None else 0.667)
         if expressive:
             # The storyteller's voice is the point of that demo, and it is both
             # slower AND more varied than any persona -- so a persona must not
-            # quietly replace it.
-            return _STORY_SYNTHESIS
+            # quietly replace it. It still follows the operator's setting: a
+            # room that needs everything slower needs the story slower too.
+            return _story_synthesis(slower)
         # Resolved here rather than in DemoContext.say because this is the only
         # place that also covers the runner's own lines, which speak through
         # AudioIO directly. An explicit pace or variation still wins above.
         persona = personas.active(STATE.persona[0])
-        return (
-            _voice_config(persona.pace, persona.variation)
-            if persona is not None
-            else _CHAT_SYNTHESIS
-        )
+        if persona is not None:
+            return _voice_config(persona.pace * slower, persona.variation)
+        return _voice_config(_BASE_PACE * slower, 0.667)
 
     def _render_stream(self, text, expressive=False, pace=None, variation=None):
         syn_config = self._synthesis_config(expressive, pace, variation)

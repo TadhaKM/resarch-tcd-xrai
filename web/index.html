@@ -1488,6 +1488,12 @@
         <input id="vol" type="range" min="0" max="100" step="5" aria-label="Speaker volume">
         <span id="vol-val">&mdash;</span>
       </span>
+      <span class="pill" id="p-pace" title="How fast it talks">
+        <span aria-hidden="true">&#128172;</span>
+        <input id="pace" type="range" min="90" max="140" step="5"
+               aria-label="Speaking speed">
+        <span id="pace-val">&mdash;</span>
+      </span>
       <button class="pill" id="btn-settings" type="button"
               aria-expanded="false" aria-controls="settings">&#9881; Settings</button>
       <span class="up" id="p-up">up &mdash;</span>
@@ -3728,6 +3734,43 @@
     $("lock-go").onclick = unlock;
     $("lock-code").addEventListener("keydown", (e) => { if (e.key === "Enter") unlock(); });
     check();
+  })();
+
+  // ── speaking speed ───────────────────────────────────────────────────────
+  // Next to the volume rather than behind Settings, because "they cannot hear
+  // it at the back" and "it is going too fast for them" are the same kind of
+  // problem: both are noticed mid-visit and both need fixing without hunting.
+  // Stored server-side, so a wifi drop does not undo it.
+  (() => {
+    const slider = $("pace"), label = $("pace-val");
+    if (!slider) return;
+
+    function show(pace) {
+      // Shown as words, not as 1.15. An operator wants "a bit slower", and a
+      // multiplier of the synthesiser's length scale means nothing to anyone.
+      const n = Number(pace);
+      label.textContent = n <= 0.95 ? "brisk" : n < 1.1 ? "normal"
+                        : n < 1.25 ? "relaxed" : "slow";
+      slider.value = String(Math.round(n * 100));
+    }
+
+    (async () => {
+      try {
+        const d = await (await fetch("/api/pace")).json();
+        show(d.pace);
+      } catch (e) {}
+    })();
+
+    slider.oninput = () => show(Number(slider.value) / 100);
+    slider.onchange = async () => {
+      const pace = Number(slider.value) / 100;
+      try {
+        await fetch("/api/pace", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({pace})
+        });
+      } catch (e) {}
+    };
   })();
 
   // ── sounds ───────────────────────────────────────────────────────────────
