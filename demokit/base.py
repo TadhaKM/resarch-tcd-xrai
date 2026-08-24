@@ -43,6 +43,10 @@ logger = logging.getLogger(__name__)
 #: for. A demo holding the microphone for longer than this cannot be
 #: interrupted by the dashboard, which is the one thing an operator needs to
 #: work while a group is watching.
+#: A silence longer than this between spoken chunks is worth a log line. Below
+#: it, the gap is the ordinary cost of rendering and reads as breathing.
+_GAP_WARN_S = 1.5
+
 MAX_LISTEN_WINDOW_S = 3.0
 
 #: Slice length for ctx.sleep, so a long pause still notices a mode change.
@@ -429,9 +433,20 @@ class DemoContext:
 
         producer = threading.Thread(target=_produce, name="reply-render", daemon=True)
         producer.start()
+        # Measures the symptom directly: how long the robot was SILENT between
+        # one spoken chunk and the next. Live, a three-sentence answer had a
+        # twenty-second gap in the middle, which reads to a visitor as the robot
+        # having finished -- and there was no way to tell whether the time went
+        # on the model generating, piper rendering, or the queue. Logged rather
+        # than reasoned about, for the same reason the face-match score was.
+        finished_at = None
         try:
             while True:
                 item = feed.get()
+                if finished_at is not None and item[0] not in ("end", "error"):
+                    waited = time.monotonic() - finished_at
+                    if waited >= _GAP_WARN_S:
+                        logger.info("silent %.1fs waiting for the next words", waited)
                 if item[0] == "end":
                     final_tag = item[1]
                     break
@@ -446,6 +461,7 @@ class DemoContext:
                 self.state.set_flags(speaking=True)
                 self.motion.express(tag)
                 self.audio.speak_rendered(chunks, motion=self.motion)
+                finished_at = time.monotonic()
                 self.state.set_flags(speaking=False)
                 # A visitor can take the floor back here without waiting for a
                 # thirty-second story: their words were captured while this

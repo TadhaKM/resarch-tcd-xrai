@@ -20,9 +20,15 @@ _SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?])\s+")
 #: opener ("That's a great question about the Hub's three research strands,
 #: which...") used to hold the robot silent for the whole sentence. A comma is
 #: a place a person would breathe, so piper starting there sounds like pacing,
-#: not a glitch. First sentence only: mid-reply, speech is already ahead of
-#: generation and splitting buys nothing.
+#: not a glitch. See _LONG_SENTENCE_CHARS for the mid-reply case, which this
+#: comment used to deny existed.
 _FIRST_CLAUSE_CHARS = 60
+
+#: And the same trick mid-reply, at a much higher bar. Only a sentence that has
+#: genuinely run away -- roughly twenty-five words with no end in sight -- is
+#: worth breaking, because every break trades a little naturalness for silence
+#: avoided, and that trade is only good when the silence would be long.
+_LONG_SENTENCE_CHARS = 150
 _CLAUSE_BREAK_RE = re.compile(r"(?<=,)\s+|(?<=;)\s+|\s+(?=--\s)")
 
 #: Token budget for a story. The word limit in the storyteller prompt is a
@@ -199,14 +205,39 @@ def stream_reply(
                 # a backend failure after this point can no longer restart the
                 # answer with the other model over the top of it, exactly as a
                 # full sentence would have.
-                if not spoken_a_sentence and len(buffer) >= _FIRST_CLAUSE_CHARS:
+                # A sentence that runs long is flushed at a clause break rather
+                # than waited out. Two thresholds, because the two cases are
+                # different jobs:
+                #
+                #   Opening sentence  -- get the voice started at all.
+                #   Mid-reply         -- keep it started.
+                #
+                # This used to be first-sentence-only, on the reasoning that
+                # "mid-reply, speech is already ahead of generation and
+                # splitting buys nothing". That holds for ordinary sentences and
+                # fails badly for long ones: nothing can be rendered until a
+                # whole sentence has arrived, so a 35-word sentence leaves the
+                # speaker silent for as long as the model takes to finish it.
+                # Measured live, a three-sentence answer had a twenty-second gap
+                # in the middle of it -- long enough that a visitor walks away
+                # believing the robot has finished.
+                #
+                # The mid-reply threshold is much higher than the opening one on
+                # purpose. Splitting costs naturalness -- a comma becomes a hard
+                # stop -- and is only worth paying when the alternative is
+                # silence, which is what a very long run means.
+                clause_floor = (_FIRST_CLAUSE_CHARS if not spoken_a_sentence
+                                else _LONG_SENTENCE_CHARS)
+                if len(buffer) >= clause_floor:
                     clause = _CLAUSE_BREAK_RE.search(buffer)
                     if clause:
                         candidate, _ = extract_emotion_tag(buffer[: clause.end()])
                         buffer = buffer[clause.end() :]
                         if candidate:
-                            _mark_first_words(time.monotonic() - asked_at, backend.name)
-                            logger.info("first words in %.2fs (%s, clause)", time.monotonic() - asked_at, backend.name)
+                            if not spoken_a_sentence:
+                                _mark_first_words(time.monotonic() - asked_at, backend.name)
+                                logger.info("first words in %.2fs (%s, clause)",
+                                            time.monotonic() - asked_at, backend.name)
                             spoken_a_sentence = True
                             yield candidate, "thinking"
             break

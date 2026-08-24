@@ -2415,5 +2415,43 @@ _off, _said, _ = _attract(dwell=6.0, quiet_for=1.0)
 check("and it never offers over a conversation already happening", _off, False)
 
 print()
+print("[41] a long sentence mid-reply does not leave the robot silent")
+# Live, a three-sentence answer came out at 11:47:25, :31 and :51 -- a twenty
+# second gap in the middle, which a visitor reads as the robot having finished.
+# Nothing can be rendered until a whole sentence has arrived, so a 35-word
+# sentence holds the speaker silent for as long as the model takes to write it.
+# Clause flushing used to be first-sentence-only on the reasoning that
+# "mid-reply, speech is already ahead of generation and splitting buys nothing".
+
+_short = "Yes. "
+_long = ("The market is growing rapidly as artificial intelligence, faster networks "
+         "and better optics all converge at once, with much lower latency, "
+         "and that combination is driving adoption across manufacturing, "
+         "healthcare and defence. ")
+_pieces = [_short] + [w + " " for w in _long.split()] + ["[emotion: happy]"]
+_out, _ = _run_stream(_ScriptedBackend(_pieces))
+_spoken = [t for t, _tag in _out if t.strip()]
+
+check("the short opening sentence still comes out first",
+      _spoken[0].strip().startswith("Yes"), True)
+# The point: the long sentence arrives as MORE THAN ONE chunk, so the robot
+# keeps talking while the model is still writing it.
+check("and the long one is broken up rather than waited out",
+      len(_spoken) >= 3, True)
+check("every chunk carries real words", all(x.strip() for x in _spoken), True)
+# Nothing may be lost or duplicated by the splitting -- a dropped clause would
+# be a sentence the visitor never hears.
+_joined = " ".join(x.strip() for x in _spoken)
+for _word in ("manufacturing", "healthcare", "defence", "optics", "latency"):
+    check(f"  {_word!r} survives the split", _word in _joined, True)
+
+# An ordinary short reply must NOT be chopped into fragments: the split costs
+# naturalness and is only worth paying when the alternative is a long silence.
+_out2, _ = _run_stream(_ScriptedBackend(
+    ["Yes, ", "that is right. ", "It runs here. ", "[emotion: happy]"]))
+_spoken2 = [t for t, _tag in _out2 if t.strip()]
+check("a short answer is not fragmented", len(_spoken2), 2)
+
+print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")
 sys.exit(1 if failures else 0)
