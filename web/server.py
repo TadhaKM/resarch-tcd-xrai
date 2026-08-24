@@ -15,6 +15,7 @@ import io
 import logging
 import threading
 from pathlib import Path
+from typing import Optional
 
 import time
 
@@ -782,6 +783,69 @@ def study_download(session: str = "", fmt: str = "csv") -> Response:
         media_type=media,
         headers={"Content-Disposition": f'attachment; filename="reachy-session-{safe}.{ext}"'},
     )
+
+
+@app.get("/api/health")
+def health() -> JSONResponse:
+    """How the robot itself is doing, as rows a page can render directly.
+
+    NO BATTERY. The SDK exposes none -- a search for "batter" and "charg"
+    across the whole package returns nothing, and there is no power_supply or
+    thermal read either. Saying so on the card is better than leaving a gap
+    where somebody expects a gauge, because the most predictable embarrassing
+    failure a wireless robot has is running flat mid-demo and this cannot warn
+    about it.
+
+    Each row carries its own verdict so the page never has to know what a good
+    control-loop frequency is; the thresholds live here, next to the values.
+    """
+    rows: list[dict] = []
+
+    def row(label: str, value: str, ok: Optional[bool] = None, note: str = "") -> None:
+        rows.append({"label": label, "value": value, "ok": ok, "note": note})
+
+    try:
+        r = requests.get(f"{_daemon_url()}/api/daemon/status", timeout=3)
+        d = r.json()
+    except Exception as exc:
+        row("Robot link", "unreachable", False, str(exc)[:120])
+        return JSONResponse({"rows": rows, "reachable": False})
+
+    state = str(d.get("state") or "unknown")
+    row("Robot", state, state == "running")
+
+    backend = d.get("backend_status") or {}
+    stats = backend.get("control_loop_stats") or {}
+    freq = stats.get("mean_control_loop_frequency")
+    if isinstance(freq, (int, float)):
+        # The loop targets 50Hz. Below about 40 the head visibly stutters, which
+        # is the number worth showing an operator rather than the raw float.
+        row("Control loop", f"{freq:.1f} Hz", freq >= 40.0,
+            "" if freq >= 40.0 else "the head may look jerky")
+    worst = stats.get("max_control_loop_interval")
+    if isinstance(worst, (int, float)):
+        row("Worst loop gap", f"{worst * 1000:.0f} ms", worst < 0.1)
+    errs = stats.get("nb_error")
+    if isinstance(errs, int):
+        row("Motor errors", str(errs), errs == 0)
+
+    for label, value in (("Robot error", d.get("error")),
+                         ("Backend error", backend.get("error"))):
+        if value:
+            row(label, str(value)[:120], False)
+
+    row("Motors", str(backend.get("motor_control_mode") or "unknown"),
+        backend.get("motor_control_mode") == "enabled")
+    row("Address", str(d.get("wlan_ip") or "unknown"), bool(d.get("wlan_ip")))
+    row("Firmware", str(d.get("version") or "unknown"))
+    row("Serial", str(d.get("hardware_id") or "unknown"))
+    if d.get("media_released"):
+        row("Media", "released", False, "another app may have taken the camera and microphone")
+
+    # Stated rather than omitted -- see the docstring.
+    row("Battery", "not reported by this robot", None,
+        "the hardware exposes no charge level, so keep an eye on the cable")
+    return JSONResponse({"rows": rows, "reachable": True})
 
 
 @app.get("/api/stats")

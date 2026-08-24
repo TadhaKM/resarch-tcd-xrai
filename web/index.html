@@ -1190,6 +1190,14 @@
     min-height: var(--tap); padding: 0 12px; font-size: var(--fs-small);
   }
 
+  /* health verdicts. Colour is never the only signal -- the mark itself reads
+     "OK" or "!" -- because a red/green pair is exactly what a colour-blind
+     operator cannot use, and this panel exists to be glanced at. */
+  table.data td.good { color: var(--ok); font-family: var(--mono); font-weight: 600; }
+  table.data td.bad  { color: var(--bad); font-family: var(--mono); font-weight: 600; }
+  #health-rows td { border-bottom: 1px solid var(--line); }
+  #health-rows td:last-child { white-space: normal; }
+
   #rec-view { margin-top: var(--s4); }
   .transcript { max-height: 320px; overflow-y: auto; margin-top: var(--s2); }
   .transcript .turn { padding: var(--s3) 0; border-bottom: 1px solid var(--line); }
@@ -1620,6 +1628,16 @@
     <h2>Say any of these</h2>
     <div id="phrases"><span class="dim">loading&hellip;</span></div>
   </div>
+
+  <details class="panel" id="health">
+    <summary><h2>Is it well?</h2> <span class="dim" id="health-state"></span></summary>
+    <p class="dim">
+      Open this before a group arrives. For the speaker, microphone, camera and
+      movement, press <strong>Check it works</strong> in the modes above &mdash;
+      those can only be tested by actually using them.
+    </p>
+    <table class="data" id="health-table"><tbody id="health-rows"></tbody></table>
+  </details>
 
   <details class="panel" id="stats">
     <summary><h2>How the visit went</h2> <span class="dim" id="stats-count"></span></summary>
@@ -3619,6 +3637,49 @@
     panel.addEventListener("toggle", () => {
       clearInterval(timer);
       if (panel.open) { refresh(); timer = setInterval(refresh, 30000); }
+    });
+  })();
+
+  // ── robot health ─────────────────────────────────────────────────────────
+  // Rows arrive with their own verdict, so this never has to know what a good
+  // control-loop frequency is. Built with textContent, never innerHTML: one of
+  // these values is an error message straight off the robot.
+  (() => {
+    const panel = $("health");
+    if (!panel) return;
+    let timer = null;
+
+    async function refresh() {
+      let d = null;
+      try { d = await (await fetch("/api/health")).json(); } catch (e) { return; }
+      const rows = d.rows || [];
+      const bad = rows.filter(r => r.ok === false).length;
+      $("health-state").textContent = !d.reachable ? "robot unreachable"
+        : bad ? `${bad} thing${bad > 1 ? "s" : ""} to look at` : "all well";
+      const body = $("health-rows");
+      body.textContent = "";
+      for (const r of rows) {
+        const tr = document.createElement("tr");
+        const mark = document.createElement("td");
+        // A verdict of null means "reported, not judged" -- the battery row.
+        mark.textContent = r.ok === true ? "OK" : r.ok === false ? "!" : "–";
+        mark.className = r.ok === false ? "bad" : r.ok === true ? "good" : "dim";
+        const label = document.createElement("td");
+        label.textContent = r.label;
+        const value = document.createElement("td");
+        value.textContent = r.value;
+        value.className = "num";
+        const note = document.createElement("td");
+        note.className = "dim";
+        note.textContent = r.note || "";
+        tr.append(mark, label, value, note);
+        body.appendChild(tr);
+      }
+    }
+
+    panel.addEventListener("toggle", () => {
+      clearInterval(timer);
+      if (panel.open) { refresh(); timer = setInterval(refresh, 10000); }
     });
   })();
 
