@@ -2347,5 +2347,73 @@ _L._speech, _L._at = True, _t.monotonic() - (_doa._MAX_AGE_S + 1.0)
 check("a stale reading is ignored", _L.suggested_yaw_deg(), None)
 
 print()
+print("[40] a stranger who lingers is invited to speak, once")
+import demokit.runner as _rm40  # noqa: E402
+
+
+class _FakeTracker40:
+    """Stands in for FaceTracker: only dwell and identity matter here."""
+
+    def __init__(self, dwell=0.0):
+        self.dwell = dwell
+
+    def present_for(self, max_age_s=1.5):
+        return self.dwell
+
+    # The runner asks the tracker for these through DemoContext.person_name.
+    def current(self, max_age_s=3.0):
+        return None, None
+
+    def current_embedding(self, max_age_s=3.0):
+        return None
+
+    def enabled(self):
+        return True
+
+
+def _attract(dwell, quiet_for=999.0, known_name=None):
+    demo = Chatty()
+    runner, st, aud, _ = build([demo])
+    runner._tracker = _FakeTracker40(dwell)
+    runner._last_heard_at = _t.monotonic() - quiet_for
+    st.set_mode(demo.id)
+    runner.cycle()                      # enters the demo
+    ctx = runner._ctx
+    if known_name is not None:
+        ctx.person_name = lambda: known_name
+    else:
+        ctx.person_name = lambda: None
+    # cycle() calls attract itself, so the latch may already be set from that
+    # pass. Cleared here so the measured call below starts from a known state.
+    runner._attracted = False
+    said_before = len(aud.said)
+    offered = runner._attract_if_lingering(ctx)
+    return offered, aud.said[said_before:], runner
+
+
+_off, _said, _r = _attract(dwell=0.5)
+check("somebody walking past is not spoken to", _off, False)
+
+_off, _said, _r = _attract(dwell=6.0)
+check("somebody who stands there is", _off, True)
+check("and is told how to start", any("hey reachy" in x.lower() for x in _said), True)
+# The whole point. A robot that re-offers every few seconds is one staff switch
+# off, so the second call must do nothing while they are still standing there.
+_off2 = _r._attract_if_lingering(_r._ctx)
+check("but never twice while they stand there", _off2, False)
+
+# They leave; the latch clears, so the NEXT person gets their own invitation.
+_r._tracker.dwell = 0.0
+_r._attract_if_lingering(_r._ctx)
+_r._tracker.dwell = 6.0
+check("the next arrival is invited again", _r._attract_if_lingering(_r._ctx), True)
+
+_off, _said, _ = _attract(dwell=6.0, known_name="Tadhg")
+check("somebody it knows gets the greeting instead, not this", _off, False)
+
+_off, _said, _ = _attract(dwell=6.0, quiet_for=1.0)
+check("and it never offers over a conversation already happening", _off, False)
+
+print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")
 sys.exit(1 if failures else 0)

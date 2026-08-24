@@ -88,6 +88,15 @@ NAME_HANDOFF_CUES = ("its", "it is", "im", "i am", "actually")
 #: The window is generous because thinking of the next question takes longer
 #: than people expect, and it costs nothing to leave open -- the robot only
 #: acts on speech it actually hears.
+#: How long somebody must stand there before the robot offers. Long enough
+#: that walking past does not trigger it, short enough that somebody deciding
+#: whether to approach is met rather than ignored.
+_ATTRACT_AFTER_S = 4.0
+
+#: And how long the room must have been quiet first. The offer is for people
+#: who have not realised they can talk to it, never for people mid-conversation.
+_ATTRACT_QUIET_S = 20.0
+
 _OPEN_MIC_WINDOW_S = 30.0
 _OPEN_MIC_SILENCE_S = 5.0
 
@@ -230,6 +239,12 @@ class DemoRunner:
 
     def __init__(self, *, audio: Any, motion: Any, tracker: Any, state: Any, capabilities: frozenset[str]) -> None:
         self._audio = audio
+        #: Whether the person currently standing there has already been invited
+        #: to speak. Cleared when they leave -- see _attract_if_lingering.
+        self._attracted = False
+        #: When somebody last said something, so the robot never offers over a
+        #: conversation that is already happening.
+        self._last_heard_at = 0.0
         self._motion = motion
         self._tracker = tracker
         self._state = state
@@ -281,6 +296,9 @@ class DemoRunner:
         # something: listen_for above zero is the demo telling us it has
         # nothing in hand, which is the one safe moment to speak over nothing.
         self._greet_if_recognised(ctx)
+        # After the greeting, so a recognised visitor is welcomed by name
+        # rather than invited to introduce themselves.
+        self._attract_if_lingering(ctx)
 
         # One listen per cycle either way, so the dashboard stays responsive and
         # a visitor can still be switched away from or put to sleep mid-chat.
@@ -328,6 +346,62 @@ class DemoRunner:
             self._retake_after_interruption(demo, ctx)
         finally:
             self._interrupt_depth -= 1
+
+    def _attract_if_lingering(self, ctx: DemoContext) -> bool:
+        """Invite somebody who has stood there a while to say something.
+
+        A robot sitting still gets walked past. The people this is for are the
+        ones who stop, look at it, and do not know they are allowed to talk to
+        it -- which at an open day is most of them.
+
+        Only for STRANGERS. Somebody the robot knows already gets a greeting by
+        name from _greet_if_recognised, and following that with "ask me
+        something" is the robot talking at a person twice before they have said
+        a word.
+
+        Once per arrival, and an arrival ends when the face has been gone for
+        _PRESENCE_GAP_S. The robot cannot tell "came back after lunch" from
+        "turned their head", and of the two mistakes available, inviting the
+        same person every four seconds is much the worse one -- that is a robot
+        nagging a room, which is precisely what makes staff turn a feature off.
+        """
+        if self._tracker is None:
+            return False
+        # Never over a conversation. Somebody who has spoken recently knows
+        # perfectly well that they can talk to it.
+        if time.monotonic() - self._last_heard_at < _ATTRACT_QUIET_S:
+            return False
+        try:
+            dwell = self._tracker.present_for()
+        except Exception:
+            return False
+        if dwell < _ATTRACT_AFTER_S:
+            # Nobody there, or not there long enough. Clear the latch so the
+            # next person to arrive gets their own invitation.
+            if dwell <= 0.0:
+                self._attracted = False
+            return False
+        if self._attracted:
+            return False
+        if ctx.person_name():
+            # Known: the greeting covers them. Latch anyway so this does not
+            # re-check them every slice.
+            self._attracted = True
+            return False
+
+        self._attracted = True
+        logger.info("Someone has been standing there %.0fs -- offering.", dwell)
+        # Perk up first: the movement is what makes a person look, and a line
+        # spoken by a motionless robot reads as a recording.
+        try:
+            self._motion.express("curious")
+        except Exception:
+            logger.debug("Could not perk up", exc_info=True)
+        # Not interruptible, for the same reason the greeting is not: this runs
+        # outside _guarded, so an Interrupted would surface as "Cycle failed".
+        ctx.say("Hello -- say Hey Reachy, and ask me something.",
+                "happy", interruptible=False)
+        return True
 
     def _greet_if_recognised(self, ctx: DemoContext) -> None:
         """Say hello, by name, the first time a known face appears.
@@ -494,6 +568,9 @@ class DemoRunner:
         "go to sleep" would stop working the moment the mic stayed open.
         """
         words = _word_stream(heard)
+        # Stamped at the one place every utterance passes through, so the
+        # attract offer never talks over a conversation already happening.
+        self._last_heard_at = time.monotonic()
 
         # Counted here, at the one place every utterance passes through --
         # wake-word turns and open-mic follow-ups alike. Aggregate only: what

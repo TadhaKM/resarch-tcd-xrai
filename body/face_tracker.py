@@ -31,6 +31,11 @@ logger = logging.getLogger(__name__)
 #: Seconds a detection keeps steering the head. Comfortably longer than the
 #: interval between detections, so the aim persists through a missed frame
 #: instead of the head twitching back to centre between updates.
+#: A face missing for longer than this counts as having left, so the dwell
+#: clock restarts. Generous, because tracking drops a frame routinely -- a
+#: turned head or a blink must not read as somebody leaving and returning.
+_PRESENCE_GAP_S = 3.0
+
 _TRACK_TTL_S = 1.5
 
 #: Backoff after a failed frame grab, so a disconnected camera doesn't spin
@@ -139,6 +144,10 @@ class FaceTracker:
         #: run the model a second time on another thread.
         self._embedding = None
         self._seen_at = 0.0
+        #: When the person currently in view first appeared. Reset whenever the
+        #: face has been gone longer than _PRESENCE_GAP_S, so someone who walks
+        #: away and comes back is a fresh arrival rather than a long dwell.
+        self._present_since = 0.0
         self._searching_since: Optional[float] = None
         #: When each person last had a view stored. See _reinforce.
         self._reinforced_at: dict[int, float] = {}
@@ -171,6 +180,19 @@ class FaceTracker:
             if time.monotonic() - self._seen_at > max_age_s:
                 return None, None
             return self._person_id, self._active_face
+
+    def present_for(self, max_age_s: float = 1.5) -> float:
+        """Seconds somebody has been continuously in view. 0.0 when nobody is.
+
+        The measure attract behaviour needs: a face detected for one frame is
+        somebody walking past, and a face detected for several seconds is
+        somebody deciding whether to talk to the robot.
+        """
+        with self._lock:
+            now = time.monotonic()
+            if not self._present_since or now - self._seen_at > max_age_s:
+                return 0.0
+            return now - self._present_since
 
     def last_score(self) -> float:
         """Best database similarity for the most recent frame."""
@@ -354,10 +376,18 @@ class FaceTracker:
                     # is asked separately and at its own threshold.
                     person_id = self._hold_identity(embedding)
                 with self._lock:
+                    # How long somebody has been standing there, which is a
+                    # different question from whether a face is visible right
+                    # now. Somebody walking past registers a face for a frame;
+                    # somebody deciding whether to approach the robot stands
+                    # there for seconds. Only the second is worth speaking to.
+                    stamp = time.monotonic()
+                    if stamp - self._seen_at > _PRESENCE_GAP_S:
+                        self._present_since = stamp
                     self._person_id = person_id
                     self._active_face = detected
                     self._embedding = embedding
-                    self._seen_at = time.monotonic()
+                    self._seen_at = stamp
                     if person_id:
                         self._known_id = person_id
                         self._known_embedding = embedding
