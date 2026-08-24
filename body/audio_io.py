@@ -264,10 +264,29 @@ def _build_whisper() -> Optional[sherpa_onnx.OfflineRecognizer]:
 #: being told "sorry, say that again?" is a worse failure than the robot
 #: occasionally answering nonsense, which is what it does today anyway.
 #:
-#: Piper is cleaner than live far-field speech -- tools/selftest.py says so in
-#: its own docstring -- so live scores will run lower than this table. Every
-#: turn logs its score so the real distribution can be read off a day's use.
-_MIN_MEAN_TOKEN_LOGPROB = -2.0
+#: THEN LIVE SPEECH CONTRADICTED THE TABLE, and the table lost. Measured on the
+#: robot, in the room, with the microphone it actually uses:
+#:
+#:   -1.03  correct    answered
+#:   -1.35  correct    answered
+#:   -2.44  CORRECT    rejected -- "What's new in the AI XR tech market?"
+#:
+#: That last one is the exact failure this was supposed to avoid: a visitor who
+#: spoke perfectly clearly was told "sorry, I did not catch that". Piper is
+#: cleaner than a real room -- tools/selftest.py says so in its own docstring --
+#: and -2.0 came from piper, so the threshold was measuring the wrong world.
+#:
+#: Now set well below anything yet observed to be correct. It will fire rarely,
+#: which is the right bias: the mishearing it was built for ("Quizance",
+#: "testing testic") is an occasional embarrassment, while telling somebody who
+#: spoke clearly to repeat themselves is the robot appearing not to work.
+#:
+#: This number should keep moving as the log fills. There is still NO live
+#: measurement of what a genuinely wrong transcript scores -- the mishearings
+#: that motivated this predate the logging -- so the gap between "correct at
+#: -2.44" and "wrong at ???" is unmeasured, and this floor is bounded on one
+#: side only. Every turn logs its score; a day of real visitors settles it.
+_MIN_MEAN_TOKEN_LOGPROB = -3.5
 
 _EARLY_DECODE_AFTER_S = 0.45
 

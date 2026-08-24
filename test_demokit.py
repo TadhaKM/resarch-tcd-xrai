@@ -2259,8 +2259,13 @@ print("[38] a transcript the recogniser had no confidence in is asked again")
 # is not.
 from body.audio_io import _MIN_MEAN_TOKEN_LOGPROB as _FLOOR  # noqa: E402
 
-check("the floor sits below correct speech measured under noise",
-      _FLOOR <= -1.30, True)
+# Bounded by the WORST reading that turned out to be correct, and that number
+# came from the robot rather than from synthesized speech. Live, a perfectly
+# accurate "What's new in the AI XR tech market?" scored -2.44 and was rejected
+# under the old synthetic floor of -2.0 -- the visitor spoke clearly and was
+# told to repeat themselves, which is the failure this feature exists to avoid.
+check("the floor sits below the worst reading measured correct LIVE",
+      _FLOOR < -2.44, True)
 
 
 def _gate(score, transcripts=("what is xr",)):
@@ -2275,9 +2280,15 @@ def _gate(score, transcripts=("what is xr",)):
 
 _heard, _said = _gate(-0.4)
 check("confident speech reaches the demo", _heard, ["what is xr"])
-_heard, _said = _gate(-3.0)
-check("a low-confidence transcript does NOT", _heard, [])
+_heard, _said = _gate(-2.44)
+check("and so does the real live reading that used to be refused",
+      _heard, ["what is xr"])
+_heard, _said = _gate(-5.0)
+check("but a genuinely hopeless one does not", _heard, [])
 check("and the visitor is asked to repeat",
+      any("did not catch that" in x.lower() for x in _said), True)
+_heard, _said = _gate(-9.0)
+check("and the visitor is asked to repeat once more",
       any("did not catch that" in x.lower() for x in _said), True)
 _heard, _said = _gate(None)
 check("no confidence signal means answer as before -- never lose a turn to it",
