@@ -2574,5 +2574,28 @@ check("and the floor comes back when the demo lets go",
 _oms.set_open_mic(False)
 
 print()
+print("[45] the dashboard's script has no Python habits in it")
+# A whole afternoon's work was invisible because of this: two adjacent string
+# literals on separate lines with no "+" between them. Python joins them
+# silently; JavaScript raises SyntaxError, which kills the ENTIRE script block,
+# so the page loaded and then did nothing at all -- every panel stuck on
+# "loading...". Bracket balance cannot see it, and neither could I by reading.
+import re as _re45  # noqa: E402
+_page45 = (_pl36.Path(__file__).parent / "web" / "index.html").read_text(encoding="utf-8")
+_js45 = chr(10).join(_re45.findall(r"<script[^>]*>(.*?)</script>", _page45, _re45.S))
+_bad45 = []
+_lines45 = _js45.splitlines()
+for _i in range(len(_lines45) - 1):
+    _a, _b = _lines45[_i].rstrip(), _lines45[_i + 1].strip()
+    if not (_a.endswith(('"', "'")) and _b.startswith(('"', "'"))):
+        continue
+    # Legal when something joins them, or the first line closed its own
+    # argument or call.
+    if _a.endswith(('",', "',", '";', "';", '")', "')", "+", ",")):
+        continue
+    _bad45.append("line " + str(_i + 1) + ": ..." + _a[-30:] + " / " + _b[:30])
+check("no two string literals are concatenated the Python way", _bad45, [])
+
+print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")
 sys.exit(1 if failures else 0)

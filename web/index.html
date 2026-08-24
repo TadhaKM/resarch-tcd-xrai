@@ -3648,7 +3648,7 @@
         body.appendChild(el("h2", "mt", "Questions it could not answer"));
         body.appendChild(el("p", "dim",
           "The robot said it did not know. Worth teaching it, or worth knowing "
-          "people keep asking."));
+          + "people keep asking."));
         const list = el("div", "bars-list");
         const top = stuck[0].deflected;
         for (const q of stuck.slice(0, 10)) {
