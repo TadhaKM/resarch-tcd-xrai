@@ -1741,7 +1741,14 @@ import re as _re30  # noqa: E402
 
 _t = _conv._clock_answer("hey reachy what time is it")
 check("a time question gets a spoken time", bool(_t) and _t.startswith("It's "), True)
-check("and never a 24-hour reading", bool(_re30.search(r"\b(1[3-9]|2[0-3])\b", _t)), False)
+# The HOUR, not any number in the sentence. This used to search the whole
+# string for 13-23 and so failed for eleven minutes of every hour: at 12:23
+# the perfectly correct "It's 12 23 in the afternoon." matched on the
+# MINUTES. A test that fails on the clock teaches people to re-run it
+# rather than read it, which is worse than having no test.
+_hour30 = _re30.search(r"\b(\d{1,2})\b", _t)
+check("and never a 24-hour reading",
+      bool(_hour30) and 13 <= int(_hour30.group(1)) <= 23, False)
 _d = _conv._clock_answer("what day is it today")
 check("a date question gets the day and date", bool(_d) and "It's " in _d, True)
 for _not_clock in ("tell me a story about time", "sometimes I wonder",
@@ -2529,6 +2536,42 @@ for _reply, _want in (
 check("a question is not mistaken for a deflection",
       _st43.looks_like_a_deflection("do you know the fees"), False)
 check("the day's report carries the list", "unanswered" in _st43.day(), True)
+
+print()
+print("[44] open mic ignores the room but still hears the person")
+# Live, with the switch on: "EH" and "OH" -- somebody reacting, or the tail of
+# the robot's own speech returning through the microphone -- were dispatched as
+# questions and answered out loud ("Ha, sounds like a reaction!"). A robot
+# holding up its end of a conversation nobody is having is the failure open mic
+# must not have.
+_omd = Chatty()
+_omr, _oms, _oma, _ = build([_omd])
+_oms.set_mode(_omd.id)
+_omr.cycle()
+
+_oms.set_open_mic(True)
+for _frag in ("EH", "OH", "AH", "um", "hm"):
+    check(f"{_frag!r} is the room, not a question",
+          _omr._addressed_to_the_robot(_frag), False)
+for _real in ("what is xr", "tell me about the hub", "what's new in the market"):
+    check(f"{_real!r} is somebody talking to it",
+          _omr._addressed_to_the_robot(_real), True)
+
+# The way out must never be gated. "Goodbye" is one word and has to work from
+# across a room, whatever else this refuses.
+for _stop in ("goodbye", "go to sleep", "turn off"):
+    check(f"{_stop!r} always gets through", _omr._addressed_to_the_robot(_stop), True)
+
+# THE case a blunt word-count would break. A demo holding the mic has just
+# asked a question, so a one-word answer is exactly what it should hear.
+_oms.hold_open_mic(True)
+for _answer in ("yes", "no", "camera", "walk", "XR"):
+    check(f"a held mic still hears {_answer!r}",
+          _omr._addressed_to_the_robot(_answer), True)
+_oms.hold_open_mic(False)
+check("and the floor comes back when the demo lets go",
+      _omr._addressed_to_the_robot("yes"), False)
+_oms.set_open_mic(False)
 
 print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")

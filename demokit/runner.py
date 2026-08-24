@@ -97,6 +97,14 @@ _ATTRACT_AFTER_S = 4.0
 #: who have not realised they can talk to it, never for people mid-conversation.
 _ATTRACT_QUIET_S = 20.0
 
+#: What an utterance must clear to count as addressed to the robot when the
+#: operator's open-mic switch is on and no demo is waiting for an answer.
+#: Measured against what actually went wrong: "EH" and "OH" were answered as
+#: questions. Two words is the smallest thing anybody says TO a robot without
+#: saying its name first; one syllable is the room.
+_AMBIENT_MIN_WORDS = 2
+_AMBIENT_MIN_CHARS = 7
+
 _OPEN_MIC_WINDOW_S = 30.0
 _OPEN_MIC_SILENCE_S = 5.0
 
@@ -452,8 +460,42 @@ class DemoRunner:
         heard = _strip_wake_phrase(heard)
         if not heard:
             return False
+        if not self._addressed_to_the_robot(heard):
+            return False
         self._dispatch(demo, ctx, heard)
         return True
+
+    def _addressed_to_the_robot(self, heard: str) -> bool:
+        """Whether an open-mic fragment is somebody TALKING TO the robot.
+
+        With the switch on in a live room, the recogniser returns whatever the
+        room produces. Live, "EH" and "OH" -- two syllables of somebody
+        reacting, or the tail of the robot's own speech coming back through the
+        microphone -- were dispatched as questions and answered out loud: "Ha,
+        sounds like a reaction!". A robot holding up its end of a conversation
+        nobody is having is the exact failure open mic must not have.
+
+        ONLY for the operator's switch. A demo HOLDING the mic has just asked
+        a question, so "yes" or "camera" is precisely what it should hear, and
+        applying this there would break every quiz answer. The two cases are
+        indistinguishable through open_mic, which is why open_mic_held exists.
+
+        Nothing here is a judgement about meaning -- it is a floor on how much
+        was said. A single short syllable with no wake word in front of it is
+        the room; a sentence is a person.
+        """
+        if self._state.open_mic_held:
+            return True
+        words = _word_stream(heard)
+        # Never gate the way out. "Goodbye" is one word and has to work from
+        # across a room, whatever else this refuses.
+        if any(contains_phrase(words, phrase) for phrase in SLEEP_PHRASES):
+            return True
+        count = len(words.split())
+        if count >= _AMBIENT_MIN_WORDS and len(heard.strip()) >= _AMBIENT_MIN_CHARS:
+            return True
+        logger.info("open mic: ignoring %r -- too little to be addressed to me", heard[:40])
+        return False
 
     def _correct_name_if_asked(self, ctx: DemoContext, words: str, heard: str) -> bool:
         """Let somebody the robot already knows fix the name it knows them by.

@@ -209,6 +209,20 @@ class RobotState:
         with self._lock:
             return self._open_mic or self._open_mic_hold
 
+    @property
+    def open_mic_held(self) -> bool:
+        """Whether a DEMO is holding the mic, as opposed to the operator switch.
+
+        The two look identical to open_mic and mean opposite things about what
+        the robot should accept. A held mic means the robot has just asked a
+        question and is waiting for the answer, so "yes" or "camera" is exactly
+        what it should hear. The operator's switch means "keep listening in a
+        room", where a single syllable is almost always the room rather than a
+        person addressing the robot.
+        """
+        with self._lock:
+            return self._open_mic_hold
+
     def set_open_mic(self, enabled: bool) -> bool:
         with self._lock:
             if enabled == self._open_mic:
