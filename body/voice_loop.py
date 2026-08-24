@@ -19,7 +19,7 @@ import threading
 import time
 
 from brain.modes import STATE
-from config import HardwareTarget
+from config import HardwareTarget, default_target
 from demokit.registry import REGISTRY
 from demokit.runner import DemoRunner
 
@@ -280,12 +280,17 @@ def run_forever(target: HardwareTarget) -> None:
         # stale one is exactly the failure _ensure_daemon_advertises exists to
         # prevent -- doubly likely here, since the address changing is often
         # WHY the link dropped.
-        if target.media_backend == "webrtc":
-            _ensure_daemon_advertises(target.daemon_host, target.daemon_port)
+        # Re-resolved per attempt rather than reusing the address captured at
+        # startup. DHCP handing out a new address is one of the commonest
+        # reasons this link drops in the first place, so retrying the old one
+        # forever means retrying the single address now guaranteed to be wrong.
+        current = default_target()
+        if current.media_backend == "webrtc":
+            _ensure_daemon_advertises(current.daemon_host, current.daemon_port)
         fresh = ReachyMini(
-            host=target.daemon_host,
-            port=target.daemon_port,
-            media_backend=target.media_backend,
+            host=current.daemon_host,
+            port=current.daemon_port,
+            media_backend=current.media_backend,
             log_level="WARNING",
         )
         fresh.__enter__()
@@ -307,6 +312,13 @@ def run_forever(target: HardwareTarget) -> None:
             # dereferences a half-closed connection mid-turn.
             audio.adopt_robot(None)
             camera.adopt_robot(None)
+            # Motion too. Without this its 20Hz send loop keeps writing to a
+            # dead socket for the whole outage: measured at 3,700+ dropped
+            # pose updates and a warning every ten seconds, which drowns the
+            # log at precisely the moment somebody is reading it to find out
+            # what is wrong. _maybe_reconnect returns immediately once _robot
+            # is None, so detaching is what actually stops the noise.
+            motion.adopt_robot(None)
             old, robot = robot, None
             if old is not None:
                 try:
@@ -324,7 +336,16 @@ def run_forever(target: HardwareTarget) -> None:
                     logger.warning("Reconnect attempt %d failed (%s); retrying in %.0fs.",
                                    attempt, exc, delay)
                     if attempt == 1 or attempt % 10 == 0:
-                        STATE.add("error", f"Still trying to reach the robot ({attempt}).")
+                        # Said in terms of what to DO. "Attempt 12 failed" tells
+                        # an operator nothing; the robot being off, asleep or on
+                        # a new address are the three real causes and all three
+                        # are things a person standing next to it can check.
+                        STATE.add("error",
+                                  f"Cannot reach the robot ({attempt} tries). Check it is "
+                                  f"powered on and on the same wifi.")
+                        logger.warning(
+                            "Still cannot reach the robot after %d attempts. It is powered "
+                            "off, asleep, or has moved to a different address.", attempt)
                     time.sleep(delay)
                     continue
                 break

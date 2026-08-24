@@ -2257,6 +2257,17 @@ check("and announces the recovery on the loop thread, not its own",
       'STATE.request("say"' in _vl, True)
 check("the main loop stops driving detached wrappers while it rebuilds",
       "link_down.is_set()" in _vl, True)
+# Found by a real outage rather than by reading. Motion was left attached
+# during the rebuild, so its 20Hz send loop wrote to a dead socket for the
+# whole thing -- 3,700+ dropped pose updates and a warning every ten seconds,
+# drowning the log at exactly the moment it was being read to find the fault.
+check("motion is detached too, or it hammers a dead socket",
+      "motion.adopt_robot(None)" in _vl, True)
+# And every attempt reused the address captured at startup. DHCP handing out a
+# new one is a common CAUSE of the drop, so that is the single address most
+# likely to be wrong by the time it is retried.
+check("and the address is re-resolved on each attempt",
+      "current = default_target()" in _vl, True)
 
 print()
 print("[38] a transcript the recogniser had no confidence in is asked again")
