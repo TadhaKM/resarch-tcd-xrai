@@ -62,6 +62,81 @@ def bump(metric: str, amount: int = 1) -> None:
         logger.exception("Failed to record %r", metric)
 
 
+#: How the robot is TOLD to say it does not know. These are not guesses at
+#: model behaviour: brain/hub.py instructs "say you don't have that detail and
+#: suggest asking Professor Laura Berry or whoever is hosting", and
+#: brain/courses.py's REFUSALS says "say plainly that you do not have it and
+#: send them to the Trinity Business School website or to whoever is hosting
+#: them today". A deflection is therefore recognisable prose rather than a flag
+#: the robot sets, because nothing in the pipeline ever tagged one.
+#:
+#: Matched on the reply, never on the question. Somebody ASKING "do you know
+#: the fees?" is not a deflection; the robot answering "I don't have the fees"
+#: is.
+_DEFLECTION_MARKERS = (
+    "i don't have", "i dont have", "i do not have",
+    "i don't know", "i dont know", "i do not know",
+    "i can't say", "i cant say", "i cannot say",
+    "i'm not able to say", "im not able to say",
+    "don't have that detail", "dont have that detail",
+    "you'd want to check", "youd want to check", "you would want to check",
+    "check the trinity", "trinity business school website",
+    "whoever is hosting", "ask a member of staff", "speak to a member of staff",
+    "best person to ask", "someone here can tell you", "ask whoever",
+    "changes from year to year", "i'd rather not guess", "id rather not guess",
+)
+
+
+def looks_like_a_deflection(reply: str) -> bool:
+    """Whether a reply was the robot saying it does not know.
+
+    Deliberately conservative. A false positive puts a question a visitor
+    HEARD answered onto a list of things to teach the robot, which wastes
+    somebody's afternoon; a false negative just means one question is missed
+    off a list that is advisory anyway.
+    """
+    lowered = (reply or "").lower()
+    return any(marker in lowered for marker in _DEFLECTION_MARKERS)
+
+
+def note_deflection(text: str) -> None:
+    """Record that this question got "I don't know" for an answer.
+
+    Keyed identically to note_question so the two land on the same row: the
+    useful view is "asked eleven times, deflected nine of them", which needs
+    both numbers against one question.
+    """
+    if not _available:
+        return
+    cleaned = _fold(text)
+    if not cleaned:
+        return
+    try:
+        with db._write_lock, db._connection() as conn:
+            # Upsert rather than UPDATE: the reply is recorded from a different
+            # place than the question, and if the two ever fold differently
+            # this records the deflection rather than silently dropping it.
+            conn.execute(
+                """
+                INSERT INTO visit_questions (day, question, asked, deflected, first_seen)
+                VALUES (?, ?, 0, 1, ?)
+                ON CONFLICT(day, question)
+                DO UPDATE SET deflected = deflected + 1
+                """,
+                (_today(), cleaned, db._now()),
+            )
+    except sqlite3.Error:
+        logger.debug("Could not record a deflection", exc_info=True)
+
+
+def _fold(text: str) -> str:
+    """The key a question is stored under. Case AND punctuation, so "What is
+    the AI XR Hub?" and "what is the ai xr hub" are one question."""
+    return " ".join(
+        "".join(ch if ch.isalnum() or ch.isspace() else " " for ch in (text or "")).split()
+    ).lower()[:MAX_QUESTION_CHARS]
+
+
 def note_question(text: str) -> None:
     """Record that this question was asked today, and how often.
 
@@ -112,7 +187,8 @@ def day(which: Optional[str] = None) -> dict:
     Returns a well-formed empty day rather than raising or returning None, so
     the dashboard renders a panel saying "nothing yet" instead of an error.
     """
-    blank = {"day": which or _today(), "counts": {}, "demos": {}, "questions": [], "available": _available}
+    blank = {"day": which or _today(), "counts": {}, "demos": {},
+             "questions": [], "unanswered": [], "available": _available}
     if not _available:
         return blank
     target = which or _today()
@@ -128,10 +204,23 @@ def day(which: Optional[str] = None) -> dict:
                 else:
                     counts[str(metric)] = int(count)
             questions = [
-                {"question": q, "asked": int(n)}
-                for q, n in conn.execute(
-                    "SELECT question, asked FROM visit_questions WHERE day = ? "
-                    "ORDER BY asked DESC, question LIMIT 12",
+                {"question": q, "asked": int(n), "deflected": int(d or 0)}
+                for q, n, d in conn.execute(
+                    "SELECT question, asked, deflected FROM visit_questions "
+                    "WHERE day = ? ORDER BY asked DESC, question LIMIT 12",
+                    (target,),
+                )
+            ]
+            # The list staff actually act on: what the robot was asked and
+            # could not answer. Ordered by how often it happened, because a
+            # question deflected nine times is worth teaching it and one
+            # deflected once is somebody asking about the weather.
+            unanswered = [
+                {"question": q, "asked": int(n), "deflected": int(d or 0)}
+                for q, n, d in conn.execute(
+                    "SELECT question, asked, deflected FROM visit_questions "
+                    "WHERE day = ? AND deflected > 0 "
+                    "ORDER BY deflected DESC, question LIMIT 20",
                     (target,),
                 )
             ]
@@ -139,7 +228,7 @@ def day(which: Optional[str] = None) -> dict:
         logger.exception("Failed to read the day's stats")
         return blank
     return {"day": target, "counts": counts, "demos": demos,
-            "questions": questions, "available": True}
+            "questions": questions, "unanswered": unanswered, "available": True}
 
 
 def recent_days(limit: int = 14) -> list[dict]:
@@ -178,11 +267,21 @@ def _init_stats() -> None:
                 day        TEXT NOT NULL,
                 question   TEXT NOT NULL,
                 asked      INTEGER NOT NULL DEFAULT 0,
+                deflected  INTEGER NOT NULL DEFAULT 0,
                 first_seen TIMESTAMP,
                 PRIMARY KEY (day, question)
             )
             """
         )
+        # Added after the first visits were recorded, so CREATE TABLE IF NOT
+        # EXISTS does nothing on an existing database and every insert naming
+        # the column would fail -- which, in a module contracted never to
+        # raise, looks like statistics that simply stopped being collected.
+        have = {row[1] for row in conn.execute("PRAGMA table_info(visit_questions)")}
+        if "deflected" not in have:
+            conn.execute("ALTER TABLE visit_questions ADD COLUMN "
+                         "deflected INTEGER NOT NULL DEFAULT 0")
+            logger.info("visit_questions: added deflected column")
 
 
 try:

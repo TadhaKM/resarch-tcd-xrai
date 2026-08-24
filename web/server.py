@@ -13,6 +13,8 @@ knowing before putting it on a shared one.
 import csv
 import io
 import logging
+import os
+import secrets
 import threading
 from pathlib import Path
 from typing import Optional
@@ -76,6 +78,89 @@ app = FastAPI(title="Reachy Mini")
 
 class ModeRequest(BaseModel):
     mode: str
+
+
+#: Shared passcode for the dashboard, read from .env. UNSET MEANS OPEN, which
+#: keeps every existing setup working exactly as it did -- this is a lock you
+#: opt into, not one that appears one day and shuts staff out mid-visit.
+#:
+#: What it protects against: somebody else on the university network finding
+#: the dashboard, making the robot say things, deleting research data or
+#: downloading a participant transcript. That is the actual exposure -- it
+#: binds 0.0.0.0 and the module docstring's "fine for a home network" was
+#: written before study, features and drafting existed.
+#:
+#: What it does NOT protect against: anyone who can watch the network. This is
+#: plain HTTP, so the passcode and the session cookie both cross in the clear.
+#: It is a lock on a door, not a safe, and pretending otherwise would be worse
+#: than having no lock at all.
+_PASSCODE = (os.environ.get("DASHBOARD_PASSCODE") or "").strip()
+
+#: Tokens handed out at unlock. Random per session and held only in memory, so
+#: the passcode itself never travels in a cookie and a restart logs everyone
+#: out -- which is the right default for a robot on a shared desk.
+_SESSIONS: set[str] = set()
+
+#: Reachable without unlocking. The page itself, because it is what shows the
+#: passcode prompt, and the unlock endpoint, because it is how you get in.
+_ALWAYS_OPEN = frozenset({"/", "/api/unlock", "/api/locked"})
+
+
+def _authorised(request) -> bool:
+    if not _PASSCODE:
+        return True
+    if request.url.path in _ALWAYS_OPEN:
+        return True
+    token = request.cookies.get("reachy_session") or ""
+    # A plain `in` on a set is fine here: the token is random and server-issued,
+    # so there is nothing to guess character by character. compare_digest is
+    # used where it matters, on the passcode itself.
+    return bool(token) and token in _SESSIONS
+
+
+@app.middleware("http")
+async def _passcode_gate(request, call_next):
+    if not _authorised(request):
+        return JSONResponse({"ok": False, "error": "locked"}, status_code=401)
+    return await call_next(request)
+
+
+class UnlockRequest(BaseModel):
+    passcode: str = ""
+
+
+@app.post("/api/unlock")
+def unlock(req: UnlockRequest) -> JSONResponse:
+    """Exchange the shared passcode for a session cookie.
+
+    A COOKIE, not a header, and that is forced rather than chosen: the
+    transcript and the study exports are plain <a href download> navigations,
+    and a browser navigation carries cookies but cannot carry a custom header.
+    A header-based scheme would have locked staff out of exactly the downloads
+    the passcode exists to protect.
+    """
+    if not _PASSCODE:
+        return JSONResponse({"ok": True, "locked": False})
+    # Timing-safe, because this one IS attacker-supplied and compared against
+    # a secret.
+    if not secrets.compare_digest(req.passcode or "", _PASSCODE):
+        logger.warning("Dashboard unlock refused.")
+        return JSONResponse({"ok": False, "error": "wrong passcode"}, status_code=403)
+    token = secrets.token_urlsafe(24)
+    _SESSIONS.add(token)
+    response = JSONResponse({"ok": True, "locked": False})
+    # Not Secure: this is served over plain HTTP on a LAN, and marking it
+    # Secure would stop the cookie being set at all. HttpOnly and SameSite are
+    # free and worth having.
+    response.set_cookie("reachy_session", token, httponly=True,
+                        samesite="lax", max_age=60 * 60 * 12)
+    return response
+
+
+@app.get("/api/locked")
+def locked() -> JSONResponse:
+    """Whether a passcode is set at all, so the page knows to ask."""
+    return JSONResponse({"locked": bool(_PASSCODE)})
 
 
 @app.get("/")

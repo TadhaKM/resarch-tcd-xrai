@@ -255,6 +255,21 @@ def stream_reply(
 
     raw_output = "".join(raw_parts)
     reply_text, emotion_tag = extract_emotion_tag(raw_output)
+
+    # The one place that holds BOTH the visitor's question and the finished
+    # reply. demokit/runner.py counts the question at dispatch, where the reply
+    # does not exist yet, and the demos each hold both but recording it in each
+    # would be five copies of one rule. Nothing in the pipeline ever tagged a
+    # refusal, so "the robot did not know this" has to be read back out of its
+    # own prose -- see stats.looks_like_a_deflection.
+    try:
+        from . import stats
+
+        if stats.looks_like_a_deflection(reply_text):
+            stats.note_deflection(message)
+    except Exception:  # pragma: no cover - a counter must never cost a turn
+        logger.debug("Could not record a deflection", exc_info=True)
+
     tail, _ = extract_emotion_tag(buffer)
     yield tail, emotion_tag
 

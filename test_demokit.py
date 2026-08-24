@@ -2453,5 +2453,72 @@ _spoken2 = [t for t, _tag in _out2 if t.strip()]
 check("a short answer is not fragmented", len(_spoken2), 2)
 
 print()
+print("[42] the dashboard can be locked, and staff can still download")
+from fastapi.testclient import TestClient  # noqa: E402
+import web.server as _ws  # noqa: E402
+
+_held_pass, _held_sessions = _ws._PASSCODE, set(_ws._SESSIONS)
+try:
+    _ws._PASSCODE = "hub-2026"
+    _ws._SESSIONS.clear()
+    _c = TestClient(_ws.app)
+
+    check("a protected endpoint is refused while locked",
+          _c.get("/api/status").status_code, 401)
+    check("research data especially", _c.get("/api/study/sessions").status_code, 401)
+    # The page itself must always load: it is what shows the passcode prompt,
+    # and locking it would leave nowhere to type the passcode.
+    check("but the page itself always loads", _c.get("/").status_code, 200)
+    check("and it can ask whether a passcode is even set",
+          _c.get("/api/locked").json()["locked"], True)
+
+    check("a wrong passcode is refused",
+          _c.post("/api/unlock", json={"passcode": "guess"}).status_code, 403)
+    check("and changes nothing", _c.get("/api/status").status_code, 401)
+
+    check("the right one is accepted",
+          _c.post("/api/unlock", json={"passcode": "hub-2026"}).status_code, 200)
+    check("and opens the dashboard", _c.get("/api/status").status_code, 200)
+    # THE constraint that forced a cookie rather than a header. The transcript
+    # and the study exports are plain <a href download> navigations, and a
+    # browser navigation carries cookies but CANNOT carry a custom header. A
+    # header scheme would have locked staff out of exactly the downloads the
+    # passcode exists to protect.
+    check("a plain download navigation works on the cookie alone",
+          _c.get("/api/transcript").status_code, 200)
+
+    # Unset must mean open, so this is a lock people opt into rather than one
+    # that appears one day and shuts them out mid-visit.
+    _ws._PASSCODE = ""
+    _open = TestClient(_ws.app)
+    check("with no passcode set, nothing is locked",
+          _open.get("/api/status").status_code, 200)
+finally:
+    _ws._PASSCODE = _held_pass
+    _ws._SESSIONS.clear()
+    _ws._SESSIONS.update(_held_sessions)
+
+print()
+print("[43] questions the robot could not answer are collected for staff")
+from brain import stats as _st43  # noqa: E402
+
+# Matched on the REPLY, never the question: somebody ASKING "do you know the
+# fees?" is not a deflection, the robot answering "I don't have the fees" is.
+for _reply, _want in (
+    ("I don't have the fees for that programme.", True),
+    ("You'd want to check the Trinity Business School website.", True),
+    ("That changes from year to year, so ask whoever is hosting you.", True),
+    ("I'm not able to say whether you'd be accepted.", True),
+    ("The Hub runs three research strands and sits in the Business School.", False),
+    ("Yes, I can dance. Watch this.", False),
+):
+    check(f"{_reply[:44]!r} -> {'deflection' if _want else 'a real answer'}",
+          _st43.looks_like_a_deflection(_reply), _want)
+
+check("a question is not mistaken for a deflection",
+      _st43.looks_like_a_deflection("do you know the fees"), False)
+check("the day's report carries the list", "unanswered" in _st43.day(), True)
+
+print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")
 sys.exit(1 if failures else 0)
