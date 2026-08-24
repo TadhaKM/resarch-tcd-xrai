@@ -460,6 +460,32 @@ class DemoRunner:
             return
         self._dispatch(demo, ctx, heard, depth)
 
+    def _too_unsure_to_answer(self, ctx: DemoContext, heard: str) -> bool:
+        """Whether to ask again instead of answering. Logs the score either way.
+
+        The score is logged on EVERY turn, answered or not, because the
+        threshold was chosen from synthesized speech and piper is cleaner than
+        a real room -- the live distribution is the thing that will actually
+        tune this, and it can only be read off a day's logs if the good turns
+        are logged too.
+        """
+        score = getattr(self._audio, "last_confidence", None)
+        if score is None:
+            return False
+        from body.audio_io import _MIN_MEAN_TOKEN_LOGPROB as floor
+
+        if score >= floor:
+            logger.info("transcript confidence %.2f (answering)", score)
+            return False
+        logger.info("transcript confidence %.2f below %.2f -- asking again: %r",
+                    score, floor, heard[:60])
+        self._state.add("status", "That did not come through clearly.")
+        try:
+            ctx.say("Sorry -- I did not catch that. Say it again?", "curious")
+        except Exception:
+            logger.debug("Could not ask for a repeat", exc_info=True)
+        return True
+
     def _dispatch(self, demo: Demo, ctx: DemoContext, heard: str, depth: int = 0) -> None:
         """Decide who handles something a visitor said.
 
@@ -490,6 +516,23 @@ class DemoRunner:
         # wrong name, so the correction is about the robot rather than about
         # whatever demo is running, and it has to land whichever one that is.
         if self._correct_name_if_asked(ctx, words, heard):
+            return
+
+        # A transcript the recogniser had no confidence in gets asked again
+        # rather than answered. Live, Whisper produced "Quizance" for "quiz us",
+        # "Hey Ritchie" as the answer to a consent question, and "testing
+        # testic" -- each sent to the model and answered confidently, which is
+        # the robot at its silliest. The mishearing is a fact of loud rooms;
+        # ANSWERING the mishearing is not.
+        #
+        # BELOW sleep and the name correction, and that ordering is the whole
+        # point: both outrank a confidence score. A first attempt put this at
+        # the top of dispatch and a test caught what the comment had already
+        # claimed was safe -- "go to sleep" shouted across a noisy room scored
+        # badly and was answered with "sorry, say that again?", so the one
+        # thing that must always work stopped working exactly where it was
+        # needed most.
+        if self._too_unsure_to_answer(ctx, heard):
             return
 
         if demo.claims_utterances and self._offer(demo, ctx, heard):

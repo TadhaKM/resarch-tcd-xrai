@@ -244,6 +244,31 @@ def _build_whisper() -> Optional[sherpa_onnx.OfflineRecognizer]:
 #: Whisper's cost inside a wait that exists anyway. Short enough to finish
 #: before the endpoint on ordinary answers; long enough that a mid-sentence
 #: breath does not launch decodes that get thrown away.
+#: Mean acoustic log-probability below which a transcript is treated as a
+#: mishearing rather than an answer. The streaming zipformer publishes one
+#: log-prob per token via recognizer.ys_probs(); Whisper, which produces the
+#: text that actually gets answered, returns an EMPTY ys_log_probs on these
+#: model files, so this is the only real confidence signal available.
+#:
+#: Measured with piper speech under added noise, five phrases per level:
+#:
+#:   noise   mean    worst   transcript
+#:   0.00    -0.38   -0.68   correct
+#:   0.10    -0.71   -1.07   correct
+#:   0.15    -0.98   -1.30   correct
+#:   0.25    -1.54   -2.36   WRONG ("LEFT THE KING" for "what can you do")
+#:
+#: Correct speech reached -1.30, so the obvious -1.0 would have rejected people
+#: talking normally. -2.0 sits below every correct reading measured and above
+#: the clearly-wrong ones. Deliberately generous: a visitor who spoke clearly
+#: being told "sorry, say that again?" is a worse failure than the robot
+#: occasionally answering nonsense, which is what it does today anyway.
+#:
+#: Piper is cleaner than live far-field speech -- tools/selftest.py says so in
+#: its own docstring -- so live scores will run lower than this table. Every
+#: turn logs its score so the real distribution can be read off a day's use.
+_MIN_MEAN_TOKEN_LOGPROB = -2.0
+
 _EARLY_DECODE_AFTER_S = 0.45
 
 
@@ -341,6 +366,9 @@ class AudioIO:
         self._persona_seq_seen = -1
 
         self._robot: Optional[Any] = robot
+        #: Confidence of the last utterance, or None when there was no opinion.
+        #: Read by demokit/runner.py to decide whether to answer or ask again.
+        self.last_confidence: Optional[float] = None
         self._owns_robot = robot is None
         self._level_peak = 0.0
         self._level_clipped = 0
@@ -1050,6 +1078,9 @@ class AudioIO:
 
             if self._recognizer.is_endpoint(stream):
                 text = self._recognizer.get_result(stream).strip()
+                # Read BEFORE reset(), which discards the token probabilities
+                # along with the rest of the decoder state.
+                self.last_confidence = self._utterance_confidence(stream)
                 self._recognizer.reset(stream)
 
                 # The streaming model still runs the turn -- it is what detects
@@ -1070,6 +1101,23 @@ class AudioIO:
         # here would look to the caller like silence.
         logger.warning("Listening hit the %.0fs ceiling without an endpoint.", _MAX_UTTERANCE_S)
         return best_transcript(self._recognizer.get_result(stream).strip())
+
+    def _utterance_confidence(self, stream: Any) -> Optional[float]:
+        """Mean acoustic log-probability of the streaming hypothesis.
+
+        None when the recogniser produced no tokens at all, which is silence
+        rather than a bad transcript and must not be treated as one.
+        """
+        try:
+            probs = list(self._recognizer.ys_probs(stream))
+        except Exception:
+            # Older sherpa builds may not expose this. A missing signal must
+            # never cost a turn -- None means "no opinion", and the caller
+            # answers the visitor exactly as it does today.
+            return None
+        if not probs:
+            return None
+        return float(sum(probs) / len(probs))
 
     def speak(
         self,

@@ -2252,5 +2252,48 @@ check("the main loop stops driving detached wrappers while it rebuilds",
       "link_down.is_set()" in _vl, True)
 
 print()
+print("[38] a transcript the recogniser had no confidence in is asked again")
+# Live, Whisper produced "Quizance" for "quiz us", "Hey Ritchie" as the answer
+# to a consent question, and "testing testic" -- each sent to the model and
+# answered confidently. The mishearing is a fact of loud rooms; answering it
+# is not.
+from body.audio_io import _MIN_MEAN_TOKEN_LOGPROB as _FLOOR  # noqa: E402
+
+check("the floor sits below correct speech measured under noise",
+      _FLOOR <= -1.30, True)
+
+
+def _gate(score, transcripts=("what is xr",)):
+    """Drive a real dispatch with the recogniser reporting `score`."""
+    demo = Chatty()
+    runner, st, aud, _ = build([demo], wake_at=(1,), transcripts=list(transcripts))
+    aud.last_confidence = score
+    st.set_mode(demo.id)
+    runner.cycle()
+    return demo.heard, aud.said
+
+
+_heard, _said = _gate(-0.4)
+check("confident speech reaches the demo", _heard, ["what is xr"])
+_heard, _said = _gate(-3.0)
+check("a low-confidence transcript does NOT", _heard, [])
+check("and the visitor is asked to repeat",
+      any("did not catch that" in x.lower() for x in _said), True)
+_heard, _said = _gate(None)
+check("no confidence signal means answer as before -- never lose a turn to it",
+      _heard, ["what is xr"])
+
+# The one thing the gate must never block. "Go to sleep" is checked before the
+# demos precisely because the robot must always be stoppable, and a noisy room
+# is exactly where somebody needs it to stop.
+_sleepy = Chatty()
+_r38, _s38, _a38, _ = build([_sleepy], wake_at=(1,), transcripts=["ok go to sleep now"])
+_a38.last_confidence = -9.0
+_s38.set_mode(_sleepy.id)
+_r38.cycle()
+check("but a low-confidence 'go to sleep' still puts it to sleep",
+      _s38.sleeping, True)
+
+print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")
 sys.exit(1 if failures else 0)
