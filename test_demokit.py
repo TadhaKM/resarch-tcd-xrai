@@ -2191,5 +2191,29 @@ check("a quote and a comma survive the CSV round trip",
 check("without splitting the row", len(_parsed[1]), 2)
 
 print()
+print("[36] every step kind the backend supports is reachable from the editor")
+import pathlib as _pl36  # noqa: E402
+# PLAY shipped implemented, validated, interpreted and DOCUMENTED as one of
+# five step kinds -- and with no button, no render branch and no label in the
+# editor, so no operator could ever add one. The feature was complete
+# everywhere except the one place a person touches it, and nothing failed:
+# tests passed, validation worked, the docs described it. Only trying to use it
+# would have found it, and the instructions for trying it were written from the
+# docs rather than from the page.
+_page = (_pl36.Path(__file__).parent / "web" / "index.html").read_text(encoding="utf-8")
+_kinds = {_F.SAY, _F.ASK, _F.DANCE, _F.WAIT, _F.PLAY}
+_buttons = set(re.findall(r'data-add="([A-Z]+)"', _page))
+check("the editor offers a button for every step kind",
+      sorted(_kinds - _buttons), [])
+# The label map: a kind missing here renders as raw "PLAY" rather than "Plays".
+_labels = re.search(r'\{SAY: "Says".*?\}', _page)
+check("and names every kind in the step list",
+      sorted(k for k in _kinds if _labels and f"{k}:" not in _labels.group(0)), [])
+# A picker with nothing to pick from is the same bug one layer down.
+check("the server tells the editor what a handover can target",
+      "handover_targets" in (_pl36.Path(__file__).parent / "web" / "server.py").read_text(encoding="utf-8"),
+      True)
+
+print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")
 sys.exit(1 if failures else 0)

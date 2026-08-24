@@ -1584,6 +1584,7 @@
         <button class="act" type="button" data-add="ASK">+ Ask a question</button>
         <button class="act" type="button" data-add="DANCE">+ Dance</button>
         <button class="act" type="button" data-add="WAIT">+ Wait for someone</button>
+        <button class="act" type="button" data-add="PLAY">+ Hand over to a demo</button>
       </div>
 
       <h2 class="mt">Ask the assistant to draft it</h2>
@@ -3360,7 +3361,7 @@
       stepsBox.textContent = "";
       steps.forEach((s, i) => {
         const row = el("div", "step");
-        row.appendChild(el("span", "kind", {SAY: "Says", ASK: "Asks", DANCE: "Dances", WAIT: "Waits"}[s.kind] || s.kind));
+        row.appendChild(el("span", "kind", {SAY: "Says", ASK: "Asks", DANCE: "Dances", WAIT: "Waits", PLAY: "Plays"}[s.kind] || s.kind));
 
         if (s.kind === "SAY" || s.kind === "ASK") {
           const text = document.createElement("input");
@@ -3396,6 +3397,22 @@
           secs.oninput = () => { s.seconds = parseInt(secs.value, 10) || 20; };
           row.appendChild(secs);
           row.appendChild(el("span", "dim", "seconds for someone to appear"));
+        } else if (s.kind === "PLAY") {
+          // Built with createElement/new Option, never innerHTML: these labels
+          // include staff-authored feature names.
+          const pick = document.createElement("select");
+          pick.appendChild(new Option("choose a demo...", ""));
+          for (const t of (meta.handover_targets || [])) {
+            // A feature handing over to itself restarts from step one forever,
+            // so it is not offered. validate() refuses it too; this stops the
+            // operator picking it in the first place.
+            if (editing && t.id === editing.id) continue;
+            pick.appendChild(new Option(t.label, t.id));
+          }
+          pick.value = s.demo || "";
+          pick.onchange = () => { s.demo = pick.value; };
+          row.appendChild(pick);
+          row.appendChild(el("span", "dim", "takes over and keeps going -- must be the last step"));
         } else {
           row.appendChild(el("span", "dim", "a short dance"));
         }
@@ -3420,7 +3437,8 @@
         const kind = b.dataset.add;
         steps.push(kind === "SAY" ? {kind, text: "", emotion: "happy"}
                  : kind === "ASK" ? {kind, text: "", emotion: "curious", ai_reply: true}
-                 : kind === "WAIT" ? {kind, seconds: 20} : {kind});
+                 : kind === "WAIT" ? {kind, seconds: 20}
+                 : kind === "PLAY" ? {kind, demo: ""} : {kind});
         renderSteps();
       };
     }

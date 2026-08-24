@@ -415,9 +415,22 @@ def list_features() -> JSONResponse:
         entry["live"] = REGISTRY.get(record.id) is not None
         entry["warnings"] = features.warnings_for(record)
         out.append(entry)
+    # What a Plays step can hand the visit to. The editor had no list at all,
+    # which is why it had no Plays button: the step kind was implemented in
+    # brain/features.py, enforced by validate(), interpreted by demos/_stored.py
+    # and documented in docs/CUSTOM_FEATURES.md as one of five kinds -- and
+    # unreachable from the dashboard, because nothing here ever told the page
+    # which demos exist. Built from the registry so a demo added tomorrow shows
+    # up with no edit here, exactly as _demo_triggers does.
+    targets = []
+    for demo_id in REGISTRY.ids():
+        demo = REGISTRY.get(demo_id)
+        if demo is not None:
+            targets.append({"id": demo_id, "label": demo.label})
     return JSONResponse({
         "features": out,
         "emotions": sorted(VALID_EMOTION_TAGS),
+        "handover_targets": targets,
         "personas": [{"id": p.id, "label": p.label} for p in personas.PERSONAS],
         "available": features._available,
         "limits": {
