@@ -124,12 +124,19 @@ def check_demos() -> None:
                 problems.append(f"trigger {phrase!r} already claimed by {owner}")
         for need in demo.requires:
             # "faces" is hardware -- whether MediaPipe runs on this machine.
+            # "camera" is separate from it, because a machine can have a working
+            # camera and no face detection: that is the robot's own CPU exactly,
+            # where MediaPipe crashes but the camera is fine. A demo that only
+            # wants a picture must not be gated on recognition it never uses.
             # "study" is a switch an operator flips for an afternoon, and the
             # research demo is gated on it so it greys itself out with a reason
-            # rather than being reachable by accident during an open day. Both
-            # are resolved by _live_capabilities in web/server.py and
-            # body/voice_loop.py, which must agree with this list.
-            if need not in ("faces", "study"):
+            # rather than being reachable by accident during an open day.
+            #
+            # THIS LIST IS THE THIRD PLACE capabilities are named -- the other
+            # two are _capabilities in body/voice_loop.py and the demos' own
+            # requires. All three must agree, and test [47] in test_demokit.py
+            # checks that nothing requires something the robot cannot publish.
+            if need not in ("faces", "camera", "study"):
                 problems.append(f"unknown requirement {need!r}")
         report(PASS if not problems else FAIL, f"contract: {demo_id}", "; ".join(problems))
 

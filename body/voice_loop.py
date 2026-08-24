@@ -19,6 +19,8 @@ import threading
 import time
 
 from brain.modes import STATE
+from typing import Optional
+
 from config import HardwareTarget, default_target
 from demokit.registry import REGISTRY
 from demokit.runner import DemoRunner
@@ -119,17 +121,25 @@ def _ensure_daemon_advertises(host: str, port: int) -> None:
     logger.warning("Daemon did not come back advertising %s in time; connecting anyway.", host)
 
 
-def _capabilities(tracker: FaceTracker) -> frozenset[str]:
+def _capabilities(tracker: FaceTracker, camera: Optional[Camera] = None) -> frozenset[str]:
     """What this machine can actually do, for demos that need to know.
 
     "faces" is absent on the robot's own CPU, where MediaPipe crashes the
     process outright (SIGILL: the binary wants an ARM crypto extension the
     BCM2711 lacks) and face.py therefore disables it. A demo that needs faces
     is greyed out with a reason rather than silently doing nothing.
+
+    "camera" is separate from "faces" on purpose. A machine can have a working
+    camera and no face detection -- that is exactly the robot's own CPU -- so a
+    demo that just wants a picture must not be gated on recognition it does not
+    use. Conflating the two would have left "Look at this" greyed out forever
+    on hardware perfectly able to run it.
     """
     caps = set()
     if tracker.enabled:
         caps.add("faces")
+    if camera is not None:
+        caps.add("camera")
     return frozenset(caps)
 
 
@@ -207,7 +217,7 @@ def run_forever(target: HardwareTarget) -> None:
     # Demos are discovered after the hardware is up but before the first cycle,
     # so the dashboard's demo grid is populated by the time anyone can press
     # anything. A demo that fails to import is logged and skipped here.
-    capabilities = _capabilities(tracker)
+    capabilities = _capabilities(tracker, camera)
     REGISTRY.discover()
     # Features written from the dashboard, after the demos found on disk and
     # before the list is published -- so a staff-written button is up by the

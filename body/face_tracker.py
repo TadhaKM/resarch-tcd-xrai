@@ -144,6 +144,10 @@ class FaceTracker:
         #: run the model a second time on another thread.
         self._embedding = None
         self._seen_at = 0.0
+        #: The most recent camera frame, for callers that want a picture
+        #: without competing with this loop for the device.
+        self._frame = None
+        self._frame_at = 0.0
         #: When the person currently in view first appeared. Reset whenever the
         #: face has been gone longer than _PRESENCE_GAP_S, so someone who walks
         #: away and comes back is a fresh arrival rather than a long dwell.
@@ -180,6 +184,18 @@ class FaceTracker:
             if time.monotonic() - self._seen_at > max_age_s:
                 return None, None
             return self._person_id, self._active_face
+
+    def latest_frame(self, max_age_s: float = 2.0):
+        """The newest camera frame, or None if there is not a fresh one.
+
+        None rather than a stale picture: answering "what is this?" from a
+        frame taken four seconds ago describes whatever was there before the
+        visitor held their thing up.
+        """
+        with self._lock:
+            if self._frame is None or time.monotonic() - self._frame_at > max_age_s:
+                return None
+            return self._frame
 
     def present_for(self, max_age_s: float = 1.5) -> float:
         """Seconds somebody has been continuously in view. 0.0 when nobody is.
@@ -334,6 +350,14 @@ class FaceTracker:
                     no_frame += 1
                     continue
                 frames += 1
+                with self._lock:
+                    # Kept so anything else wanting a picture reuses THIS read
+                    # rather than opening the camera again. Two readers on one
+                    # device is how you get a tracker that starts missing
+                    # frames the moment somebody asks the robot to look at
+                    # something.
+                    self._frame = frame
+                    self._frame_at = now
 
                 # force=True because this loop already paces itself; the
                 # detector's own rate limiter would otherwise drop most calls.

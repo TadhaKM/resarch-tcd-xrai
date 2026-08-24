@@ -115,6 +115,36 @@ never appear to. Drop a native piper voice into `models/tts/` and it uses it.
 **Research session** — only appears when Research mode is switched on. See
 below.
 
+### Showing it something
+
+**Look at this** — hold an object up and say *"what is this?"*. It asks you to
+hold it in front of it, takes one look, and says what it is in a sentence.
+
+**This is the only thing the robot sends a picture of anywhere.** Everything
+else the camera does stays on the laptop: face detection, recognition and the
+identity list never leave the machine. This one feature sends a single
+photograph to the same AI that answers its questions.
+
+What that means in practice, and what to tell a visitor who asks:
+
+- **Only when somebody asks.** There is no path that looks continuously, and
+  nothing takes a picture on its own.
+- **It says so first.** "Let me take a look" is spoken *before* the picture is
+  taken, so nobody is photographed by a robot that appeared to be idle.
+- **Nothing is kept.** The picture is sent, answered, and dropped. It is not
+  written to disk and never goes near the research data.
+- **It is deliberately a poor photograph.** The image is shrunk to 640 pixels
+  before it goes — plenty to name a book or a mug, and not much use for
+  recognising the people standing behind it.
+
+**It needs the internet.** The offline model cannot see at all, so when the wifi
+is down this is the one feature that simply stops. It will say *"I cannot get a
+look at that just now"* rather than guessing.
+
+If you are running anything where visitors have been told the robot does not
+photograph them, this is the feature to leave alone — switch it off in the
+mode grid and it cannot be reached.
+
 ### Scripting a whole visit
 
 A feature can now finish by handing over to another demo — a **Plays** step.

@@ -2632,5 +2632,62 @@ for _name in _snd.names():
 check("an unknown sound is silence, not an error", _snd.get("nope"), None)
 
 print()
+print("[47] showing the robot something keeps the picture bounded")
+from brain import looking as _lk  # noqa: E402
+import numpy as _np47  # noqa: E402
+import base64 as _b6447  # noqa: E402
+import cv2 as _cv47  # noqa: E402
+
+# Every demo declaring a requirement must name one the robot actually
+# publishes, or it is greyed out forever on hardware perfectly able to run it.
+# "Look at this" asked for "camera", which did not exist -- only "faces" did --
+# so it would have shipped permanently unavailable, exactly as research mode
+# did. That bug cost an afternoon the first time.
+_vl47 = (_pl36.Path(__file__).parent / "body" / "voice_loop.py").read_text(encoding="utf-8")
+_groups47 = []
+for _demo_file in (_pl36.Path(__file__).parent / "demos").glob("[!_]*.py"):
+    _groups47 += _re45.findall(r"requires\s*=\s*\(([^)]*)\)",
+                               _demo_file.read_text(encoding="utf-8"))
+_needed47 = set()
+for _group in _groups47:
+    for _word in _group.split(","):
+        _clean = _word.strip().strip("\"").strip("'")
+        if _clean:
+            _needed47.add(_clean)
+_published47 = set(_re45.findall(r'caps\.add\("([a-z]+)"\)', _vl47)) | {"study"}
+check("every capability a demo requires is one the robot can publish",
+      sorted(_needed47 - _published47), [])
+
+# A THIRD place names them: tools/selftest.py validates each demo's contract
+# against its own hardcoded list. Adding "camera" to voice_loop was not enough
+# -- selftest failed with "unknown requirement 'camera'", which is how this
+# check came to exist. Three lists that must agree is two too many, but until
+# they are one, they are checked against each other.
+_st47 = (_pl36.Path(__file__).parent / "tools" / "selftest.py").read_text(encoding="utf-8")
+_known47 = set(_re45.findall(r'need not in \(([^)]*)\)', _st47))
+_selftest_caps = set()
+for _g in _known47:
+    for _w in _g.split(","):
+        _c = _w.strip().strip("\"").strip("'")
+        if _c:
+            _selftest_caps.add(_c)
+check("and the selftest's own list agrees with them",
+      sorted(_needed47 - _selftest_caps), [])
+
+# The picture is downscaled hard before it leaves the laptop: enough to name an
+# object, deliberately poor for identifying the people standing behind it.
+_big47 = _np47.zeros((1080, 1920, 3), dtype=_np47.uint8)
+_big47[:, :, 2] = 200
+_enc47 = _lk._encode(_big47)
+check("a frame encodes to something sendable", bool(_enc47), True)
+_dec47 = _cv47.imdecode(_np47.frombuffer(_b6447.b64decode(_enc47), _np47.uint8), 1)
+check("and is downscaled before it leaves the laptop",
+      max(_dec47.shape[:2]) <= _lk._MAX_EDGE, True)
+
+# A missing frame must be an apology, never an exception. On this network the
+# wifi being down is the ordinary case rather than the edge case.
+check("no frame means no request at all", _lk.describe(None), "")
+
+print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")
 sys.exit(1 if failures else 0)
