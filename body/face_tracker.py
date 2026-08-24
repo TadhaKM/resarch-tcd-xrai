@@ -14,7 +14,7 @@ import logging
 import math
 import threading
 import time
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 
@@ -109,8 +109,12 @@ _SAME_PERSON_THRESHOLD = 0.50
 class FaceTracker:
     """Background loop: detect the active face, aim the head, cache identity."""
 
-    def __init__(self, camera: Camera, face: FaceIdentifier, motion: MotionController) -> None:
+    def __init__(self, camera: Camera, face: FaceIdentifier,
+                 motion: MotionController, doa: Optional[Any] = None) -> None:
         self._camera = camera
+        #: Direction of arrival, if the robot has a board that reports it.
+        #: Optional so the tracker behaves exactly as before without one.
+        self._doa = doa
         self._face = face
         self._motion = motion
         self._stop = threading.Event()
@@ -217,6 +221,24 @@ class FaceTracker:
         scans a slow arc so the robot finds people instead of waiting to be
         stood in front of correctly.
         """
+        # A voice beats a blind sweep. This is the case the microphone array
+        # earns its keep on: somebody talking from outside the camera's view,
+        # who the robot would otherwise sweep straight past. Only ever acted on
+        # once the offset has been learned from moments when the speaker WAS
+        # visible -- suggested_yaw_deg returns None until then, so the sweep
+        # below stays exactly as it was.
+        if self._doa is not None:
+            try:
+                toward = self._doa.suggested_yaw_deg()
+            except Exception:
+                toward = None
+            if toward is not None:
+                self._motion.look(yaw=toward, pitch=0.0, ttl=_TRACK_TTL_S)
+                # Held, so the sweep does not immediately drag the head away
+                # from a voice that is still talking.
+                self._searching_since = now
+                return
+
         if self._searching_since is None:
             self._searching_since = now
             return
@@ -301,6 +323,16 @@ class FaceTracker:
                 self._searching_since = None
 
                 self._motion.track_face(detected.bbox, frame.shape, ttl=_TRACK_TTL_S)
+
+                # One sample toward learning where the microphone's zero points.
+                # Only meaningful while a face is in view, which is exactly the
+                # case where the head does not need the sound to aim.
+                if self._doa is not None:
+                    try:
+                        x0, _, x1, _ = detected.bbox[0], detected.bbox[1], detected.bbox[2], detected.bbox[3]
+                        self._doa.observe_face((float(x0) + float(x1)) / 2.0, frame.shape[1])
+                    except Exception:
+                        logger.debug("Could not sample direction of arrival", exc_info=True)
 
                 # Identity is resolved here too, since this thread owns the
                 # detector -- the voice loop just reads the cached answer.

@@ -2294,6 +2294,58 @@ _r38.cycle()
 check("but a low-confidence 'go to sleep' still puts it to sleep",
       _s38.sleeping, True)
 
+import time as _t  # noqa: E402
+print()
+print("[39] the head turns toward a voice it cannot see, once it knows where front is")
+import math as _m39  # noqa: E402
+from body import doa as _doa  # noqa: E402
+
+# Angles wrap, and a plain average of two angles either side of zero points
+# exactly backwards -- which for this feature means the head turning away from
+# whoever spoke. That is the one failure worse than doing nothing.
+check("a wrapping mean does not point backwards",
+      round(_doa._circular_mean([0.1, 2 * _m39.pi - 0.1]), 3), 0.0)
+check("a plain average would have", round((0.1 + (2 * _m39.pi - 0.1)) / 2, 2), 3.14)
+check("agreeing angles have a small spread",
+      _doa._circular_spread([1.0, 1.05, 0.95]) < 0.2, True)
+check("opposed angles have a large one",
+      _doa._circular_spread([0.0, _m39.pi]) > 1.0, True)
+
+_L = _doa.DoaListener("127.0.0.1", 8000)   # never started: no thread, no HTTP
+check("says nothing before it has heard anything", _L.suggested_yaw_deg(), None)
+check("and is not calibrated", _L.calibrated(), False)
+
+# A reading arrives, but the offset is still unknown: still silent, because the
+# caller's fallback (a visual sweep) beats a confident guess in a wrong direction.
+_L._angle, _L._speech, _L._at = 1.2, True, _t.monotonic()
+check("a reading alone is not enough to aim", _L.suggested_yaw_deg(), None)
+
+# Learn the offset from a speaker who IS visible, dead centre in frame.
+for _ in range(_doa._CALIBRATION_SAMPLES):
+    _L._angle, _L._at = 1.2, _t.monotonic()
+    _L.observe_face(320.0, 640)          # centre of a 640-wide frame = straight ahead
+check("it learns where front is from a visible speaker", _L.calibrated(), True)
+check("a voice from straight ahead now needs no turn",
+      abs(_L.suggested_yaw_deg()) < 3.0, True)
+
+# A voice off to one side should now produce a turn that way, and the sign
+# must match motion.look's convention or the head turns the wrong way.
+_L._angle, _L._at = 1.2 + _m39.radians(20), _t.monotonic()
+_right = _L.suggested_yaw_deg()
+_L._angle, _L._at = 1.2 - _m39.radians(20), _t.monotonic()
+_left = _L.suggested_yaw_deg()
+check("opposite directions give opposite turns", (_right > 0) and (_left < 0), True)
+check("and never beyond what the neck can do",
+      abs(_right) <= _doa._MAX_YAW_DEG and abs(_left) <= _doa._MAX_YAW_DEG, True)
+
+# Silence must not move the head, however confident the direction.
+_L._angle, _L._speech, _L._at = 1.9, False, _t.monotonic()
+check("no speech means no turn", _L.suggested_yaw_deg(), None)
+# And a stale reading is not acted on -- the head must not chase a voice that
+# was there ten seconds ago on a network that drops.
+_L._speech, _L._at = True, _t.monotonic() - (_doa._MAX_AGE_S + 1.0)
+check("a stale reading is ignored", _L.suggested_yaw_deg(), None)
+
 print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")
 sys.exit(1 if failures else 0)

@@ -26,6 +26,7 @@ from demokit.runner import DemoRunner
 from .audio_io import AudioIO
 from .camera import Camera
 from .face import FaceIdentifier
+from .doa import DoaListener
 from .face_tracker import FaceTracker
 from .motion import MotionController
 
@@ -190,7 +191,17 @@ def run_forever(target: HardwareTarget) -> None:
     # a turn starts -- the robot should hold your gaze while you talk to it and
     # between questions, which is what makes it feel present rather than
     # snapping to attention only when addressed.
-    tracker = FaceTracker(camera, face, motion)
+    # The microphone array reports which direction a voice came from, which
+    # lets the head turn toward somebody talking from outside the camera's
+    # view -- the one case visual tracking cannot cover at all. Read from the
+    # daemon over HTTP rather than through the SDK's AudioDoA: that opens the
+    # USB device directly, and in remote mode it is constructed on the laptop,
+    # where no ReSpeaker is attached. Entirely optional; without a board that
+    # answers, every accessor returns None and the tracker behaves as before.
+    doa = DoaListener(target.daemon_host, target.daemon_port)
+    doa.start()
+
+    tracker = FaceTracker(camera, face, motion, doa=doa)
     tracker.start()
 
     # Demos are discovered after the hardware is up but before the first cycle,
@@ -384,6 +395,7 @@ def run_forever(target: HardwareTarget) -> None:
             runner.end_conversations()
         except Exception:
             logger.exception("Could not close out conversations on shutdown")
+        doa.stop()
         tracker.stop()
         camera.close()
         audio.close()
