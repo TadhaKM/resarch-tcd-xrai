@@ -57,14 +57,27 @@ def _envelope(n: int, attack: float = 0.01, release: float = 0.25) -> np.ndarray
     anywhere else it always does. This is the difference between a chime and a
     pop followed by a chime.
     """
+    if n <= 0:
+        return np.zeros(0, dtype=np.float32)
+    # Clamped to what is actually available, and applied by MULTIPLYING two
+    # ramps rather than writing into a flat array.
+    #
+    # The first version skipped the release entirely when it was as long as the
+    # note ("if r < n"), which is the one case where it matters most: the
+    # wrong-answer sound is two short notes, its last note was exactly the
+    # release length, so it ended at -0.32 -- a hard cut straight into a pop.
+    # Found by a test asserting every clip starts and ends at silence, not by
+    # listening, and the robot was offline at the time.
+    a = min(max(1, int(SAMPLE_RATE * attack)), n)
+    r = min(max(1, int(SAMPLE_RATE * release)), n)
     env = np.ones(n, dtype=np.float32)
-    a = max(1, int(SAMPLE_RATE * attack))
-    r = max(1, int(SAMPLE_RATE * release))
-    if a < n:
-        env[:a] = np.linspace(0.0, 1.0, a, dtype=np.float32)
-    if r < n:
-        env[-r:] = np.linspace(1.0, 0.0, r, dtype=np.float32)
-    return env
+    rise = np.ones(n, dtype=np.float32)
+    rise[:a] = np.linspace(0.0, 1.0, a, dtype=np.float32)
+    fall = np.ones(n, dtype=np.float32)
+    fall[-r:] = np.linspace(1.0, 0.0, r, dtype=np.float32)
+    # Multiplied, so an attack and release that overlap on a very short note
+    # still both apply and the clip still begins and ends at zero.
+    return env * rise * fall
 
 
 def _tone(freq: float, seconds: float, *, harmonics: int = 3,
