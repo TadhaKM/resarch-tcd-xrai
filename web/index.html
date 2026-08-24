@@ -1641,6 +1641,17 @@
     <p class="dim" id="lock-msg"></p>
   </div>
 
+  <details class="panel" id="soundpanel">
+    <summary><h2>Sounds</h2> <span class="dim">a fanfare, a chime, applause</span></summary>
+    <p class="dim">
+      Short effects the robot plays by itself &mdash; a chime when it finishes
+      checking itself over, a fanfare when a group sweeps the quiz. Press one
+      to hear it. They are generated rather than recorded, so there is nothing
+      to license and nothing to download.
+    </p>
+    <div class="ctl-row" id="sound-buttons"></div>
+  </details>
+
   <details class="panel" id="health">
     <summary><h2>Is it well?</h2> <span class="dim" id="health-state"></span></summary>
     <p class="dim">
@@ -3717,6 +3728,38 @@
     $("lock-go").onclick = unlock;
     $("lock-code").addEventListener("keydown", (e) => { if (e.key === "Enter") unlock(); });
     check();
+  })();
+
+  // ── sounds ───────────────────────────────────────────────────────────────
+  (() => {
+    const box = $("sound-buttons");
+    if (!box) return;
+    let built = false;
+
+    async function build() {
+      if (built) return;
+      let names = [];
+      try { names = (await (await fetch("/api/sounds")).json()).sounds || []; } catch (e) { return; }
+      box.textContent = "";
+      for (const name of names) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "act sm";
+        b.textContent = name;           // server-supplied: textContent, never innerHTML
+        b.onclick = () => {
+          fetch("/api/sounds", {
+            method: "POST", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({name})
+          }).catch(() => {});
+        };
+        box.appendChild(b);
+      }
+      built = true;
+    }
+
+    $("soundpanel").addEventListener("toggle", () => {
+      if ($("soundpanel").open) build();
+    });
   })();
 
   // ── robot health ─────────────────────────────────────────────────────────

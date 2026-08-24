@@ -152,9 +152,11 @@ class Preflight(Demo):
         for r in results:
             ctx.status(f"{'OK  ' if r['ok'] else 'FAIL'}  {r['label']} -- {r['note']}")
         if not bad:
+            ctx.audio.play_sound("ready", ctx.motion)
             ctx.say("All good. I am ready for them.", "happy")
             ctx.status("Pre-flight passed.")
         else:
+            ctx.audio.play_sound("uhoh", ctx.motion)
             names = ", ".join(r["label"].lower() for r in bad)
             ctx.say(f"Something is not right with my {names}.", "sad")
             ctx.status(f"Pre-flight FAILED: {names}")

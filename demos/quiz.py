@@ -173,6 +173,9 @@ class Quiz(Demo):
         if _is_right(text, accepted):
             store["score"] = store.get("score", 0) + 1
             self._advance(ctx)
+            # Before the words, not after: the sound is the answer landing, and
+            # a group cheers over it rather than waiting politely for the line.
+            ctx.audio.play_sound("correct", ctx.motion)
             ctx.motion.express_move("happy")
             ctx.say(f"Yes! {fact}", "happy")
             return True
@@ -181,6 +184,7 @@ class Quiz(Demo):
         store["tries"] = tries
         if tries >= _MAX_TRIES:
             self._advance(ctx)
+            ctx.audio.play_sound("wrong", ctx.motion)
             ctx.say(f"Close. {fact}", "neutral")
             return True
         ctx.say("Not quite -- anyone else?", "curious")
@@ -244,6 +248,9 @@ class Quiz(Demo):
             line, tag = "None right, but you know them all now. That is the same thing.", "happy"
         else:
             line, tag = f"{score} out of {asked}. Not bad at all.", "happy"
+        # A clean sweep gets the fanfare; anything else gets applause, because
+        # a group that got two out of four still played.
+        ctx.audio.play_sound("fanfare" if score == asked else "applause", ctx.motion)
         ctx.motion.express_move("happy")
         ctx.say(line, tag)
         return IdleResult(listen_for=MAX_LISTEN_WINDOW_S)

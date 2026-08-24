@@ -2608,5 +2608,29 @@ for _i in range(len(_lines45) - 1):
 check("no two string literals are concatenated the Python way", _bad45, [])
 
 print()
+print("[46] the generated sounds are safe to send to a speaker")
+from body import sounds as _snd  # noqa: E402
+import numpy as _np46  # noqa: E402
+
+check("there are sounds to play", len(_snd.names()) >= 5, True)
+for _name in _snd.names():
+    _clip = _snd.get(_name)
+    _secs = len(_clip) / _snd.SAMPLE_RATE
+    # NaN reached the speaker once already: sin(pi) in float32 is a hair below
+    # zero, and a negative raised to a fractional power is NaN, which silences
+    # a buffer at best and clicks loudly at worst. Caught by a printed "nan".
+    check(f"  {_name}: every sample is finite", bool(_np46.all(_np46.isfinite(_clip))), True)
+    # Short, because the microphone is deaf for as long as the speaker is busy.
+    check(f"  {_name}: short enough to talk over", _secs <= _snd._MAX_CLIP_S, True)
+    # And never louder than the robot's own voice.
+    check(f"  {_name}: not louder than speech",
+          float(_np46.max(_np46.abs(_clip))) <= _snd._PEAK + 1e-6, True)
+    # A clip that starts or ends away from silence pops on a real speaker.
+    check(f"  {_name}: starts and ends at silence",
+          abs(float(_clip[0])) < 0.02 and abs(float(_clip[-1])) < 0.02, True)
+
+check("an unknown sound is silence, not an error", _snd.get("nope"), None)
+
+print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")
 sys.exit(1 if failures else 0)

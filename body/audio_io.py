@@ -1243,6 +1243,47 @@ class AudioIO:
             self._kws_stream = None
             self._mic_fresh = False
 
+    def play_sound(self, name: str, motion: Optional[Any] = None) -> bool:
+        """Play a short generated effect. True if anything came out.
+
+        Loop thread only, like speak() -- it writes to the same speaker, and
+        two writers interleave into noise.
+
+        Never raises and never blocks for long: an unknown name, a dead link or
+        a missing device all return False and leave the turn exactly as it was.
+        A robot that fails to play a fanfare should be a robot with no fanfare,
+        not a robot that stopped.
+        """
+        from body import sounds
+
+        clip = sounds.get(name)
+        if clip is None or not len(clip):
+            return False
+        try:
+            if self.target.mode == "robot":
+                if self._robot is None:
+                    return False
+                rate = self._robot.media.get_output_audio_samplerate()
+                audio = _resample(clip, sounds.SAMPLE_RATE, rate)
+                if motion is not None:
+                    # So the head moves with the sound rather than sitting
+                    # still through it, exactly as it does for speech.
+                    motion.feed_speech_audio(clip)
+                self._robot.media.push_audio_sample(audio)
+                # Returns when the sound has actually finished, because callers
+                # sequence the next line against it. Short by construction --
+                # sounds.py caps every clip.
+                time.sleep(len(audio) / float(rate))
+            else:
+                import sounddevice as sd
+
+                sd.play(clip, sounds.SAMPLE_RATE)
+                sd.wait()
+        except Exception:
+            logger.debug("Could not play the %r sound", name, exc_info=True)
+            return False
+        return True
+
     def _speak_local(self, chunks, motion: Optional[Any]) -> None:
         """Play chunks as they are synthesized, synthesizing ahead of playback.
 

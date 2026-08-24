@@ -233,6 +233,34 @@ def say(req: SayRequest) -> JSONResponse:
     return JSONResponse({"ok": True})
 
 
+class SoundRequest(BaseModel):
+    name: str = ""
+
+
+@app.get("/api/sounds")
+def list_sounds() -> JSONResponse:
+    from body import sounds
+
+    return JSONResponse({"sounds": sounds.names()})
+
+
+@app.post("/api/sounds")
+def play_sound(req: SoundRequest) -> JSONResponse:
+    """Play one of the generated effects, for trying them out.
+
+    Queued through STATE.request like the "Say it" box rather than played
+    here: the speaker is loop-thread-only, and a web handler writing to it
+    would interleave with whatever the robot is already saying.
+    """
+    from body import sounds
+
+    if req.name not in sounds.names():
+        return JSONResponse({"ok": False, "error": "no such sound"}, status_code=400)
+    if not STATE.request("sound", req.name):
+        return JSONResponse({"ok": False, "error": "queue full"}, status_code=429)
+    return JSONResponse({"ok": True})
+
+
 @app.post("/api/listen")
 def listen_now() -> JSONResponse:
     """Start listening as if the wake word had been heard.

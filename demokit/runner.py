@@ -838,6 +838,13 @@ class DemoRunner:
             self._motion.express(tag)
             self._audio.speak(text, tag, motion=self._motion)
             return True
+        if kind == "sound":
+            # On the loop thread, which is the whole reason this is queued
+            # rather than played in the web handler: two writers to the same
+            # speaker interleave into noise.
+            logger.info("Dashboard sound: %r", text)
+            self._audio.play_sound(text, self._motion)
+            return True
         if kind == "listen":
             logger.info("Dashboard listen-now pressed.")
             self._state.set_sleeping(False)
