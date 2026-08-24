@@ -158,6 +158,12 @@ running a long session.
 
 #### Getting the recordings out
 
+**They are transcripts, not audio.** Nothing the robot hears is ever saved as
+sound: speech is turned into text and the audio is discarded on the spot. There
+is no play button and there is no file to recover, which is the point — a
+transcript with no name and no voice attached cannot be traced back to the
+person who said it, even by whoever holds the database.
+
 The **Recordings** list at the bottom of the Research mode panel shows every
 session: when it started, the condition, who armed it, how many turns, and the
 average time to first word. The one being recorded into right now is marked
