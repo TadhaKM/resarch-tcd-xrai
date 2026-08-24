@@ -649,6 +649,15 @@ def set_study(req: StudyRequest) -> JSONResponse:
                                    "could be recorded."},
             status_code=503,
         )
+    # Arming with a condition SETS the manner, it does not merely label it.
+    # The dropdown offering the condition is built from the persona list and
+    # brain/study.py says "the A/B condition is the persona, because that is
+    # the manipulable variable this robot already has" -- but nothing here ever
+    # applied it. So an operator could pick Friendly, get a robot still
+    # answering as Professional, and record every turn under the wrong arm of
+    # their own design. Silent, and only discoverable in analysis.
+    if req.running and req.condition:
+        STATE.set_persona(req.condition)
     state = (study.start(req.condition, operator=req.operator)
              if req.running else study.stop())
     # ONE place capabilities change, and everything reads them back from the
