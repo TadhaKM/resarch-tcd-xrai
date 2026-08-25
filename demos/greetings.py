@@ -117,11 +117,16 @@ class Greetings(Demo):
     claims_utterances = True
 
     def on_enter(self, ctx: DemoContext) -> None:
+        # Says NOTHING here, deliberately. The runner hands the sentence that
+        # selected this demo straight back to on_utterance, and that sentence
+        # usually already names the language -- "say hello in Spanish" was
+        # answered live with "Which language? I have Spanish, French..." to a
+        # person who had just said the word Spanish. The question is asked
+        # from on_idle instead, and only when a slice has passed with no
+        # language named -- a dashboard press, or "greet them in another
+        # language" with none chosen.
         ctx.store.clear()
         ctx.store["stage"] = "waiting"
-        names = ", ".join(v[0] for v in _LANGUAGES.values())
-        ctx.say(f"Which language? I have {names}.", "curious")
-        self._hold(ctx, True)
 
     def on_idle(self, ctx: DemoContext) -> IdleResult:
         store = ctx.store
@@ -138,6 +143,12 @@ class Greetings(Demo):
                 store["stage"] = "done"
             return IdleResult(listen_for=_BETWEEN_LINES_S)
         if store.get("stage") == "waiting":
+            if not store.get("asked"):
+                store["asked"] = True
+                names = ", ".join(v[0] for v in _LANGUAGES.values())
+                ctx.say(f"Which language? I have {names}.", "curious")
+                self._hold(ctx, True)
+                return IdleResult(listen_for=MAX_LISTEN_WINDOW_S)
             waited = store.get("waited", 0) + 1
             store["waited"] = waited
             if waited > 5:

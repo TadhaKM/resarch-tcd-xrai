@@ -103,23 +103,32 @@ def _sequence(notes: list[tuple[float, float]], gap: float = 0.0) -> np.ndarray:
     return np.concatenate(parts) if parts else np.zeros(0, dtype=np.float32)
 
 
-def _noise_swell(seconds: float, rng: np.random.Generator) -> np.ndarray:
-    """Filtered noise that rises and falls -- applause, roughly.
+def _claps(seconds: float, rng: np.random.Generator) -> np.ndarray:
+    """Many short sharp bursts at random times -- applause as it actually is.
 
-    A moving average is the whole filter. It is not convincing applause and is
-    not trying to be; it reads as "a pleased noise", which is the job.
+    The first version was smoothed noise under a swell, and the verdict from
+    the room was that it "sounds like someone taking a breath" -- which is
+    exactly what smoothed noise is. A clap is the opposite: a broadband
+    TRANSIENT, sharp attack and fast decay, and applause is dozens of them
+    landing independently. So this lays individual claps down at random
+    offsets, sparse at the edges and dense in the middle, each with its own
+    loudness and its own decay so no two sound stamped from a mould.
     """
     n = int(SAMPLE_RATE * seconds)
-    raw = rng.normal(0.0, 1.0, n).astype(np.float32)
-    window = 12
-    smoothed = np.convolve(raw, np.ones(window, dtype=np.float32) / window, mode="same")
-    # Clipped at zero before the power. sin(pi) in float32 lands on about
-    # -8.7e-8 rather than 0, and a negative raised to a fractional power is
-    # NaN -- which propagates through the normalisation and sends a buffer of
-    # NaN to the speaker. Caught only because the peak printed as "nan".
-    shape = np.clip(np.sin(np.linspace(0.0, math.pi, n, dtype=np.float32)), 0.0, None)
-    swell = shape ** 1.5
-    return smoothed * swell
+    out = np.zeros(n, dtype=np.float32)
+    clap_len = int(SAMPLE_RATE * 0.03)
+    decay = np.exp(-np.arange(clap_len, dtype=np.float32) / (SAMPLE_RATE * 0.006))
+    count = 90
+    for _ in range(count):
+        # Beta(2,2) bunches the claps toward the middle, which is the swell:
+        # applause starts ragged, peaks together, trails off.
+        at = int(rng.beta(2.0, 2.0) * (n - clap_len - 1))
+        burst = rng.normal(0.0, 1.0, clap_len).astype(np.float32)
+        # First difference brightens the noise toward the crack of a real
+        # clap; smoothed noise is what breathing sounds like.
+        burst = np.diff(burst, prepend=burst[0])
+        out[at:at + clap_len] += burst * decay * float(rng.uniform(0.3, 1.0))
+    return out * _envelope(n, attack=0.05, release=0.3)
 
 
 #: Middle C and friends, so the tunes below read as notes rather than numbers.
@@ -155,7 +164,7 @@ def _uhoh() -> np.ndarray:
 
 
 def _applause() -> np.ndarray:
-    return _noise_swell(1.4, np.random.default_rng(7))
+    return _claps(1.6, np.random.default_rng(7))
 
 
 _BUILDERS = {

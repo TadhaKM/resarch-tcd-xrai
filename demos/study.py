@@ -11,10 +11,13 @@ What that costs is that the DATABASE no longer evidences consent, so
 brain/study.py records who armed the session against every row instead. That
 is the trail an ethics reviewer asks for.
 
-What it does NOT cost is the ability to stop. The refusal vocabulary from the
-old consent reader was kept and folded into _WITHDRAW, because with the robot
-no longer asking, an objection raised mid-session is the only way somebody in
-the room can end this -- and it still deletes rather than mutes.
+What it does NOT cost is the ability to stop. Two spoken vocabularies, split
+after live use collapsed them into one gesture: _STOP ends the recording and
+KEEPS the session ("stop recording" said meaning exactly that deleted a
+session the operator wanted), and _DELETE removes it outright -- the refusal
+vocabulary from the old consent reader lives there, because an objection
+raised mid-session must still erase, not mute. The dashboard shows a red
+Recording pill whenever a session is live, with the same stop on it.
 
 NOT A SUBSTITUTE FOR ETHICS APPROVAL. brain/study.py's docstring says this at
 length and it is repeated here because this is the file somebody opens when
@@ -48,12 +51,22 @@ _BETWEEN_LINES_S = 1.0
 #: consent to being recorded" mid-session has not been asked a question, they
 #: have raised one, and the answer has to be the same either way. Keeping them
 #: was the point of not deleting the consent vocabulary along with the script.
-_WITHDRAW = (
+_DELETE = (
     "delete my data", "delete that", "withdraw", "take me out of the study",
-    "forget what i said", "stop recording", "i changed my mind",
+    "forget what i said", "i changed my mind",
     "do not consent", "dont consent", "don't consent", "i refuse", "opt out",
-    "do not record", "dont record", "don't record", "no recording",
     "do not want to be recorded", "dont want to be recorded",
+)
+
+#: Ways somebody ends the RECORDING without ending the record. Split from the
+#: delete phrases after live use: the operator said "stop recording" meaning
+#: exactly that -- stop recording from here on -- and the robot deleted the
+#: session outright. Stop keeps what was said and stops adding to it; delete
+#: stays available, spoken or from the dashboard, and stays a separate act.
+_STOP = (
+    "stop recording", "stop the recording", "end the recording",
+    "thats enough recording", "that's enough recording",
+    "do not record", "dont record", "don't record", "no recording",
 )
 
 
@@ -103,13 +116,20 @@ class Study(Demo):
 
     def on_utterance(self, ctx: DemoContext, text: str) -> bool:
         lowered = text.lower()
-        if any(phrase in lowered for phrase in _WITHDRAW):
+        if any(phrase in lowered for phrase in _DELETE):
             gone = store.withdraw()
             store.consent(False)
             ctx.store["stage"] = _DONE
             ctx.status(f"Participant withdrew; {gone} turn(s) deleted.")
             ctx.say("Done -- I have deleted it. We can keep chatting off the record.",
                     "neutral")
+            return True
+        if any(phrase in lowered for phrase in _STOP):
+            store.stop()
+            ctx.store["stage"] = _DONE
+            ctx.status("Recording stopped; the session is kept.")
+            ctx.say("Okay -- recording stopped. What we said is kept; "
+                    "say delete my data if you want it gone.", "neutral")
             return True
 
         if ctx.store.get("stage") != _RUNNING:

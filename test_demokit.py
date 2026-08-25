@@ -2137,6 +2137,7 @@ class _FakeStudyStore:
 
     def __init__(self):
         self.records, self.consents, self.withdrew, self.on = [], [], 0, True
+        self.stopped = 0
 
     def running(self):
         return self.on
@@ -2155,6 +2156,11 @@ class _FakeStudyStore:
     def withdraw(self):
         self.withdrew += 1
         return 3
+
+    def stop(self):
+        self.stopped += 1
+        self.on = False
+        return {}
 
 
 def _run_study(transcripts, slices=4):
@@ -2182,14 +2188,20 @@ check("and the first thing said is not a consent notice",
       any("hub is researching" in s.lower() for s in _said), False)
 check("the very first utterance is recorded", len(_f.records), 1)
 
-# The half that must NOT have been thrown away with the script. Since the robot
-# no longer asks, an objection raised mid-session is the only way somebody in
-# the room can stop this -- and it has to delete, not mute.
-for _objection in ("stop recording", "delete my data", "I changed my mind",
-                   "I do not consent to being recorded", "please dont record me"):
+# Stopping and deleting are DIFFERENT acts, split after live use: the operator
+# said "stop recording", meaning stop adding to the record, and the robot
+# deleted the session they wanted to keep. Erasure phrases still erase; stop
+# phrases end the recording and keep what was said.
+for _objection in ("delete my data", "I changed my mind",
+                   "I do not consent to being recorded"):
     _f2, _ = _run_study([_objection])
     check(f"{_objection!r} withdraws and deletes", (_f2.withdrew, _f2.consents), (1, [False]))
     check("  and the objection itself is never recorded", _f2.records, [])
+for _stopword in ("stop recording", "please dont record me"):
+    _f2, _ = _run_study([_stopword])
+    check(f"{_stopword!r} stops WITHOUT deleting",
+          (_f2.stopped, _f2.withdrew), (1, 0))
+    check("  and is not itself recorded", _f2.records, [])
 
 # Export. Written through the csv module because a turn can contain a quote and
 # a comma -- "I said \"no\", then left" -- and hand-rolled CSV corrupts that row

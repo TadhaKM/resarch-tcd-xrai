@@ -327,6 +327,13 @@ def set_volume(req: VolumeRequest) -> JSONResponse:
 def set_mode(req: ModeRequest) -> JSONResponse:
     if not STATE.set_mode(req.mode):  # type: ignore[arg-type]
         return JSONResponse({"ok": False, "error": f"unknown mode {req.mode!r}"}, status_code=400)
+    # Pressing a mode button IS asking the robot to do something, so it wakes.
+    # Live, a staff-built feature was pressed while the robot was asleep and
+    # "nothing played" -- the loop skips all demo work during sleep, the press
+    # silently changed a mode nobody could see running, and the feature took
+    # the blame. The listen-now button already woke it for exactly this
+    # reason.
+    STATE.set_sleeping(False)
     return JSONResponse({"ok": True, "mode": STATE.mode})
 
 

@@ -1198,6 +1198,16 @@
   #health-rows td { border-bottom: 1px solid var(--line); }
   #health-rows td:last-child { white-space: normal; }
 
+  /* the recording pill: visible from across a room, because its whole job is
+     that nobody is recorded without something on screen saying so. */
+  #p-rec { color: var(--bad); border-color: var(--bad-line); font-weight: 600; }
+  .rec-dot {
+    display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+    background: var(--bad); animation: rec-blink 1.6s ease-in-out infinite;
+  }
+  @keyframes rec-blink { 50% { opacity: 0.25; } }
+  @media (prefers-reduced-motion: reduce) { .rec-dot { animation: none; } }
+
   #rec-view { margin-top: var(--s4); }
   .transcript { max-height: 320px; overflow-y: auto; margin-top: var(--s2); }
   .transcript .turn { padding: var(--s3) 0; border-bottom: 1px solid var(--line); }
@@ -1483,6 +1493,10 @@
     </div>
 
     <div class="util">
+      <button class="pill" id="p-rec" type="button" hidden
+              title="Recording for research -- press to stop">
+        <span class="rec-dot" aria-hidden="true"></span> Recording
+      </button>
       <span class="pill" id="p-vol">
         <span title="Speaker volume" aria-hidden="true">&#128266;</span>
         <input id="vol" type="range" min="0" max="100" step="5" aria-label="Speaker volume">
@@ -3734,6 +3748,39 @@
     $("lock-go").onclick = unlock;
     $("lock-code").addEventListener("keydown", (e) => { if (e.key === "Enter") unlock(); });
     check();
+  })();
+
+  // ── recording indicator ──────────────────────────────────────────────────
+  // Always polled, not only while the research panel is open: the person being
+  // recorded is not the person with the panel open, and the indicator is FOR
+  // the room. The button stops the recording and keeps the session -- deleting
+  // stays a deliberate act in the research panel, after live use showed "stop"
+  // and "delete" collapsed into one gesture destroys data people meant to keep.
+  (() => {
+    const pill = $("p-rec");
+    if (!pill) return;
+
+    async function look() {
+      try {
+        const d = await (await fetch("/api/study")).json();
+        pill.hidden = !d.running;
+      } catch (e) {}
+    }
+
+    pill.onclick = async () => {
+      pill.disabled = true;
+      try {
+        await fetch("/api/study", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({running: false})
+        });
+      } catch (e) {}
+      pill.disabled = false;
+      look();
+    };
+
+    look();
+    setInterval(look, 5000);
   })();
 
   // ── speaking speed ───────────────────────────────────────────────────────
