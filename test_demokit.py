@@ -3054,5 +3054,47 @@ check("brainstorming is listed as a thing it CAN do",
       "brainstorm ideas out loud" in _base54, True)
 
 print()
+print("[55] the Dean's Office introduction behaves like a scripted demo should")
+import demos.deans_office as _do55
+
+_d55 = _do55.DeansOffice()
+_r55, _s55, _a55, _ = build([Chatty(), _d55])
+_s55.set_mode(_d55.id)
+_windows55 = []
+for _ in range(len(_do55._SCRIPT) + 3):
+    _r55.cycle()
+
+check("every line of the script is spoken, in order",
+      _a55.said[:len(_do55._SCRIPT)], [t for t, _e in _do55._SCRIPT])
+check("it introduces the robot", "Reachy Mini" in _a55.said[0], True)
+check("it names the Hub and the school",
+      any("Trinity Business School" in x for x in _a55.said), True)
+check("it carries the soft-skills invitation",
+      any("soft skills" in x for x in _a55.said), True)
+check("and asks nobody to hold anything up",
+      any("hold" in x.lower() for x in _a55.said), False)
+
+# One line per slice, and the whole thing short enough for a standing
+# listener: the welcome demo's file records ~40s as where a room drifts.
+_words55 = sum(len(t.split()) for t, _e in _do55._SCRIPT)
+check("the script fits a standing audience (under ~90 words)",
+      _words55 <= 90, True)
+
+# Restart on request, from the words a person would actually use.
+_ctx55 = _r55._ctx
+check("'say it again' restarts it", _d55.on_utterance(_ctx55, "can you say it again"), True)
+check("and the script rewinds", _ctx55.store["line"], 0)
+
+# Its own trigger is swallowed apostrophe-and-all -- the quiz shipped this
+# exact bug, and [33] audits the plain spelling only.
+_ctx55.store["line"] = 1
+check("the trigger that started it is swallowed",
+      _d55.on_utterance(_ctx55, "hey reachy do the dean's office"), True)
+# A real question mid-script falls through to the conversation model.
+_ctx55.store["line"] = len(_do55._SCRIPT)
+check("a real question is left for the conversation model",
+      _d55.on_utterance(_ctx55, "what masters programmes are there"), False)
+
+print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")
 sys.exit(1 if failures else 0)
