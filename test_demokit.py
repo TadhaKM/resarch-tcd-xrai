@@ -2887,28 +2887,32 @@ check("and is joined before assembly",
 
 print()
 print("[52] the hidden attribute actually hides everything that uses it")
-# The Recording pill shipped showing permanently, armed or not: .pill sets
-# display: inline-flex, and ANY authored display rule beats the browser's own
-# [hidden] { display: none }. Every element that combines the hidden attribute
-# with a display-styled class needs its own [hidden] override, and this checks
-# each one rather than trusting the next author to know that.
+# The Recording pill shipped showing "Recording" to every visitor, armed or
+# not: .pill sets display: inline-flex, and ANY authored display rule beats
+# the browser's own [hidden] { display: none }, which lives in the UA
+# stylesheet at the lowest possible specificity. The fix is one global
+# [hidden] { display: none !important; } -- per-element overrides were the
+# first attempt, and a working scan then showed three MORE elements with the
+# same fault (links, lockpanel, rec-table).
+#
+# THIS CHECK WAS ITSELF SHIPPED VACUOUS ONCE: shell escaping doubled the
+# regex backslashes, the scan matched nothing, and it passed on an empty list
+# -- including with the fix deliberately removed. The non-vacuity assertions
+# are what keep that from happening quietly again.
 _page52 = (_pl36.Path(__file__).parent / "web" / "index.html").read_text(encoding="utf-8")
-_styled52 = set(_re45.findall(r"[#.]([a-zA-Z0-9_-]+)[^{}]*\{[^}]*display\s*:", _page52))
-_missing52 = []
-for _id52, _classes52 in _re45.findall(
-        r'<[a-z]+[^>]*id="([a-zA-Z0-9_-]+)"[^>]*class="([^"]+)"[^>]*hidden', _page52):
-    if not (set(_classes52.split()) & _styled52 or _id52 in _styled52):
+_hidden_ids52 = []
+for _m52 in _re45.finditer(r"<[a-z]+[^>]*>", _page52):
+    _tag52 = _m52.group(0)
+    if _re45.search(r"\bhidden\b(?![\"'=-])", _tag52) is None:
         continue
-    if f"#{_id52}[hidden]" not in _page52:
-        _missing52.append(_id52)
-for _classes52, _id52 in _re45.findall(
-        r'<[a-z]+[^>]*class="([^"]+)"[^>]*id="([a-zA-Z0-9_-]+)"[^>]*hidden', _page52):
-    if not (set(_classes52.split()) & _styled52 or _id52 in _styled52):
-        continue
-    if f"#{_id52}[hidden]" not in _page52:
-        _missing52.append(_id52)
-check("every display-styled element that uses hidden can actually hide",
-      sorted(set(_missing52)), [])
+    _id52 = _re45.search(r'id="([a-zA-Z0-9_-]+)"', _tag52)
+    if _id52:
+        _hidden_ids52.append(_id52.group(1))
+check("the scan actually finds hidden elements (not vacuous)",
+      len(_hidden_ids52) >= 3, True)
+check("including the recording pill", "p-rec" in _hidden_ids52, True)
+check("one global rule makes hidden always win",
+      "[hidden] { display: none !important; }" in _page52, True)
 
 print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")

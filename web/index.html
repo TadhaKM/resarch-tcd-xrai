@@ -475,6 +475,16 @@
     color: var(--dim); padding: 0 var(--s2); white-space: nowrap;
   }
 
+  /* The hidden attribute must always win. The browser's own
+     [hidden] { display: none } lives in the UA stylesheet at the lowest
+     possible specificity, so ANY authored display rule silently defeats it --
+     the Recording pill (.pill, inline-flex) showed "Recording" to every
+     visitor from the moment it shipped, armed or not, and the recordings
+     table (table.data, block) had the same fault. One global rule with
+     !important closes the whole class; per-element overrides were the first
+     attempt and missed three elements. */
+  [hidden] { display: none !important; }
+
   .pill {
     display: inline-flex; align-items: center; gap: var(--s2);
     min-height: var(--tap); padding: 0 13px;
@@ -1201,11 +1211,7 @@
   /* the recording pill: visible from across a room, because its whole job is
      that nobody is recorded without something on screen saying so. */
   #p-rec { color: var(--bad); border-color: var(--bad-line); font-weight: 600; }
-  /* .pill sets display: inline-flex, and ANY authored display rule beats the
-     browser's own [hidden] { display: none } -- so the pill showed Recording
-     permanently, armed or not, from the moment it shipped. The attribute only
-     works if this rule exists. */
-  #p-rec[hidden] { display: none; }
+
   .rec-dot {
     display: inline-block; width: 9px; height: 9px; border-radius: 50%;
     background: var(--bad); animation: rec-blink 1.6s ease-in-out infinite;
