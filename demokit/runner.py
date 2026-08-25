@@ -45,6 +45,12 @@ logger = logging.getLogger(__name__)
 #: about anything other than the robot.
 SLEEP_PHRASES = (
     "go to sleep",
+    # Heard live as the robot was thanked goodnight: "now Rishi thank you go
+    # sleep". Whole-word matched, nobody says either about anything else, and
+    # the robot ANSWERED "Goodnight! I'll power down now" -- and then kept
+    # listening, because saying it is not doing it.
+    "go sleep",
+    "power down",
     "goodbye",
     "good bye",
     "turn off",
@@ -209,6 +215,17 @@ def fuzzy_contains(word_stream: str, phrase: str) -> bool:
     pieces without letting the rest of the utterance dilute the comparison.
     See the constants above for why the window ratio alone is not the test.
     """
+    # A LONG utterance is a person talking, not a command being mangled. The
+    # fuzzy match exists for one case: a trigger phrase misheard about its own
+    # length ("welcome to your irisimus group"). Applied to whole sentences it
+    # hijacks conversations -- live, "I'm just feeling a bit tired today, what
+    # should I do?" fuzzy-matched a Look trigger and the robot demanded an
+    # object be held up to somebody asking for sympathy, and a three-part
+    # question about the Hub fuzzy-matched the welcome and got a scripted
+    # speech instead of an answer. Exact matches still work at any length,
+    # because an exact phrase is unambiguous wherever it appears.
+    if len(word_stream.split()) > len(_word_stream(phrase).split()) + 4:
+        return False
     from difflib import SequenceMatcher
 
     words = _word_stream(phrase).split()
@@ -314,8 +331,9 @@ class DemoRunner:
         # operator's open-mic switch, or the robot's own last reply having
         # ended in a question (state.answer_expected) -- asking "want to hear
         # more?" and then demanding a wake word before the yes is a trap.
-        if (self._state.open_mic and time.monotonic() < self._open_until) \
-                or self._state.answer_expected or self._state.followup_expected:
+        if not self._state.sleeping and (
+                (self._state.open_mic and time.monotonic() < self._open_until)
+                or self._state.answer_expected or self._state.followup_expected):
             if self._open_mic_turn(demo, ctx, listen_for=result.listen_for):
                 if self._state.open_mic:
                     self._open_until = time.monotonic() + _OPEN_MIC_WINDOW_S

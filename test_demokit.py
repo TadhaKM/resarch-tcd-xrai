@@ -3003,5 +3003,56 @@ check("without bypassing the ambient floor",
       "followup_expected" in _run53.split("def _addressed_to_the_robot")[1].split("def ")[0], False)
 
 print()
+print("[54] a person talking is not a command being mangled")
+from demokit.runner import SLEEP_PHRASES, _word_stream, contains_phrase
+from demokit.runner import fuzzy_contains as _fz54
+
+# Both hijacks happened live in one afternoon. "I'm just feeling a bit tired
+# today, what should I do?" fuzzy-matched a Look trigger, and the robot told
+# somebody asking for sympathy to hold an object up to the camera. A three-part
+# question about the Hub fuzzy-matched the welcome and got the scripted speech
+# instead of an answer to any part of it.
+_tired54 = _word_stream("For Eiji basically Im just feeling a bit tired today what should I do")
+_hub54 = _word_stream("Tell me a bit about the hub and also tell me about the type of "
+                      "master students that come to the hub")
+check("a feelings sentence cannot fuzzy-match a Look trigger",
+      _fz54(_tired54, "what do you see"), False)
+check("a rich question cannot fuzzy-match the welcome",
+      any(_fz54(_hub54, t) for t in ("introduce the hub", "welcome the group",
+                                     "do the welcome")), False)
+# The case fuzzy exists FOR must survive: a trigger misheard about its own
+# length. This is the sentence from the live failure that created the matcher.
+check("a mangled trigger of its own length still matches",
+      _fz54(_word_stream("Welcome to your irisimus group"),
+            "welcome the erasmus group"), True)
+check("and exact phrases still work inside long sentences",
+      contains_phrase(_word_stream("please could you now do the welcome for everyone here today"),
+                      "do the welcome"), True)
+
+# Saying goodnight has to actually be goodnight: the robot answered "I'll
+# power down now" to "thank you go sleep" -- and then kept listening, because
+# neither phrase was a sleep phrase and saying it is not doing it.
+for _phrase54 in ("go sleep", "power down", "go to sleep"):
+    check(f"{_phrase54!r} is a sleep phrase", _phrase54 in SLEEP_PHRASES, True)
+
+# No wake-free window survives into sleep.
+_run54 = (_pl36.Path(__file__).parent / "demokit" / "runner.py").read_text(encoding="utf-8")
+check("wake-free windows are gated on being awake",
+      "not self._state.sleeping and (" in _run54, True)
+
+# The register rule: brief for facts, human for feelings -- and brainstorming
+# is a can-do, never a refusal. "I want to create a startup, give me some
+# ideas" was answered with "I can't brainstorm business ideas for you".
+from brain import prompts as _pr54
+
+_base54 = _pr54._base_prompt()
+check("the prompt distinguishes facts from feelings",
+      "something personal" in _base54 and "twenty-five" in _base54, True)
+check("struggling people are not handed slogans",
+      "slogan" in _base54, True)
+check("brainstorming is listed as a thing it CAN do",
+      "brainstorm ideas out loud" in _base54, True)
+
+print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")
 sys.exit(1 if failures else 0)

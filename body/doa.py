@@ -45,6 +45,10 @@ _POLL_S = 0.25
 #: ago looks broken rather than attentive.
 _MAX_AGE_S = 1.5
 
+#: The poll rate while the daemon is not answering. Reachability, not
+#: direction, is all that is being learned then.
+_DOWN_POLL_S = 5.0
+
 #: Calibration samples needed before the learned offset is trusted, and how
 #: much they must agree. Circular standard deviation above this means the
 #: samples are contradicting each other -- usually several people talking, or
@@ -117,7 +121,8 @@ class DoaListener:
         self._stop.set()
 
     def _run(self) -> None:
-        while not self._stop.wait(_POLL_S):
+        misses = 0
+        while not self._stop.wait(_POLL_S if misses < 4 else _DOWN_POLL_S):
             try:
                 r = requests.get(self._url, timeout=1.0)
                 if r.status_code != 200:
@@ -132,7 +137,12 @@ class DoaListener:
                     self._angle = float(angle)
                     self._speech = bool(body.get("speech_detected"))
                     self._at = time.monotonic()
+                misses = 0
             except Exception as exc:
+                # Back off while the robot is unreachable: four requests a
+                # second into a dead link is timeout churn here and one more
+                # source of traffic against a daemon that is struggling.
+                misses += 1
                 # Never fatal, and never noisy: the robot works exactly as it
                 # did before this existed when the board or the network is
                 # unavailable.
