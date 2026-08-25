@@ -52,6 +52,11 @@ _GAP_WARN_S = 1.5
 #: nobody answers does not leave the mic open to the room.
 ANSWER_WINDOW_S = 9.0
 
+#: The wake-free window after a reply that did NOT ask anything. Longer than
+#: the answer window because thinking of a follow-up takes longer than
+#: answering a direct question.
+FOLLOW_UP_WINDOW_S = 12.0
+
 MAX_LISTEN_WINDOW_S = 3.0
 
 #: Slice length for ctx.sleep, so a long pause still notices a mode change.
@@ -381,6 +386,10 @@ class DemoContext:
         spoken: list[str] = []
         final_tag = "neutral"
         self.motion.express("thinking")
+        # Cleared automatically the moment the first sentence starts speaking
+        # (set_flags(speaking=True) clears it), and belt-and-braces in the
+        # finally below for replies that die before any sentence lands.
+        self.state.set_flags(thinking=True)
         # None means "whatever the operator has the dashboard switch set to",
         # which is what every demo wants; a demo can still force it either way.
         use_web = self.state.web_search if web is None else web
@@ -486,6 +495,9 @@ class DemoContext:
             # stop generating into a conversation that has moved on. It may be
             # blocked on the full queue, so drain space for it to notice.
             abandon.set()
+            # The dashboard must not say Thinking about a reply that died --
+            # interrupted, switched away, or a real failure all land here.
+            self.state.set_flags(thinking=False)
             while True:
                 try:
                     feed.get_nowait()
@@ -502,7 +514,14 @@ class DemoContext:
         # runner's confidence gate still applies to whatever arrives.
         if spoken and spoken[-1].rstrip().endswith("?"):
             self.state.expect_answer(ANSWER_WINDOW_S)
+        elif spoken:
+            # Every OTHER reply opens a follow-up window: wake-word-free, but
+            # with the ambient floor still applied -- nothing was asked, so a
+            # stray syllable is the room. Before this, follow-ups needed "hey
+            # Reachy" at exactly the moment people think of them.
+            self.state.invite_followup(FOLLOW_UP_WINDOW_S)
 
+        self.state.set_flags(thinking=False)
         self.motion.express_move(final_tag)
         # Leave the body in the persona's resting pose. Without this a reply
         # ends on whatever the last sentence's tag was -- in practice

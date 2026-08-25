@@ -264,7 +264,13 @@ class ModelConfig:
     # varied real-world speech rather than read audiobooks -- which is what
     # the robot's noisy far-field mic actually delivers.
     whisper_dir: Optional[Path] = None
-    whisper_threads: int = 6
+    # 4, not more, and MEASURED rather than assumed: on this 14-logical-CPU
+    # laptop, 6 threads decoded the same 2.8s utterance in 0.96s median where
+    # 4 threads took 0.56s -- and under a full session's load (zipformer,
+    # piper, WebRTC all competing) 6-thread decodes ballooned to 2.4-4.4s,
+    # which is what turned the 1.5s endpoint silence into a 3.6s+ wait for the
+    # transcript live. More threads is not more speed once they contend.
+    whisper_threads: int = 4
 
     # Cloud LLM, used when a key is present and reachable (see
     # brain/llm_backends.py). The local model above stays the fallback, so the

@@ -44,7 +44,14 @@ class EmotionMapper:
         "neutral": HeadPose(pitch=0.0, yaw=0.0, roll=0.0, z=0.0, antennas=(-10.0, 10.0)),
         "happy": HeadPose(pitch=6.0, yaw=0.0, roll=5.0, z=8.0, antennas=(22.0, -22.0)),
         "curious": HeadPose(pitch=3.0, yaw=10.0, roll=-8.0, z=4.0, antennas=(8.0, 22.0)),
-        "thinking": HeadPose(pitch=-4.0, yaw=-8.0, roll=7.0, z=0.0, antennas=(-4.0, 18.0)),
+        # Asymmetric and LARGE, because the subtle version was measurably
+        # invisible: antennas (-4,18) against a neutral of (-10,10) and pitch
+        # -4 against idle breathing of +/-3.5 sat entirely inside the noise of
+        # the robot's own resting motion, so the "thinking" pose held during
+        # the 2-6s reply wait read as a robot doing nothing. One antenna up,
+        # one down, head tipped and turned reads as pondering from across a
+        # room. Clamp is +/-70, so all values are in range.
+        "thinking": HeadPose(pitch=-4.0, yaw=-12.0, roll=10.0, z=0.0, antennas=(-35.0, 50.0)),
         "surprised": HeadPose(pitch=10.0, yaw=0.0, roll=0.0, z=12.0, antennas=(35.0, -35.0)),
         "sad": HeadPose(pitch=-12.0, yaw=0.0, roll=-5.0, z=-8.0, antennas=(-45.0, 45.0)),
     }

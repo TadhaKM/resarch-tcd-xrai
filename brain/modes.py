@@ -82,6 +82,7 @@ class RobotState:
         #: Until when the robot is waiting for the ANSWER to a question it just
         #: asked -- see expect_answer. Monotonic deadline; 0.0 means not waiting.
         self._answer_until = 0.0
+        self._followup_until = 0.0
         #: Which answering style the personality demo should use next. Held in
         #: the core rather than in the demo's own store so the dashboard can
         #: set it directly -- picking one from a list is what an operator wants
@@ -102,6 +103,7 @@ class RobotState:
         self._events: list[Event] = []
         self._seq = 0
         self._listening = False
+        self._thinking = False
         self._speaking = False
         self._face_visible = False
         self._started_at = time.time()
@@ -338,6 +340,24 @@ class RobotState:
         with self._lock:
             self._answer_until = time.monotonic() + max(0.0, seconds)
 
+    def invite_followup(self, seconds: float) -> None:
+        """A reply just finished; give the room a moment to follow up freely.
+
+        The gap this closes: after any reply NOT ending in a question, a
+        visitor got a zero-second wake-free window -- the wake word was
+        re-required at exactly the moment people formulate follow-ups.
+        Different from expect_answer in one deliberate way: the ambient
+        word-count floor still applies here, because nothing was asked and a
+        stray syllable is the room, not an answer.
+        """
+        with self._lock:
+            self._followup_until = time.monotonic() + max(0.0, seconds)
+
+    @property
+    def followup_expected(self) -> bool:
+        with self._lock:
+            return time.monotonic() < self._followup_until
+
     @property
     def answer_expected(self) -> bool:
         with self._lock:
@@ -568,12 +588,19 @@ class RobotState:
         speaking: Optional[bool] = None,
         face_visible: Optional[bool] = None,
         ready: Optional[bool] = None,
+        thinking: Optional[bool] = None,
     ) -> None:
         with self._lock:
             if listening is not None:
                 self._listening = listening
             if speaking is not None:
                 self._speaking = speaking
+                if speaking:
+                    # Speech starting is the definitive end of thinking, and
+                    # clearing it here means no caller can forget to.
+                    self._thinking = False
+            if thinking is not None:
+                self._thinking = thinking
             if face_visible is not None:
                 self._face_visible = face_visible
             if ready is not None:
@@ -586,6 +613,7 @@ class RobotState:
                 "sleeping": self._sleeping,
                 "ready": self._ready,
                 "listening": self._listening,
+                "thinking": self._thinking,
                 "speaking": self._speaking,
                 "face_visible": self._face_visible,
                 "uptime_s": time.time() - self._started_at,

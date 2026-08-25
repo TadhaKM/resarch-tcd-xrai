@@ -205,6 +205,23 @@ _TAIL_PADDING = np.zeros(int(MODELS.asr_sample_rate * 0.66), dtype=np.float32)
 _PRELOADED: dict[str, Any] = {}
 
 
+def _warm_voice():
+    """Load the default piper voice AND speak one throwaway word into it.
+
+    The first synthesize() after loading pays onnxruntime session warm-up --
+    measured 0.73s cold against 0.26s warm for the same short text -- and that
+    cost used to land on the first visitor's first reply. Here it lands on the
+    preload worker, during the seconds the robot connection is being
+    established, where nobody is waiting on it.
+    """
+    voice = PiperVoice.load(str(MODELS.tts_model_path), str(MODELS.tts_config_path))
+    try:
+        list(voice.synthesize("Hi."))
+    except Exception:
+        logger.debug("Voice warm-up failed; first reply pays it instead", exc_info=True)
+    return voice
+
+
 def preload_models() -> None:
     """Build the speech models before AudioIO() is called, off the boot path.
 
@@ -219,8 +236,7 @@ def preload_models() -> None:
         ("recognizer", _build_recognizer),
         ("spotter", _build_spotter),
         ("whisper", _build_whisper),
-        ("voice", lambda: PiperVoice.load(str(MODELS.tts_model_path),
-                                          str(MODELS.tts_config_path))),
+        ("voice", _warm_voice),
     )
     for key, build in builders:
         if key in _PRELOADED:
@@ -259,9 +275,18 @@ def _build_recognizer() -> sherpa_onnx.OnlineRecognizer:
         # ordinary pause mid-question ended the turn, and because the captured
         # audio stops at the endpoint, Whisper only ever saw the fragment too
         # ("hearing: AND", then a one-word answer to a full question). Back
-        # above the default, since a turn that transcribes one word in five
-        # costs far more than half a second of dead air.
-        rule2_min_trailing_silence=1.5,
+        # to the default, since a turn that transcribes one word in five costs
+        # far more than half a second of dead air.
+        #
+        # 1.2 -- sherpa's own default -- and only safe because whisper_threads
+        # dropped to 4: at 6 threads the early decode outlived the shorter
+        # silence and 1.2 was measured NET SLOWER than 1.5. At 4 threads it
+        # moves transcript-in-hand from ~2.05s to ~1.8s after the last word,
+        # and was measured to survive 1.1s mid-sentence pauses (it cuts at
+        # 1.3s; the live failure that pushed this value up happened at 0.8).
+        # If slow talkers start getting clipped -- the signature is a fragment
+        # transcript like "hearing: AND" -- put it back to 1.5.
+        rule2_min_trailing_silence=1.2,
         decoding_method="modified_beam_search",
         hotwords_file=str(MODELS.asr_hotwords_file),
         hotwords_score=MODELS.asr_hotwords_score,
@@ -687,6 +712,17 @@ class AudioIO:
             return samples
 
         gain = min(_AGC_MAX_GAIN, _AGC_TARGET_PEAK / self._agc_envelope)
+        if not self._gate_enabled:
+            # Waiting for the wake word: floor the gain. The envelope decays
+            # slowly by design, so for ~2-4 seconds after any loud transient
+            # (the robot's own speech, a door, laughter) the gain sits pinned
+            # near 1x and a normal-volume "Hey Reachy" reaches the spotter too
+            # quiet to match -- measured 9/16 wake phrases caught in that
+            # state against 14/16 baseline, and today's live log shows gain
+            # pinned at 0.8-1.4x repeatedly. A 4x floor restores the baseline;
+            # genuinely loud speech just clips at the top, which the spotter
+            # tolerates far better than starvation.
+            gain = max(4.0, gain)
         self._agc_gain = gain
         return np.clip(samples * gain, -1.0, 1.0)
 
@@ -1007,6 +1043,15 @@ class AudioIO:
                     # Dropped so the turn that follows starts from a clean
                     # stream rather than resuming this one mid-phrase.
                     self._kws_stream = None
+                    # KEEP the rest of the backlog. A one-breath interruption
+                    # -- "hey Reachy, what about the masters?" -- has its
+                    # question sitting right after the match, and the listen()
+                    # that follows used to flush it (nothing set _mic_fresh on
+                    # this path), so the visitor was stopped mid-reply and
+                    # then asked to repeat themselves. Same drain-then-keep the
+                    # ordinary wake path does at its match.
+                    self._drain_mic(_WAKE_DRAIN_S)
+                    self._mic_fresh = True
                     return True
 
             # Flush the tail. A phrase landing at the very end of the buffer --
@@ -1172,6 +1217,15 @@ class AudioIO:
                     partial
                     and time.monotonic() - last_change >= _EARLY_DECODE_AFTER_S
                     and (early is None or early.partial != partial)
+                    # Never stack speculations: an abandoned decode keeps its
+                    # thread (and 4 whisper threads) running to completion, so
+                    # launching a fresh one beside it puts 8+ threads on a
+                    # 14-core laptop already running the zipformer and piper.
+                    # Measured as the 5.1-6.8s transcript outliers on long
+                    # questions -- every configuration showed them until
+                    # stacking stopped. Skipping a speculation costs at most
+                    # one ordinary post-endpoint decode (~0.6s at 4 threads).
+                    and (early is None or not early._thread.is_alive())
                 ):
                     early = _EarlyDecode(
                         self._transcribe_whisper, np.concatenate(captured), partial

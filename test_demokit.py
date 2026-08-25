@@ -2880,10 +2880,13 @@ finally:
 # The wiring: the worker starts BEFORE the robot connect and is joined before
 # assembly, so a slow disk can never race the constructor.
 _vl51 = (_pl36.Path(__file__).parent / "body" / "voice_loop.py").read_text(encoding="utf-8")
-check("the preload starts before the robot connect",
-      _vl51.index("preload_thread.start()") < _vl51.index("robot = None"), True)
-check("and is joined before assembly",
-      _vl51.index("preload_thread.join()") < _vl51.index("audio = AudioIO(target"), True)
+# Two workers now -- the audio chain and the face recogniser were measured
+# ~11.5s and ~10s and are independent, so serial inside one worker they were
+# the whole critical path once the robot connect stopped being it.
+check("the preloads start before the robot connect",
+      _vl51.index("t.start()") < _vl51.index("robot = None"), True)
+check("and are joined before assembly",
+      _vl51.index("t.join()") < _vl51.index("audio = AudioIO(target"), True)
 
 print()
 print("[52] the hidden attribute actually hides everything that uses it")
@@ -2913,6 +2916,91 @@ check("the scan actually finds hidden elements (not vacuous)",
 check("including the recording pill", "p-rec" in _hidden_ids52, True)
 check("one global rule makes hidden always win",
       "[hidden] { display: none !important; }" in _page52, True)
+
+print()
+print("[53] the speed work holds together")
+import types as _ty53
+import numpy as _np53
+from config import MODELS as _M53
+
+# THE COUPLING. rule2=1.2 was measured NET SLOWER than 1.5 at whisper_threads=6
+# (the early decode outlives the shorter silence and everything queues on it);
+# it is only a win at <=4 threads. Anyone raising threads back must see this.
+check("whisper threads are 4 -- six was measured 2x slower on this CPU",
+      _M53.whisper_threads, 4)
+_aio53 = (_pl36.Path(__file__).parent / "body" / "audio_io.py").read_text(encoding="utf-8")
+if "rule2_min_trailing_silence=1.2" in _aio53:
+    check("rule2=1.2 only ships with whisper_threads <= 4",
+          _M53.whisper_threads <= 4, True)
+
+# The AGC floor on the wake-wait path: after a loud transient the slow envelope
+# pinned gain near 1x for seconds and wake recall fell 14/16 -> 9/16 measured.
+from body.audio_io import AudioIO as _A53
+
+_fake53 = object.__new__(_A53)
+_fake53.target = _ty53.SimpleNamespace(mic_agc=True, mic_gain=1.0)
+_fake53._agc_noise_floor = 0.01
+_fake53._agc_envelope = 0.9          # just after something loud
+_fake53._agc_gain = 1.0
+_fake53._gate_enabled = False        # the wake-wait path
+_A53._apply_gain(_fake53, _np53.full(160, 0.05, dtype=_np53.float32))
+check("waiting for the wake word, gain never starves below 4x",
+      _fake53._agc_gain >= 4.0, True)
+_fake53._gate_enabled = True         # ordinary listening: floor must NOT apply
+_fake53._agc_envelope = 0.9
+_A53._apply_gain(_fake53, _np53.full(160, 0.5, dtype=_np53.float32))
+check("but ordinary listening keeps the true envelope gain",
+      _fake53._agc_gain < 4.0, True)
+
+# Barge-in keeps the interrupter's question: the backlog match must drain and
+# mark the mic fresh exactly as the ordinary wake path does.
+_i53 = _aio53.index('Wake word heard while speaking')
+check("a backlog wake keeps the words that followed it",
+      "_mic_fresh = True" in _aio53[_i53:_i53 + 1200], True)
+
+# The conversation demo must not smuggle the (cached) grounding back in as
+# uncached per-turn tokens -- that was 1,200 duplicated tokens per turn.
+from brain import hub as _hub53
+import demos.conversation as _conv53
+
+_marker53 = _hub53.GROUNDING.strip().splitlines()[0][:40]
+check("the per-turn briefing does not duplicate the grounding",
+      _marker53 in _conv53._HUB_BRIEFING, False)
+check("but the base prompt still carries it",
+      _marker53 in _hub53.GROUNDING, True)
+
+# Person 0 is every stranger sharing one id: it must neither accumulate nor
+# inject "memories" (they were other strangers' conversations, and they kept
+# the qa_cache from ever hitting -- 4 entries, 0 hits, when found).
+from brain import long_term_memory as _ltm53
+
+check("person 0 injects no context", _ltm53.get_context(0), "")
+_held53 = _ltm53.generate_response
+try:
+    def _boom53(*a, **k):
+        raise AssertionError("summariser ran for person 0")
+    _ltm53.generate_response = _boom53
+    _ltm53.end_conversation(0, [("hello", "hi")])
+    check("and no summary is ever written for person 0", True, True)
+finally:
+    _ltm53.generate_response = _held53
+
+# A reply that does NOT ask still opens a wake-free follow-up window (with the
+# ambient floor kept -- nothing was asked, so a stray syllable is the room).
+from brain.modes import RobotState as _RS53
+
+_st53 = _RS53()
+_st53.invite_followup(5.0)
+check("a follow-up window opens", _st53.followup_expected, True)
+_st53.invite_followup(0.0)
+check("and closes", _st53.followup_expected, False)
+_base53 = (_pl36.Path(__file__).parent / "demokit" / "base.py").read_text(encoding="utf-8")
+check("every non-question reply invites one",
+      "invite_followup(FOLLOW_UP_WINDOW_S)" in _base53, True)
+_run53 = (_pl36.Path(__file__).parent / "demokit" / "runner.py").read_text(encoding="utf-8")
+check("the runner listens through it", "followup_expected" in _run53, True)
+check("without bypassing the ambient floor",
+      "followup_expected" in _run53.split("def _addressed_to_the_robot")[1].split("def ")[0], False)
 
 print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")

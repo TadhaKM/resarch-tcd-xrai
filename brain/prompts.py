@@ -107,7 +107,11 @@ def _base_prompt(web: bool = False) -> str:
     """The standing prompt. `web` swaps the capability block for the online one."""
     return (
     "You are Reachy Mini, a small expressive robot having a spoken conversation. "
-    "Keep replies to one or two short sentences. "
+    # "Short" needs a number: measured live, replies obeyed the sentence
+    # count and still ran 31-45 words, and at ~0.5s per spoken word that
+    # is five-plus seconds of extra talking (and of the mic being deaf)
+    # per turn.
+    "Keep replies to one or two short sentences, roughly twenty-five words. "
     f"{_DELIVERY} "
     f"{_capabilities_text(web)} "
     "Never claim to have done something physical unless it is one of the "

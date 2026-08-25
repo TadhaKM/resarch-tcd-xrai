@@ -315,7 +315,7 @@ class DemoRunner:
         # ended in a question (state.answer_expected) -- asking "want to hear
         # more?" and then demanding a wake word before the yes is a trap.
         if (self._state.open_mic and time.monotonic() < self._open_until) \
-                or self._state.answer_expected:
+                or self._state.answer_expected or self._state.followup_expected:
             if self._open_mic_turn(demo, ctx, listen_for=result.listen_for):
                 if self._state.open_mic:
                     self._open_until = time.monotonic() + _OPEN_MIC_WINDOW_S
@@ -628,14 +628,28 @@ class DemoRunner:
         without the wake word has to be routed by exactly the same rules, or
         "go to sleep" would stop working the moment the mic stayed open.
         """
+        # The instant "got it": antennas perk the moment an utterance lands,
+        # BEFORE any model is consulted. During the 2-6s think time the robot
+        # used to hold a pose whose deltas are smaller than its own idle
+        # breathing -- measurably invisible -- so a visitor watched a
+        # motionless robot and read it as not having heard. This is also the
+        # first acknowledgement open-mic and answer-window turns have ever
+        # had: the wake-word perk fires only on wake-word paths.
+        try:
+            self._motion.acknowledge()
+        except Exception:
+            logger.debug("Could not acknowledge", exc_info=True)
+
         words = _word_stream(heard)
         # Stamped at the one place every utterance passes through, so the
         # attract offer never talks over a conversation already happening.
         self._last_heard_at = time.monotonic()
         # Whatever was said, the question the robot asked has now been
         # responded to -- the answer window must not outlive its answer, or
-        # the NEXT stray remark is also treated as one.
+        # the NEXT stray remark is also treated as one. The follow-up window
+        # closes with it; the reply this turn produces opens a fresh one.
         self._state.expect_answer(0.0)
+        self._state.invite_followup(0.0)
 
         # Counted here, at the one place every utterance passes through --
         # wake-word turns and open-mic follow-ups alike. Aggregate only: what

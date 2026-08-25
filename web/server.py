@@ -230,6 +230,11 @@ def say(req: SayRequest) -> JSONResponse:
         return JSONResponse({"ok": False, "error": "empty"}, status_code=400)
     if not STATE.request("say", text):
         return JSONResponse({"ok": False, "error": "queue full"}, status_code=429)
+    # Asleep, the loop never services the request queue, so a queued line sat
+    # silently until somebody woke the robot by other means -- the same
+    # silent no-op the mode buttons had. Typing something for the robot to
+    # say IS asking it to do something.
+    STATE.set_sleeping(False)
     return JSONResponse({"ok": True})
 
 

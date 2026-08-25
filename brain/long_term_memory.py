@@ -34,6 +34,11 @@ def get_context(person_id: int) -> str:
     """Return what's remembered about this person (recent notes, or the
     consolidated profile if they've been merged) as one string for the
     system prompt. Empty string if there's nothing yet."""
+    if not person_id:
+        # See end_conversation: person 0 is a shared id, and whatever notes it
+        # accumulated before that gate existed are strangers' summaries that
+        # must not colour -- or slow -- other strangers' answers.
+        return ""
     notes = db.get_notes(person_id)
     return "\n".join(f"- {note}" for note in notes)
 
@@ -51,6 +56,17 @@ def end_conversation(person_id: int, history: list[tuple[str, str]]) -> None:
     app down.
     """
     if not history:
+        return
+
+    # Person 0 is EVERY unrecognised visitor sharing one id -- the open-day
+    # default, not a person. Summarising their sessions wrote strangers'
+    # conversations into one shared profile (12 notes deep when found), which
+    # was then injected into every later stranger's prompt: a privacy smell,
+    # ~930 tokens of irrelevant context per turn, and the single reason the
+    # qa_cache never hit once -- its store gate requires "no context", and
+    # person 0 always had context. Named, recognised people keep their memory
+    # exactly as before.
+    if not person_id:
         return
 
     transcript = _format_transcript(history)

@@ -22,7 +22,12 @@ _SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?])\s+")
 #: a place a person would breathe, so piper starting there sounds like pacing,
 #: not a glitch. See _LONG_SENTENCE_CHARS for the mid-reply case, which this
 #: comment used to deny existed.
-_FIRST_CLAUSE_CHARS = 60
+#: 38, down from 60, on a measurement: piper renders a whole 12-14 word first
+#: sentence in 1.1-1.7s on the live voice, but a 5-7 word clause in ~0.5s --
+#: so flushing at the first comma of nearly every conversational opener puts
+#: sound in the room 0.5-1.2s sooner. The prosody cost (a comma becomes a
+#: harder stop) was accepted when this mechanism shipped at 60.
+_FIRST_CLAUSE_CHARS = 38
 
 #: And the same trick mid-reply, at a much higher bar. Only a sentence that has
 #: genuinely run away -- roughly twenty-five words with no end in sight -- is

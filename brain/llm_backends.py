@@ -20,6 +20,7 @@ callers never have to know which backend is live.
 """
 
 import logging
+import time
 from abc import ABC, abstractmethod
 from typing import Iterator, Optional
 
@@ -226,6 +227,18 @@ class AnthropicBackend(Backend):
             api_key=api_key,
             timeout=httpx.Timeout(_REQUEST_TIMEOUT_S, connect=_CONNECT_TIMEOUT_S),
             max_retries=_MAX_RETRIES,
+            # The SDK's default httpx pool drops an idle connection after FIVE
+            # seconds (keepalive_expiry=5.0, verified in anthropic 0.120.2),
+            # and turns arrive tens of seconds apart -- so every single turn
+            # paid a fresh TCP+TLS handshake (measured 15-83ms here, with one
+            # ~380ms outlier at the httpx level). Two minutes keeps one idle
+            # socket across a whole exchange; if the server closes it sooner,
+            # httpx reconnects exactly as it did before.
+            http_client=httpx.Client(
+                timeout=httpx.Timeout(_REQUEST_TIMEOUT_S, connect=_CONNECT_TIMEOUT_S),
+                limits=httpx.Limits(max_keepalive_connections=10,
+                                    keepalive_expiry=120.0),
+            ),
         )
 
     def generate(self, messages: Messages, max_tokens: Optional[int] = None) -> str:
@@ -247,6 +260,8 @@ class AnthropicBackend(Backend):
         blocks = _system_blocks(system)
         if blocks:
             extra["system"] = blocks
+        asked_at = time.monotonic()
+        first_logged = False
         with self._client.messages.stream(
             model=MODELS.anthropic_model,
             max_tokens=_cloud_max_tokens(max_tokens),
@@ -256,7 +271,25 @@ class AnthropicBackend(Backend):
             # text_stream yields only the model's own words; the search request
             # and its results arrive as separate block types and are skipped,
             # so nothing about the mechanics is ever spoken aloud.
-            yield from stream.text_stream
+            for piece in stream.text_stream:
+                if not first_logged:
+                    first_logged = True
+                    # One line per turn, so "is the cache hitting / is the API
+                    # slow today" is a grep of the log rather than guesswork.
+                    # The usage rides the message_start event the SDK has
+                    # already parsed by the time text arrives.
+                    try:
+                        usage = stream.current_message_snapshot.usage
+                        logger.info(
+                            "anthropic first token in %.2fs (cache read %s, wrote %s, fresh %s)",
+                            time.monotonic() - asked_at,
+                            getattr(usage, "cache_read_input_tokens", "?"),
+                            getattr(usage, "cache_creation_input_tokens", "?"),
+                            getattr(usage, "input_tokens", "?"),
+                        )
+                    except Exception:
+                        logger.debug("Could not read stream usage", exc_info=True)
+                yield piece
 
 
 class OpenAIBackend(Backend):

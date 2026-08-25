@@ -182,14 +182,13 @@ def run_forever(target: HardwareTarget) -> None:
     # boot time, not their sum.
     preloaded: dict = {}
 
-    def _preload() -> None:
+    # TWO workers, not one: the audio chain (~11.5s) and the face recogniser
+    # (~10s measured) are independent, and serial inside a single worker they
+    # were the boot's critical path once the robot connect stopped being it.
+    def _preload_audio() -> None:
         from body import audio_io
 
         audio_io.preload_models()
-        try:
-            preloaded["face"] = FaceIdentifier(target)
-        except Exception:
-            logger.exception("Could not preload face recognition; building inline.")
         try:
             from brain.llm import streaming_backends
 
@@ -197,8 +196,18 @@ def run_forever(target: HardwareTarget) -> None:
         except Exception:
             logger.exception("Could not preload the language model clients.")
 
-    preload_thread = threading.Thread(target=_preload, name="model-preload", daemon=True)
-    preload_thread.start()
+    def _preload_face() -> None:
+        try:
+            preloaded["face"] = FaceIdentifier(target)
+        except Exception:
+            logger.exception("Could not preload face recognition; building inline.")
+
+    preload_threads = [
+        threading.Thread(target=_preload_audio, name="preload-audio", daemon=True),
+        threading.Thread(target=_preload_face, name="preload-face", daemon=True),
+    ]
+    for t in preload_threads:
+        t.start()
 
     robot = None
     if target.mode == "robot":
@@ -221,7 +230,8 @@ def run_forever(target: HardwareTarget) -> None:
     # The robot is connected; wait for the models. Usually they finished
     # first and this returns immediately -- the join is here so a slow disk
     # can never race the constructor into building a model twice.
-    preload_thread.join()
+    for t in preload_threads:
+        t.join()
 
     audio = AudioIO(target, robot=robot)
     camera = Camera(target, robot=robot)

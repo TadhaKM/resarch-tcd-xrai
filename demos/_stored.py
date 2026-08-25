@@ -200,14 +200,27 @@ class StoredFeature(Demo):
             store["cursor"] = store.get("cursor", 0) + 1
             return IdleResult(listen_for=_BETWEEN_LINES_S)
 
-        heard = ctx.ask(block.text, block.emotion, wait_for_speech_s=_ANSWER_WAIT_S)
-        store["last_said"] = (block.text, block.emotion)
+        # The question and the listen are separate slices. Fused, this hook
+        # spoke the question AND sat through the whole answer wait in one
+        # call -- logged live at 7.6s and 17.5s per on_idle, the two longest
+        # hook warnings in the log, and for that whole time the operator
+        # could not switch away.
+        if not store.pop("asked", None):
+            ctx.say(block.text, block.emotion)
+            store["asked"] = True
+            store["last_said"] = (block.text, block.emotion)
+            ctx.state.hold_open_mic(True)
+            return IdleResult(listen_for=0.0)
+        ctx.state.hold_open_mic(False)
+        heard = ctx.listen(wait_for_speech_s=_ANSWER_WAIT_S)
         if block.ai_reply and heard:
             store["pending_reply"] = heard
-            # The one zero this demo returns, and it is the case the runner
-            # documents: a demo chaining two halves of one exchange wants the
-            # next slice now. It is always followed by a slice that speaks.
-            return IdleResult(listen_for=0.0)
+            # A short positive window, NOT zero: the question slice already
+            # returned this hook's one permitted zero, and zero-zero in a row
+            # is the never-deaf invariant test [18] enforces -- the split that
+            # un-fused ask-and-listen tripped exactly that check the first
+            # time it ran.
+            return IdleResult(listen_for=_BETWEEN_LINES_S)
         store["cursor"] = store.get("cursor", 0) + 1
         return IdleResult(listen_for=_BETWEEN_LINES_S)
 

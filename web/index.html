@@ -3083,6 +3083,7 @@
     if (!s.ready)         { cls = "is-starting";  what = "Starting up"; detail = "loading the models…"; }
     else if (s.sleeping)  { cls = "is-asleep";    what = "Asleep";      detail = "say “Hey Reachy” to wake it"; }
     else if (s.speaking)  { cls = "is-speaking";  what = "Speaking";    detail = "the robot is talking"; }
+    else if (s.thinking)  { cls = "is-listening"; what = "Thinking";    detail = "working out an answer\u2026"; }
     else if (s.listening) { cls = "is-listening"; what = "Listening";   detail = "waiting for the end of a sentence"; }
     else                  { cls = "is-idle";      what = "Ready";       detail = "running — say “Hey Reachy”"; }
     bar.className = cls;
