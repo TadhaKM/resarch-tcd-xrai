@@ -279,6 +279,15 @@ class DemoContext:
             pace=pace, variation=variation,
         )
         self.state.set_flags(speaking=False)
+        # ANY spoken question opens the answer window, not just generated
+        # replies. The quiz, the greetings menu and every scripted demo ask
+        # through say(), and a question that then demands a wake word before
+        # its own answer is a trap -- reply() got this rule first, and the gap
+        # was every question that never went through reply(). Demos that hold
+        # the mic explicitly are unaffected: the hold outranks the window, and
+        # any utterance clears both.
+        if text.rstrip().endswith("?"):
+            self.state.expect_answer(ANSWER_WINDOW_S)
         if interruptible:
             self._stop_if_interrupted(text)
 

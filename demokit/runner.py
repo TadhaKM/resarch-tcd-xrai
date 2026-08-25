@@ -860,6 +860,13 @@ class DemoRunner:
             self._state.add("said", text)
             self._motion.express(tag)
             self._audio.speak(text, tag, motion=self._motion)
+            # An operator typing a question into the Say box means to ask the
+            # room -- "would anyone like a tour?" -- and the room's answer
+            # should not need a wake word the question never mentioned.
+            if text.rstrip().endswith("?"):
+                from demokit.base import ANSWER_WINDOW_S
+
+                self._state.expect_answer(ANSWER_WINDOW_S)
             return True
         if kind == "sound":
             # On the loop thread, which is the whole reason this is queued

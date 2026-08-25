@@ -2807,5 +2807,33 @@ check("the open-mic listen respects the demo's own window",
       "min(_OPEN_MIC_SILENCE_S, listen_for)" in _run49, True)
 
 print()
+print("[50] every spoken question opens the answer window, wherever it came from")
+# reply() got the rule first; the gap was every question that never went
+# through reply() -- the quiz, the greetings menu, and an operator typing
+# "would anyone like a tour?" into the Say box all ask through other paths.
+_d50 = Chatty()
+_r50, _s50, _a50, _ = build([_d50])
+_s50.set_mode(_d50.id)
+_r50.cycle()
+_ctx50 = _r50._ctx
+
+_s50.expect_answer(0.0)
+_ctx50.say("Which language would you like?", "curious")
+check("a scripted question opens the window", _s50.answer_expected, True)
+
+_s50.expect_answer(0.0)
+_ctx50.say("The Hub has three research strands.", "neutral")
+check("a statement does not", _s50.answer_expected, False)
+
+# The operator's Say box asks the room through the runner, not through a demo.
+_s50.request("say", "Would anyone like a tour?")
+_r50._handle_dashboard_request()
+check("a dashboard question opens it too", _s50.answer_expected, True)
+_s50.expect_answer(0.0)
+_s50.request("say", "The tour starts at two.")
+_r50._handle_dashboard_request()
+check("a dashboard statement does not", _s50.answer_expected, False)
+
+print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")
 sys.exit(1 if failures else 0)
