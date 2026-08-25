@@ -2835,5 +2835,44 @@ _r50._handle_dashboard_request()
 check("a dashboard statement does not", _s50.answer_expected, False)
 
 print()
+print("[51] boot loads the models while the robot connects")
+import body.audio_io as _aio51  # noqa: E402
+
+# The rules of the preload cache, not the timing: a part that fails to build
+# must fall back to inline construction, and a builder that RETURNS None (the
+# whisper builder does, on failure) must not be cached -- a cached None makes
+# the constructor's "or" fallback rebuild it anyway, spending the time twice.
+_held51 = (_aio51._build_whisper, dict(_aio51._PRELOADED))
+try:
+    _aio51._PRELOADED.clear()
+    _aio51._build_whisper = lambda: None
+    _calls51 = {"n": 0}
+    _real_rec = _aio51._build_recognizer
+
+    def _counting_rec():
+        _calls51["n"] += 1
+        return _real_rec()
+
+    _aio51._build_recognizer = _counting_rec
+    _aio51.preload_models()
+    check("a builder returning None is not cached", "whisper" in _aio51._PRELOADED, False)
+    check("the parts that built are", "recognizer" in _aio51._PRELOADED, True)
+    _aio51.preload_models()
+    check("preloading twice does not build twice", _calls51["n"], 1)
+finally:
+    _aio51._build_whisper, _cache51 = _held51[0], _held51[1]
+    _aio51._build_recognizer = _real_rec
+    _aio51._PRELOADED.clear()
+    _aio51._PRELOADED.update(_cache51)
+
+# The wiring: the worker starts BEFORE the robot connect and is joined before
+# assembly, so a slow disk can never race the constructor.
+_vl51 = (_pl36.Path(__file__).parent / "body" / "voice_loop.py").read_text(encoding="utf-8")
+check("the preload starts before the robot connect",
+      _vl51.index("preload_thread.start()") < _vl51.index("robot = None"), True)
+check("and is joined before assembly",
+      _vl51.index("preload_thread.join()") < _vl51.index("audio = AudioIO(target"), True)
+
+print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")
 sys.exit(1 if failures else 0)

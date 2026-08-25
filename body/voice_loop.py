@@ -174,6 +174,32 @@ def run_forever(target: HardwareTarget) -> None:
     # connection had no socket to open ("unixfdsrc: Failed to connect socket"
     # / "state change failed"). One connection, with a real media backend, is
     # the only ordering that has no such race.
+    # The expensive, robot-independent work -- four speech models, the face
+    # recogniser, the language-model clients -- starts on a worker thread NOW,
+    # so it runs while the robot connection is being established below. Boot
+    # used to do these one after another and was measured at 43-77 seconds;
+    # the two halves are independent, so the slower of them should set the
+    # boot time, not their sum.
+    preloaded: dict = {}
+
+    def _preload() -> None:
+        from body import audio_io
+
+        audio_io.preload_models()
+        try:
+            preloaded["face"] = FaceIdentifier(target)
+        except Exception:
+            logger.exception("Could not preload face recognition; building inline.")
+        try:
+            from brain.llm import streaming_backends
+
+            streaming_backends()
+        except Exception:
+            logger.exception("Could not preload the language model clients.")
+
+    preload_thread = threading.Thread(target=_preload, name="model-preload", daemon=True)
+    preload_thread.start()
+
     robot = None
     if target.mode == "robot":
         from reachy_mini import ReachyMini
@@ -192,9 +218,14 @@ def run_forever(target: HardwareTarget) -> None:
         )
         robot.__enter__()
 
+    # The robot is connected; wait for the models. Usually they finished
+    # first and this returns immediately -- the join is here so a slow disk
+    # can never race the constructor into building a model twice.
+    preload_thread.join()
+
     audio = AudioIO(target, robot=robot)
     camera = Camera(target, robot=robot)
-    face = FaceIdentifier(target)
+    face = preloaded.get("face") or FaceIdentifier(target)
     motion = MotionController(target, robot=robot)
 
     # Follow whoever is in view for the whole session, not just at the moment

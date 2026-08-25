@@ -200,6 +200,40 @@ _LEAD_PADDING = np.zeros(int(MODELS.asr_sample_rate * 0.5), dtype=np.float32)
 _TAIL_PADDING = np.zeros(int(MODELS.asr_sample_rate * 0.66), dtype=np.float32)
 
 
+#: Models built ahead of AudioIO() by preload_models, keyed by part. Filled on
+#: a worker thread during boot and consumed exactly once by the constructor.
+_PRELOADED: dict[str, Any] = {}
+
+
+def preload_models() -> None:
+    """Build the speech models before AudioIO() is called, off the boot path.
+
+    Each part is independent and each failure is swallowed: a part missing
+    from the cache is simply built inline by the constructor as it always was,
+    so the worst this can do is save no time. Whisper's builder already
+    returns None on failure -- that None must not be cached, or the "or"
+    fallback in the constructor would rebuild it anyway and the preload time
+    would be spent twice.
+    """
+    builders = (
+        ("recognizer", _build_recognizer),
+        ("spotter", _build_spotter),
+        ("whisper", _build_whisper),
+        ("voice", lambda: PiperVoice.load(str(MODELS.tts_model_path),
+                                          str(MODELS.tts_config_path))),
+    )
+    for key, build in builders:
+        if key in _PRELOADED:
+            continue
+        try:
+            built = build()
+        except Exception:
+            logger.exception("Could not preload the %s; it will build inline.", key)
+            continue
+        if built is not None:
+            _PRELOADED[key] = built
+
+
 def _build_recognizer() -> sherpa_onnx.OnlineRecognizer:
     d = MODELS.asr_dir
     return sherpa_onnx.OnlineRecognizer.from_transducer(
@@ -419,13 +453,21 @@ class AudioIO:
 
     def __init__(self, target: HardwareTarget, robot: Optional[Any] = None) -> None:
         self.target = target
-        self._recognizer = _build_recognizer()
-        self._spotter = _build_spotter()
-        self._whisper = _build_whisper()
+        # Taken from the preload cache when boot filled it, built inline when
+        # not. Boot used to pay for these AFTER connecting to the robot, one
+        # after another -- ~10s of models on the critical path behind ~14s of
+        # network. preload_models() builds them on a worker thread WHILE the
+        # robot connects, and this constructor then assembles instantly. The
+        # inline fallback keeps every other caller -- tests, tools, a preload
+        # that failed -- exactly as it was.
+        self._recognizer = _PRELOADED.pop("recognizer", None) or _build_recognizer()
+        self._spotter = _PRELOADED.pop("spotter", None) or _build_spotter()
+        self._whisper = _PRELOADED.pop("whisper", None) or _build_whisper()
         logger.info(
             "Transcription: %s", "Whisper" if self._whisper is not None else "streaming zipformer"
         )
-        self._voice = PiperVoice.load(str(MODELS.tts_model_path), str(MODELS.tts_config_path))
+        self._voice = (_PRELOADED.pop("voice", None)
+                       or PiperVoice.load(str(MODELS.tts_model_path), str(MODELS.tts_config_path)))
         self._voice_name = MODELS.tts_model_path.stem
         #: Piper voices already loaded, by file stem. A persona owns a voice,
         #: so switching persona must not re-read a model off disk per sentence.
