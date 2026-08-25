@@ -234,7 +234,20 @@ def stream_reply(
                 clause_floor = (_FIRST_CLAUSE_CHARS if not spoken_a_sentence
                                 else _LONG_SENTENCE_CHARS)
                 if len(buffer) >= clause_floor:
-                    clause = _CLAUSE_BREAK_RE.search(buffer)
+                    # The OPENER flushes at the first break -- its whole job is
+                    # starting the voice as early as possible. Mid-reply the
+                    # rule is the opposite: flush at the LAST break, so the
+                    # chunk is a full phrase. Flushing mid-reply at the first
+                    # break shredded every long sentence into comma-stubs --
+                    # heard live as "...hands-on time with AI," [4s of silence]
+                    # "XR and robotics rather than just reading about it..." --
+                    # because once the buffer passed the floor, each iteration
+                    # peeled off exactly one clause however short it was.
+                    if spoken_a_sentence:
+                        breaks = list(_CLAUSE_BREAK_RE.finditer(buffer))
+                        clause = breaks[-1] if breaks else None
+                    else:
+                        clause = _CLAUSE_BREAK_RE.search(buffer)
                     if clause:
                         candidate, _ = extract_emotion_tag(buffer[: clause.end()])
                         buffer = buffer[clause.end() :]

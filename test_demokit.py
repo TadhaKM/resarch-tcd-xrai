@@ -3096,5 +3096,37 @@ check("a real question is left for the conversation model",
       _d55.on_utterance(_ctx55, "what masters programmes are there"), False)
 
 print()
+print("[56] a long sentence is spoken in phrases, not comma-stubs")
+# Heard live: "...hands-on time with AI," [4.3s of silence] "XR and robotics
+# rather than just reading about it..." -- the mid-reply splitter flushed at
+# the FIRST clause break once the buffer passed its floor, so every iteration
+# peeled off exactly one clause however short, and the reply arrived as five
+# stubs with a costly barge-in scan after each one.
+_long56 = ("The Hub is the place for hands-on time with AI, XR and robotics "
+           "rather than just reading about it, with VR leadership simulations, "
+           "robotics builds, and applied research across three strands that "
+           "span student learning, executive labs, and research itself. ")
+_pieces56 = [w + " " for w in _long56.split()] + ["[emotion: happy]"]
+_out56, _ = _run_stream(_ScriptedBackend(_pieces56))
+_spoken56 = [t.strip() for t, _tag in _out56 if t.strip()]
+_commas56 = _long56.count(",")
+check("far fewer chunks than commas",
+      len(_spoken56) < _commas56, True)
+# The opener may be a short clause -- its job is starting the voice early --
+# but every LATER chunk must be a real phrase, not a stub.
+check("no mid-reply chunk is a comma-stub",
+      all(len(x) >= 60 for x in _spoken56[1:-1]) if len(_spoken56) > 2 else True, True)
+_rejoined56 = " ".join(_spoken56)
+for _word56 in ("simulations", "strands", "executive", "research itself"):
+    check(f"  {_word56!r} survives", _word56 in _rejoined56, True)
+
+# And the scan that runs between chunks is batched: the per-chunk loop was
+# measured at 2.5s per 655 chunks of backlog -- the exact silence the
+# instrumentation logged between spoken lines -- and batching cut it to 0.78s,
+# with a buried wake word still found (measured, 0.22s to the hit).
+_aio56 = (_pl36.Path(__file__).parent / "body" / "audio_io.py").read_text(encoding="utf-8")
+check("the backlog scan feeds the decoder in blocks", "_feed_block()" in _aio56, True)
+
+print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")
 sys.exit(1 if failures else 0)

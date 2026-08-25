@@ -1024,6 +1024,30 @@ class AudioIO:
         chunks = 0
         loudest = 0.0
         try:
+            # Gain per chunk, resample and decode per BLOCK. This scan runs
+            # between every pair of spoken chunks, and per-chunk it was
+            # measured at 3.84ms x 655 chunks = 2.5s of the robot standing
+            # silent mid-reply -- the instrumentation logged 4.3s gaps live,
+            # and every gap sat on exactly this loop. Gain stays per chunk
+            # (the envelope tracking is why the robot's own loud voice does
+            # not crush the visitor's words); the resample and the decoder
+            # calls, which carry the fixed-overhead cost, run once per
+            # ~half-second of audio instead of once per 11ms.
+            block: list = []
+            block_len = 0
+            block_target = max(1, int(input_rate * 0.5))
+
+            def _feed_block() -> None:
+                nonlocal block, block_len
+                if not block:
+                    return
+                frame = _resample(np.concatenate(block), input_rate,
+                                  MODELS.asr_sample_rate)
+                stream.accept_waveform(MODELS.asr_sample_rate, frame)
+                while self._spotter.is_ready(stream):
+                    self._spotter.decode_stream(stream)
+                block, block_len = [], 0
+
             for _ in range(_MAX_FLUSH_CHUNKS):
                 sample = self._robot.media.get_audio_sample()
                 if sample is None:
@@ -1031,10 +1055,11 @@ class AudioIO:
                 chunks += 1
                 mono = sample[:, 0] if sample.ndim == 2 else sample
                 loudest = max(loudest, float(np.abs(mono).max()) if mono.size else 0.0)
-                frame = _resample(self._apply_gain(mono), input_rate, MODELS.asr_sample_rate)
-                stream.accept_waveform(MODELS.asr_sample_rate, frame)
-                while self._spotter.is_ready(stream):
-                    self._spotter.decode_stream(stream)
+                block.append(self._apply_gain(mono))
+                block_len += len(mono)
+                if block_len < block_target:
+                    continue
+                _feed_block()
                 if self._spotter.get_result(stream):
                     logger.info(
                         "Wake word heard while speaking -- interrupting (%d chunk(s), peak %.3f).",
@@ -1054,6 +1079,7 @@ class AudioIO:
                     self._mic_fresh = True
                     return True
 
+            _feed_block()
             # Flush the tail. A phrase landing at the very end of the buffer --
             # somebody interrupting just as a sentence finishes, which is the
             # most natural moment to interrupt -- sits in the encoder
