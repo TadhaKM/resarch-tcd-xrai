@@ -37,6 +37,7 @@ class FakeAudio:
 
     def __init__(self, wake_at=(), transcripts=(), interrupt_after=()):
         self.said = []
+        self.sounds = []
         self._wake_at = list(wake_at)
         self._transcripts = list(transcripts)
         self.calls = 0
@@ -61,6 +62,13 @@ class FakeAudio:
     def listen(self, wait_for_speech_s=None):
         # Signature kept in step with AudioIO.listen, like speak below.
         return self._transcripts.pop(0) if self._transcripts else ""
+
+    def play_sound(self, name, motion=None):
+        # Recorded like speech, so a test can assert a sound played -- and
+        # present at all because the real AudioIO grew this method and the
+        # first test to reach a quiz sound died on the missing attribute.
+        self.sounds.append(name)
+        return True
 
     def speak(self, text, emotion, motion=None, expressive=False, pace=None, variation=None):
         # Signature kept in step with AudioIO.speak on purpose. When it drifted,
@@ -2726,6 +2734,77 @@ finally:
         _set48.put(_aio48.SPEECH_PACE_KEY, _held48)
     else:
         _set48.put(_aio48.SPEECH_PACE_KEY, "")
+
+print()
+print("[49] a question gets its answer without a wake word, and a quiz is not slowed by noise")
+import demos.quiz as _qz49  # noqa: E402
+
+# THE APOSTROPHE. "Let's do a quiz" switched to the quiz through the runner's
+# word-stream matching, then fell through the quiz's own swallow -- a raw
+# substring check -- because "lets do a quiz" is not a substring of "let's do
+# a quiz". The conversation model answered over the top: "Sure thing,
+# Tadhagath, I'd love to!", thirty seconds before question one. Test [33]
+# passed throughout, because it fed each demo its trigger VERBATIM: the exact
+# spelling the recogniser never produces.
+_q49 = _qz49.Quiz()
+_r49, _s49, _a49, _ = build([Chatty(), _q49])
+_s49.set_mode(_q49.id)
+_r49.cycle()
+_ctx49 = _r49._ctx
+_st49 = _ctx49.store
+# The cycle above already asked question 1; the swallow path only exists
+# BEFORE a question is out (that is when the runner hands the trigger back).
+_st49.update(awaiting=False, step=0, tries=0, reasked=False)
+check("the apostrophe form of its own trigger is swallowed",
+      _q49.on_utterance(_ctx49, "Let's do a quiz."), True)
+check("so is the plain form still", _q49.on_utterance(_ctx49, "lets do a quiz"), True)
+
+# Politeness must not burn a try. Live, "Okay, thank you, RIT" was counted as
+# a wrong answer and gave the fact away one guess early. The deck is shuffled
+# per session, so the outstanding question is pinned rather than guessed.
+_st49.update(order=list(range(6)), step=0, awaiting=True, tries=0, reasked=False)
+check("a question is now outstanding", _st49.get("awaiting"), True)
+_before = _st49.get("tries", 0)
+check("courtesy noise is swallowed", _q49.on_utterance(_ctx49, "okay thank you reachy"), True)
+check("and costs no try", _st49.get("tries", 0), _before)
+
+# A garbage transcript gets ONE free retry, then noise has to resolve.
+_a49.last_confidence = -9.0
+check("a mangled answer is asked again", _q49.on_utterance(_ctx49, "flurble grang"), True)
+check("without burning a try", _st49.get("tries", 0), _before)
+check("but only once", _st49.get("reasked"), True)
+_q49.on_utterance(_ctx49, "flurble grang")
+check("the second one counts", _st49.get("tries", 0), _before + 1)
+_a49.last_confidence = None
+
+# A reply that ends by asking opens a wake-word-free window for the answer,
+# and the window admits one-word answers past the ambient floor. The quiz
+# checks above left the demo HOLDING the mic (_misheard holds it for the
+# retry), and a held mic bypasses the floor for its own reason -- released
+# here so these checks measure the answer window, not the leftover hold.
+_s49.hold_open_mic(False)
+_s49.expect_answer(5.0)
+check("one word is admitted while an answer is expected",
+      _r49._addressed_to_the_robot("true"), True)
+_s49.expect_answer(0.0)
+_s49.set_open_mic(True)
+check("and refused once the window is gone (ambient floor again)",
+      _r49._addressed_to_the_robot("true"), False)
+_s49.set_open_mic(False)
+
+# The wiring: base.reply sets the expectation when the last sentence asks.
+_base49 = (_pl36.Path(__file__).parent / "demokit" / "base.py").read_text(encoding="utf-8")
+check("a reply ending in a question opens the window",
+      'endswith("?")' in _base49 and "expect_answer(ANSWER_WINDOW_S)" in _base49, True)
+# Any utterance closes it, so the NEXT stray remark is not read as an answer.
+_run49 = (_pl36.Path(__file__).parent / "demokit" / "runner.py").read_text(encoding="utf-8")
+check("and any utterance closes it", "expect_answer(0.0)" in _run49, True)
+
+# The five-second open-mic listen no longer stretches scripted sequences:
+# it is capped at the window the demo itself asked for. Measured live as
+# fourteen-second gaps between quiz questions with open mic on.
+check("the open-mic listen respects the demo's own window",
+      "min(_OPEN_MIC_SILENCE_S, listen_for)" in _run49, True)
 
 print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")

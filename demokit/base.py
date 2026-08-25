@@ -47,6 +47,11 @@ logger = logging.getLogger(__name__)
 #: it, the gap is the ordinary cost of rendering and reads as breathing.
 _GAP_WARN_S = 1.5
 
+#: How long the robot listens, wake-word-free, for the answer to a question
+#: its own reply just asked. Long enough to think; short enough that a question
+#: nobody answers does not leave the mic open to the room.
+ANSWER_WINDOW_S = 9.0
+
 MAX_LISTEN_WINDOW_S = 3.0
 
 #: Slice length for ctx.sleep, so a long pause still notices a mode change.
@@ -478,6 +483,17 @@ class DemoContext:
                 except queue.Empty:
                     break
             raise
+        # A reply that ends by ASKING something opens a short wake-word-free
+        # window for the answer. Observed live: the robot finished with "What
+        # do you want to be quizzed on...?" and the visitor's answer needed a
+        # wake word the question never told them to say. The window is set
+        # here, in the one place every generated reply finishes, because the
+        # demo that called reply() has no idea the model chose to end on a
+        # question. Noise discrimination stays where it already lives: the
+        # runner's confidence gate still applies to whatever arrives.
+        if spoken and spoken[-1].rstrip().endswith("?"):
+            self.state.expect_answer(ANSWER_WINDOW_S)
+
         self.motion.express_move(final_tag)
         # Leave the body in the persona's resting pose. Without this a reply
         # ends on whatever the last sentence's tag was -- in practice

@@ -310,9 +310,15 @@ class DemoRunner:
 
         # One listen per cycle either way, so the dashboard stays responsive and
         # a visitor can still be switched away from or put to sleep mid-chat.
-        if self._state.open_mic and time.monotonic() < self._open_until:
-            if self._open_mic_turn(demo, ctx):
-                self._open_until = time.monotonic() + _OPEN_MIC_WINDOW_S
+        # Wake-word-free listening happens for either of two reasons: the
+        # operator's open-mic switch, or the robot's own last reply having
+        # ended in a question (state.answer_expected) -- asking "want to hear
+        # more?" and then demanding a wake word before the yes is a trap.
+        if (self._state.open_mic and time.monotonic() < self._open_until) \
+                or self._state.answer_expected:
+            if self._open_mic_turn(demo, ctx, listen_for=result.listen_for):
+                if self._state.open_mic:
+                    self._open_until = time.monotonic() + _OPEN_MIC_WINDOW_S
             return
 
         if self._audio.wait_for_wake_word(timeout=result.listen_for):
@@ -438,7 +444,8 @@ class DemoRunner:
         # talk over it, and the wake-word window opens immediately after.
         ctx.say(f"Oh, hello again {name}.", "happy", interruptible=False)
 
-    def _open_mic_turn(self, demo: Demo, ctx: DemoContext) -> bool:
+    def _open_mic_turn(self, demo: Demo, ctx: DemoContext,
+                       listen_for: float = _OPEN_MIC_SILENCE_S) -> bool:
         """Take a follow-up question with no wake word. True if one was heard.
 
         The wake word still opens a conversation; this only keeps it open
@@ -449,7 +456,12 @@ class DemoRunner:
         that needs addressing by name.
         """
         self._state.note("status", "Listening -- no wake word needed")
-        heard = self._listen(wait_for_speech_s=_OPEN_MIC_SILENCE_S)
+        # Capped at the demo's own listening window. A demo mid-script returns
+        # a short listen_for to say "I have more lines to deliver", and the old
+        # fixed five-second wait here stretched every scripted sequence by five
+        # silent seconds per line -- measured live as fourteen-second gaps
+        # between quiz questions with open mic on.
+        heard = self._listen(wait_for_speech_s=min(_OPEN_MIC_SILENCE_S, listen_for))
         if not heard:
             return False
 
@@ -485,6 +497,13 @@ class DemoRunner:
         the room; a sentence is a person.
         """
         if self._state.open_mic_held:
+            return True
+        # An answer window is the robot having just ASKED something, so a
+        # one-word reply is exactly what is expected -- "yes", "true",
+        # "purple". The word-count floor is for ambient listening, where a
+        # single syllable is the room; here the confidence gate alone decides,
+        # and it still runs in _dispatch.
+        if self._state.answer_expected:
             return True
         words = _word_stream(heard)
         # Never gate the way out. "Goodbye" is one word and has to work from
@@ -613,6 +632,10 @@ class DemoRunner:
         # Stamped at the one place every utterance passes through, so the
         # attract offer never talks over a conversation already happening.
         self._last_heard_at = time.monotonic()
+        # Whatever was said, the question the robot asked has now been
+        # responded to -- the answer window must not outlive its answer, or
+        # the NEXT stray remark is also treated as one.
+        self._state.expect_answer(0.0)
 
         # Counted here, at the one place every utterance passes through --
         # wake-word turns and open-mic follow-ups alike. Aggregate only: what

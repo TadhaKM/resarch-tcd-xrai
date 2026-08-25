@@ -79,6 +79,9 @@ class RobotState:
         #: read nor written by a demo: theirs is a policy for the visit, this
         #: is one question-and-answer that has to be heard.
         self._open_mic_hold = False
+        #: Until when the robot is waiting for the ANSWER to a question it just
+        #: asked -- see expect_answer. Monotonic deadline; 0.0 means not waiting.
+        self._answer_until = 0.0
         #: Which answering style the personality demo should use next. Held in
         #: the core rather than in the demo's own store so the dashboard can
         #: set it directly -- picking one from a list is what an operator wants
@@ -318,6 +321,27 @@ class RobotState:
             caps.add(name) if on else caps.discard(name)
             self._capabilities = frozenset(caps)
             return self._capabilities
+
+    def expect_answer(self, seconds: float) -> None:
+        """The robot just asked a question; listen for the answer wake-word-free.
+
+        Different from hold_open_mic in who calls it and for how long: a demo
+        HOLDS the mic across its own scripted exchange, while this is set by
+        the reply pipeline itself whenever a generated reply happens to end in
+        a question mark -- which the demo never sees coming. Ending a reply
+        with "would you like to hear more?" and then demanding "Hey Reachy"
+        before the yes is the robot setting a trap for the visitor.
+
+        A deadline rather than a flag, so a question nobody answers expires on
+        its own and can never wedge the microphone open for the afternoon.
+        """
+        with self._lock:
+            self._answer_until = time.monotonic() + max(0.0, seconds)
+
+    @property
+    def answer_expected(self) -> bool:
+        with self._lock:
+            return time.monotonic() < self._answer_until
 
     def hold_open_mic(self, held: bool) -> None:
         """Keep the microphone open for one exchange, whatever the switch says.

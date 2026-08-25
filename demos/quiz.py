@@ -85,6 +85,24 @@ _BETWEEN_LINES_S = 1.0
 _SESSION_STALE_S = 600.0
 
 
+#: Words that make up politeness rather than answers. An utterance built
+#: ENTIRELY of these is somebody being nice to the robot mid-quiz, and it must
+#: cost nothing -- see on_utterance.
+_FILLER_WORDS = frozenset({
+    "thank", "thanks", "you", "okay", "ok", "cheers", "nice", "cool", "ha",
+    "haha", "hmm", "um", "uh", "oh", "eh", "ah", "wow", "reachy", "ricky",
+    "richie", "rit", "please", "sorry",
+})
+
+
+def _all_filler(heard: str) -> bool:
+    """Whether an utterance is courtesy noise rather than an answer attempt."""
+    from demokit.runner import _word_stream
+
+    words = _word_stream(heard).split()
+    return bool(words) and all(w in _FILLER_WORDS for w in words)
+
+
 def _is_right(heard: str, accepted: tuple[str, ...]) -> bool:
     """Whether a shouted answer counts. Generous on purpose -- see the docstring."""
     from demokit.runner import _word_stream
@@ -146,6 +164,8 @@ class Quiz(Demo):
         return IdleResult(listen_for=MAX_LISTEN_WINDOW_S)
 
     def on_utterance(self, ctx: DemoContext, text: str) -> bool:
+        from demokit.runner import _word_stream
+
         store = ctx.store
         lowered = text.lower()
         if any(p in lowered for p in ("start again", "another round", "again please")):
@@ -161,7 +181,19 @@ class Quiz(Demo):
             # quiz you on the AI XR Hub, or something related to picking
             # between those two Master's programmes?" -- fifteen seconds of the
             # robot talking to itself before question one.
-            if store.get("step", 0) == 0 and any(t in lowered for t in self.triggers):
+            # Matched through the same word-stream the runner used to SWITCH
+            # here, not by raw substring. Live, "Let's do a quiz" selected this
+            # demo -- the runner strips apostrophes -- and then fell straight
+            # through this check, because "lets do a quiz" is not a substring
+            # of "let's do a quiz". The conversation model answered it over the
+            # top ("Sure thing, Tadhagath, I'd love to!"), thirty seconds of
+            # chatter before question one, in front of the exact bug this
+            # swallow was written to prevent.
+            from demokit.runner import contains_phrase
+
+            trig_words = _word_stream(text)
+            if store.get("step", 0) == 0 and any(
+                    contains_phrase(trig_words, t) for t in self.triggers):
                 return True
             # Otherwise: between questions, or finished. Let it fall through so
             # a real question about the robot still gets a real answer.
@@ -170,6 +202,15 @@ class Quiz(Demo):
         index = store.get("order", [])[store.get("step", 0)]
         _question, accepted, fact = _QUESTIONS[index]
         store["waited"] = 0
+        if not _is_right(text, accepted):
+            if _all_filler(text):
+                # "Okay, thank you" mid-question is somebody being polite to
+                # the robot, not an attempt at the answer -- and it burned a
+                # try live, which gave the answer away one guess early.
+                # Swallowed at no cost: not right, not wrong, not an answer.
+                return True
+            if self._misheard(ctx, store):
+                return True
         if _is_right(text, accepted):
             store["score"] = store.get("score", 0) + 1
             self._advance(ctx)
@@ -228,6 +269,7 @@ class Quiz(Demo):
         store = ctx.store
         store["awaiting"] = False
         store["tries"] = 0
+        store["reasked"] = False
         store["waited"] = 0
         store["step"] = store.get("step", 0) + 1
         store["touched"] = time.monotonic()
@@ -256,6 +298,25 @@ class Quiz(Demo):
         return IdleResult(listen_for=MAX_LISTEN_WINDOW_S)
 
     # --- session state ---------------------------------------------------
+
+    def _misheard(self, ctx: DemoContext, store: dict) -> bool:
+        """One free retry when the transcript itself was garbage.
+
+        The runner's confidence gate deliberately exempts held-mic exchanges,
+        so a noisy answer reaches this demo unfiltered -- and a mangled
+        transcript is not a wrong answer, it is no answer. One retry only:
+        persistent noise still has to resolve the question, or a loud room
+        could hold one question open forever.
+        """
+        from body.audio_io import _MIN_MEAN_TOKEN_LOGPROB
+
+        score = getattr(ctx.audio, "last_confidence", None)
+        if score is None or score >= _MIN_MEAN_TOKEN_LOGPROB or store.get("reasked"):
+            return False
+        store["reasked"] = True
+        ctx.say("Say that again?", "curious")
+        self._hold(ctx, True)
+        return True
 
     def _hold(self, ctx: DemoContext, held: bool) -> None:
         if bool(ctx.store.get("holding")) == bool(held):
