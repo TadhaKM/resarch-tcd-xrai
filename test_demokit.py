@@ -2886,5 +2886,30 @@ check("and is joined before assembly",
       _vl51.index("preload_thread.join()") < _vl51.index("audio = AudioIO(target"), True)
 
 print()
+print("[52] the hidden attribute actually hides everything that uses it")
+# The Recording pill shipped showing permanently, armed or not: .pill sets
+# display: inline-flex, and ANY authored display rule beats the browser's own
+# [hidden] { display: none }. Every element that combines the hidden attribute
+# with a display-styled class needs its own [hidden] override, and this checks
+# each one rather than trusting the next author to know that.
+_page52 = (_pl36.Path(__file__).parent / "web" / "index.html").read_text(encoding="utf-8")
+_styled52 = set(_re45.findall(r"[#.]([a-zA-Z0-9_-]+)[^{}]*\{[^}]*display\s*:", _page52))
+_missing52 = []
+for _id52, _classes52 in _re45.findall(
+        r'<[a-z]+[^>]*id="([a-zA-Z0-9_-]+)"[^>]*class="([^"]+)"[^>]*hidden', _page52):
+    if not (set(_classes52.split()) & _styled52 or _id52 in _styled52):
+        continue
+    if f"#{_id52}[hidden]" not in _page52:
+        _missing52.append(_id52)
+for _classes52, _id52 in _re45.findall(
+        r'<[a-z]+[^>]*class="([^"]+)"[^>]*id="([a-zA-Z0-9_-]+)"[^>]*hidden', _page52):
+    if not (set(_classes52.split()) & _styled52 or _id52 in _styled52):
+        continue
+    if f"#{_id52}[hidden]" not in _page52:
+        _missing52.append(_id52)
+check("every display-styled element that uses hidden can actually hide",
+      sorted(set(_missing52)), [])
+
+print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")
 sys.exit(1 if failures else 0)

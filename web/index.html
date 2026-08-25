@@ -1201,6 +1201,11 @@
   /* the recording pill: visible from across a room, because its whole job is
      that nobody is recorded without something on screen saying so. */
   #p-rec { color: var(--bad); border-color: var(--bad-line); font-weight: 600; }
+  /* .pill sets display: inline-flex, and ANY authored display rule beats the
+     browser's own [hidden] { display: none } -- so the pill showed Recording
+     permanently, armed or not, from the moment it shipped. The attribute only
+     works if this rule exists. */
+  #p-rec[hidden] { display: none; }
   .rec-dot {
     display: inline-block; width: 9px; height: 9px; border-radius: 50%;
     background: var(--bad); animation: rec-blink 1.6s ease-in-out infinite;
