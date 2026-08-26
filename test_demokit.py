@@ -3099,7 +3099,7 @@ check("and closes on the Hub's own line",
 _len_after_script55 = len(_a55.said)
 check("every scripted line was delivered",
       _len_after_script55,
-      sum(len(b["lines"]) for b in _do55._BLOCKS))
+      sum(len(b.lines) for b in _do55._BLOCKS))
 
 _d55.on_utterance(_ctx55, "Thank you, Reachy.")
 check("the Dean's thanks gets a bow, not a speech",
@@ -3390,6 +3390,94 @@ check("an early comma-stub cannot un-bound the unit",
       all(len(x) <= 240 for x in _spoken57b), True)
 check("  and the sentence still arrives whole",
       "coaching" in " ".join(_spoken57b) and "students" in " ".join(_spoken57b), True)
+
+print()
+print("[58] the Hub's questions get the Hub's answers, whoever asks, instantly")
+import demos._set_pieces as _sp58
+
+# One copy of the dialogue: the Dean's performance and the everyday answers
+# cannot drift apart, because they are the same objects.
+check("the performance and the fast-path share one script",
+      _do55._BLOCKS is _sp58.BLOCKS, True)
+
+check("'what is the AI XR hub' is a scripted question",
+      _sp58.match("What is the AI XR hub?").name, "what the hub is")
+check("'who are you' is a scripted question",
+      _sp58.match("who are you").name, "introduction")
+check("'any advice' is a scripted question",
+      _sp58.match("do you have any advice").name, "advice")
+check("an unscripted question goes to the model",
+      _sp58.match("how do neural networks actually work"), None)
+# The guard that keeps this from repeating the welcome-hijack failure: a rich
+# question that merely CONTAINS a cue must reach the model, which can answer
+# all of it. This is the live sentence from that failure.
+check("a three-part question is NOT taken over by the script",
+      _sp58.match("Tell me a bit about the hub and also tell me about the "
+                  "type of master students that come to the hub"), None)
+
+# Delivery: every line of the block, in order, at the measured pace.
+class _PaceAudio58(FakeAudio):
+    def __init__(self):
+        super().__init__()
+        self.paces = []
+    def speak(self, text, emotion, motion=None, expressive=False, pace=None,
+              variation=None):
+        self.paces.append(pace)
+        super().speak(text, emotion, motion=motion, expressive=expressive,
+                      pace=pace, variation=variation)
+
+from brain import memory as _mem58
+_mem58.clear_history(0)
+_pa58 = _PaceAudio58()
+_ctx58 = _DC57(audio=_pa58, motion=FakeMotion(), tracker=None,
+               state=RobotState(), demo_id="t58", store={})
+check("a scripted question is answered", _sp58.perform(_ctx58, "what is the hub"), True)
+check("with the whole block, verbatim",
+      _pa58.said, [line for line, _e in _sp58.match("what is the hub").lines])
+check("spoken at the measured pace",
+      all(p == _sp58.PACE for p in _pa58.paces), True)
+check("and remembered, so follow-ups have context",
+      _mem58.get_history(0)[0][0], "what is the hub")
+_mem58.clear_history(0)
+check("an unscripted question is declined for the model",
+      _sp58.perform(_ctx58, "what do you think about the weather"), False)
+
+# Wired into both places questions can arrive: the conversation demo (before
+# its model call) and the runner's fall-through from every other mode.
+_conv58 = (_pl36.Path(__file__).parent / "demos" / "conversation.py").read_text(encoding="utf-8")
+check("the conversation demo asks the script first",
+      _conv58.index("_set_pieces.perform(ctx, text)") < _conv58.index("ctx.reply(text"), True)
+_run58 = (_pl36.Path(__file__).parent / "demokit" / "runner.py").read_text(encoding="utf-8")
+check("so does the fall-through from every other mode",
+      "_set_pieces.perform(ctx, heard)" in _run58, True)
+
+# No everyday cue may be reachable through the trigger table, which runs
+# first: the audit that caught "what is this place" switching to the camera
+# demo instead of answering what the Hub is.
+from demokit.registry import Registry as _Reg58
+from demokit.runner import fuzzy_contains as _fz58
+_reg58 = _Reg58()
+_reg58.discover()
+_hijacks58 = []
+for _piece58 in _sp58.BLOCKS:
+    for _cue58 in _piece58.ask_cues:
+        _w58 = _word_stream(_cue58)
+        for _id58 in _reg58.ids():
+            for _t58 in _reg58.get(_id58).triggers:
+                if contains_phrase(_w58, _word_stream(_t58)) or _fz58(_w58, _t58):
+                    _hijacks58.append((_cue58, _id58, _t58))
+check("no everyday cue is reachable by another demo's trigger first",
+      _hijacks58, [])
+
+# And the older Hub dialogues now carry the same message.
+from brain import hub as _hub58
+check("the welcome script leads with people, not technology",
+      "People are." in _hub58.WELCOME_SCRIPT, True)
+check("  ...and closes on doing it together",
+      "you and AI can do together" in _hub58.WELCOME_SCRIPT, True)
+check("the model's grounding carries the approved framing",
+      "matter more, not less" in _hub58.GROUNDING
+      and "Immersive Intelligence" in _hub58.GROUNDING, True)
 
 print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")

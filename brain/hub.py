@@ -22,19 +22,22 @@ says it doesn't know and points at a human rather than guessing at headset
 models in front of people who can see the actual shelf.
 """
 
-#: Measured at ~32 seconds through piper, against a 30-second brief. Leads with
-#: what the Hub is for rather than what it owns, because the first thing a
-#: visitor wants is a reason to care. Trimmed to time: an earlier draft ran 39s,
-#: which is long enough for a group to start looking at each other.
+#: The group version of the dialogue written with the Dean for the MSc welcome
+#: event (demos/_set_pieces.py holds the question-by-question form). Same
+#: message in one breath: people first, human skills rising with AI, practise
+#: in VR, and the closing line. ~90 words, ~35 seconds through piper -- an
+#: earlier draft of this script ran 39s, which is long enough for a group to
+#: start looking at each other, so nothing gets added without something cut.
 WELCOME_SCRIPT = (
-    "Welcome to the AI XR Hub, in Trinity Business School. "
-    "We advance the responsible use of artificial intelligence and extended "
-    "reality, across education, business and research. "
-    "The idea isn't to replace human judgement, but to amplify what people are "
-    "distinctly good at. "
-    "We work in three strands: immersive learning for students, executive education "
-    "and innovation labs with partners, and applied research. "
-    "Some of that research is me. I'm Reachy Mini, one of the robots being built here."
+    "Hello new friends, and welcome to Trinity Business School. "
+    "I'm Reachy, the small robot who lives at the Trinity AI XR Hub. "
+    "You might expect a robot to talk about technology, but here, technology "
+    "isn't the point. People are. "
+    "This is where we explore how people and technology work better together, "
+    "because as AI gets better, human skills matter more, not less. "
+    "You'll practise real situations in VR, get feedback, and try again. "
+    "So be curious, and remember: the future is about what you and AI can do "
+    "together."
 )
 
 #: A simple technical overview, for visitors who are not engineers. Concrete
@@ -161,6 +164,16 @@ education and innovation labs for enterprise partners; and applied research.
 Hands-on work spans AI, XR and robotics, including building applications for
 Pollen Robotics' Reachy platform, which is what you are.
 Public engagement includes {", ".join(OUTREACH[:-1])} and {OUTREACH[-1]}.
+
+HOW TO TALK ABOUT THE HUB (the approved framing -- carry it in your own words)
+Technology isn't the point here; people are. As AI gets better, human skills
+matter more, not less: judgement, communication, presence and persuasion.
+Students practise real-world situations in VR -- presentations, interviews,
+challenging conversations -- then get feedback, reflect, and try again: a safe
+space to experiment, make mistakes and improve. The future isn't just about
+what AI can do; it's about what people and AI can do together. The Hub's own
+line, when a closing note fits: "Where Immersive Intelligence collaborates
+with you and brings Positive Impact."
 
 THE BUILDING
 The Hub sits inside the Trinity Business School building: an 80 million euro,

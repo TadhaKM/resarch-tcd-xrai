@@ -154,6 +154,15 @@ class Conversation(Demo):
         if spoken_clock:
             ctx.say(spoken_clock, "happy")
             return True
+        # The Hub's own questions get the Hub's own answers -- the dialogue
+        # approved for the Dean's welcome event, spoken identically whoever
+        # asks, and instantly: it is already written, so no model round-trip.
+        # Everything else, including richer questions that merely contain one
+        # of the cues, still goes to the model below.
+        from demos import _set_pieces
+
+        if _set_pieces.perform(ctx, text):
+            return True
         try:
             ctx.reply(text, person_id=ctx.person_id(), system=_HUB_BRIEFING)
         except (DemoStopped, Interrupted):

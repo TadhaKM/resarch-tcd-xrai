@@ -809,6 +809,14 @@ class DemoRunner:
     def _converse(self, ctx: DemoContext, heard: str, depth: int = 0) -> None:
         """What the robot does when no demo claimed the utterance."""
         try:
+            # Scripted first: a short, direct phrasing of one of the Hub's own
+            # questions gets the approved answer instantly, whichever mode the
+            # robot happens to be in. Lazy import -- demos are discovered by
+            # the registry, and this module must not need them at import time.
+            from demos import _set_pieces
+
+            if _set_pieces.perform(ctx, heard):
+                return
             ctx.reply(heard, person_id=ctx.person_id())
         except Interrupted:
             # The visitor talked over the answer. Their new question is already

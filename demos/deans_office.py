@@ -31,92 +31,19 @@ WHY IT IS BUILT THE WAY IT IS
 
 from demokit import Demo, DemoContext, IdleResult
 from demokit.base import MAX_LISTEN_WINDOW_S
+from demos._set_pieces import BLOCKS as _BLOCKS
+from demos._set_pieces import PACE as _PACE
 
 #: How long the standing answer window is re-armed for. Effectively "for as
 #: long as this mode is selected": it is refreshed on every idle slice and
 #: after every utterance, and cleared on exit so it cannot outlive the mode.
 _LISTEN_HOLD_S = 600.0
 
-#: The performance, one entry per Dean question. `cues` are matched through
-#: the runner's word stream (so punctuation and apostrophes do not matter);
-#: `lines` are spoken in order, each with its own expression. The text is the
-#: Dean's approved script verbatim -- change it only alongside the Dean's own
-#: cue cards, or the robot answers a question that is no longer being asked.
-_BLOCKS = (
-    {
-        "cues": ("introduce yourself", "would you like to introduce"),
-        "lines": (
-            ("Of course!", "happy"),
-            ("Hello new friends, and welcome to Trinity Business School.", "happy"),
-            ("I'm Reachy, the small robot who lives at the Trinity AI XR Hub.", "happy"),
-        ),
-    },
-    {
-        "cues": ("what exactly is", "what is the ai xr hub", "what is the xr hub",
-                 "what is the hub"),
-        "lines": (
-            ("Well, you might expect a robot to talk about technology, but "
-             "that's not really what we're about.", "curious"),
-            ("Here, technology isn't the point. People are.", "neutral"),
-            ("The Trinity AI XR Hub is a space here in the Business School "
-             "where we explore how people and technology can work better "
-             "together.", "neutral"),
-            ("You'll get to experience artificial intelligence, virtual "
-             "reality and, of course... embodied AI like me.", "happy"),
-            ("But ultimately, the Hub is about you.", "happy"),
-        ),
-    },
-    {
-        "cues": ("students so important", "why are the students",
-                 "students important"),
-        "lines": (
-            ("Because as AI gets better, human skills matter more, not "
-             "less.", "neutral"),
-            ("Skills like judgement, communication, presence and persuasion "
-             "are increasingly important in an AI-enabled world.", "neutral"),
-            ("The Hub gives you a space to develop those skills while also "
-             "exploring how emerging technologies are changing the way we "
-             "learn, work and collaborate.", "happy"),
-        ),
-    },
-    {
-        "cues": ("actually do", "do in the hub", "what will our msc"),
-        "lines": (
-            ("You'll get hands-on experience with immersive technology.", "happy"),
-            ("You'll put on a VR headset and practise real-world situations, "
-             "from presentations and interviews to challenging "
-             "conversations.", "neutral"),
-            ("And the best part?", "curious"),
-            ("You can practise, get feedback, reflect, and try again.", "happy"),
-            ("It's a safe space to experiment, make mistakes and "
-             "improve.", "neutral"),
-            ("But the Hub isn't only about developing your human "
-             "skills.", "neutral"),
-            ("It's also a place to experience emerging technologies and "
-             "explore what happens when humans and technology work "
-             "together.", "curious"),
-            ("I suppose that's where I come in.", "happy"),
-        ),
-    },
-    {
-        "cues": ("final advice", "any advice", "advice for our new students"),
-        "lines": (
-            ("Yes.", "neutral"),
-            ("Be curious.", "happy"),
-            ("Try something unfamiliar.", "curious"),
-            ("Don't be afraid to make mistakes.", "neutral"),
-            ("And remember: the future isn't just about what AI can "
-             "do.", "neutral"),
-            ("It's about what you and AI can do together.", "happy"),
-            ("So come and visit us, try the technology, and don't forget to "
-             "say hello when you see me.", "happy"),
-            ("Welcome to Trinity Business School, and welcome to the Trinity "
-             "AI XR Hub.", "happy"),
-            ("Where Immersive Intelligence collaborates with you and brings "
-             "Positive Impact.", "happy"),
-        ),
-    },
-)
+# The performance material itself lives in demos/_set_pieces.py -- ONE copy of
+# the Dean's approved dialogue, shared with the conversation fast-path, so the
+# robot cannot drift into answering the same question two different ways. Each
+# block's stage_cues are the Dean's own lines; change them only alongside the
+# Dean's cue cards, or the robot answers a question no longer being asked.
 
 #: Operator fallbacks, spoken from beside the stage. "next" is the one that
 #: matters: if a cue is missed (noise, a rephrased question), it advances to
@@ -191,7 +118,7 @@ class DeansOffice(Demo):
                         break
                 return True
             for index, block in enumerate(_BLOCKS):
-                if any(contains_phrase(words, cue) for cue in block["cues"]):
+                if any(contains_phrase(words, cue) for cue in block.stage_cues):
                     # A re-asked question is re-answered -- the Dean repeating
                     # a cue means the room did not hear the answer.
                     self._perform(ctx, index)
@@ -205,8 +132,8 @@ class DeansOffice(Demo):
 
     def _perform(self, ctx: DemoContext, index: int) -> None:
         """Deliver one block, uninterruptible, and remember it was given."""
-        for line, emotion in _BLOCKS[index]["lines"]:
-            ctx.say(line, emotion, interruptible=False)
+        for line, emotion in _BLOCKS[index].lines:
+            ctx.say(line, emotion, pace=_PACE, interruptible=False)
         ctx.store.setdefault("spoken", set()).add(index)
         ctx.store["last"] = index
         ctx.status(f"Dean's Office: answered cue {index + 1} of {len(_BLOCKS)}.")
