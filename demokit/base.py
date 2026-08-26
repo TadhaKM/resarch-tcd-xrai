@@ -43,9 +43,12 @@ logger = logging.getLogger(__name__)
 #: for. A demo holding the microphone for longer than this cannot be
 #: interrupted by the dashboard, which is the one thing an operator needs to
 #: work while a group is watching.
-#: A silence longer than this between spoken chunks is worth a log line. Below
-#: it, the gap is the ordinary cost of rendering and reads as breathing.
-_GAP_WARN_S = 1.5
+#: A silence longer than this between spoken chunks is worth a log line. The
+#: operator's spec is a 1-2s ceiling on sentence gaps, and at the old 1.5s
+#: threshold every breach of the bottom of that range was invisible -- the
+#: complaint arrived with no logs to measure it by. Now anything past the
+#: worst intended breath is on record.
+_GAP_WARN_S = 1.0
 
 #: How long the robot listens, wake-word-free, for the answer to a question
 #: its own reply just asked. 9.0 said "long enough to think" and was measured
@@ -102,10 +105,15 @@ def split_sentences(script: str) -> tuple[str, ...]:
 #: pause IS. An earlier draft of this comment claimed the breath hid inside
 #: the barge-in scan; it does not -- the scan runs on its own thread and never
 #: gated the next chunk.
-_BREATH_FULL_STOP_S = 0.34
-_BREATH_QUESTION_S = 0.40
-_BREATH_CLAUSE_S = 0.16
-_BREATH_DEFAULT_S = 0.22
+#: Retuned upward once against the operator's spec: sentence gaps should be a
+#: natural conversational pause with a hard ceiling of one to two seconds.
+#: The audible gap is this value plus piper's own edge silences (~0.1-0.3s
+#: measured), so a full stop lands around 0.8s -- squarely natural -- and
+#: nothing here can reach even half the ceiling.
+_BREATH_FULL_STOP_S = 0.55
+_BREATH_QUESTION_S = 0.65
+_BREATH_CLAUSE_S = 0.20
+_BREATH_DEFAULT_S = 0.30
 
 
 def breath_after(text: str) -> float:

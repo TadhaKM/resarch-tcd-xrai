@@ -3784,10 +3784,13 @@ check("a question gets a little longer, to invite the answer",
 check("a comma is only a breath, not a stop",
       _ba61("hands-on time with AI,") < _ba61("Be curious."), True)
 check("and nothing rests after nothing", _ba61("   "), 0.0)
-# Short enough that a breath can never read as the robot having finished --
-# the silences that caused THAT complaint measured 1.7 to 4.6 seconds.
-check("every breath is far shorter than a suspicious silence",
-      max(_ba61(x) for x in ("A.", "A?", "A,", "A")) < 0.5, True)
+# Sized to the operator's spec -- a natural conversational pause, hard
+# ceiling 1-2 seconds -- and still far under the 1.7-4.6s silences that read
+# as the robot having finished.
+check("every breath sits inside the natural-pause spec",
+      max(_ba61(x) for x in ("A.", "A?", "A,", "A")) < 0.9, True)
+check("  ...and a full stop is a real audible beat now",
+      _ba61("A.") >= 0.5, True)
 
 # Both speaking loops must ask for one: the scripted path and the generated
 # path drew the same complaint and need the same fix.
@@ -3795,6 +3798,62 @@ check("both speaking loops breathe",
       _base61.count("self._breathe(breath_after(") >= 2, True)
 check("  ...on the loop thread that owns the speaker",
       "def _breathe(self, seconds: float)" in _base61, True)
+
+
+print()
+print("[62] whole sentences when the pipeline can afford them")
+# The punctuation complaint, root-caused by measurement: piper renders a comma
+# INSIDE a sentence as its natural 64-95ms pause, but a fragment CUT at a
+# comma gets sentence-final prosody plus a 300-500ms manufactured gap. So the
+# default mid-reply unit is now the whole sentence -- except where the old
+# cuts are gap-safety: after a short unit ("Yes." + long sentence measured as
+# a ~4.5s hole) and on the slow local model.
+import brain.interface as _if62
+
+# WARM: a long first sentence buys the next one its render time, so a
+# 180-char comma-bearing sentence arrives WHOLE.
+_warm62 = ("The Hub gives every visiting student real hands-on time with the "
+           "headsets and the robots we build here. "                       # 103 chars
+           "You will practise presentations, interviews and difficult "
+           "conversations in virtual reality, with feedback, reflection and "
+           "another attempt whenever you want one. ")                      # ~180 chars
+_pieces62 = [w + " " for w in _warm62.split()] + ["[emotion: happy]"]
+_out62, _ = _run_stream(_ScriptedBackend(_pieces62))
+_spoken62 = [t for t, _tag in _out62 if t.strip()]
+check("after a long sentence, the next arrives whole",
+      len(_spoken62), 2)
+check("  ...commas left inside for piper to voice",
+      _spoken62[1].count(","), 3)
+
+# COLD: the same second sentence after a five-character opener still gets the
+# catch-up cut, because nothing is playing long enough to hide its render.
+_cold62 = "Yes. " + _warm62.split(". ", 1)[1] + " "
+_pieces62b = [w + " " for w in _cold62.split()] + ["[emotion: happy]"]
+_out62b, _ = _run_stream(_ScriptedBackend(_pieces62b))
+_spoken62b = [t for t, _tag in _out62b if t.strip()]
+check("after a stub, gap safety still cuts",
+      len(_spoken62b) >= 3, True)
+
+# LOCAL MODEL: even warm, the slow fallback keeps the catch-up cuts -- at
+# 15-35 tok/s it cannot deliver 200 chars of text while the last line plays.
+class _Ollama62(_ScriptedBackend):
+    name = "ollama"
+_out62c, _ = _run_stream(_Ollama62(_pieces62))
+_spoken62c = [t for t, _tag in _out62c if t.strip()]
+check("the local model keeps the shorter cuts",
+      len(_spoken62c) > len(_spoken62), True)
+
+# THE OPENER STUB: "Yes," (4 chars) was shipped as an isolated utterance with
+# sentence-final prosody on nearly every comma-led opener. Never again.
+_stub62 = ("Yes, that is a great question about the Hub programme "
+           "and its three strands. ")
+_pieces62d = [w + " " for w in _stub62.split()] + ["[emotion: happy]"]
+_out62d, _ = _run_stream(_ScriptedBackend(_pieces62d))
+_spoken62d = [t for t, _tag in _out62d if t.strip()]
+check("no opener is ever a four-character stub",
+      min(len(t) for t in _spoken62d) >= 15, True)
+check("  ...and the sentence still all arrives",
+      "three strands" in " ".join(_spoken62d), True)
 
 print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")

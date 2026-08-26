@@ -29,24 +29,42 @@ _SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?])\s+")
 #: harder stop) was accepted when this mechanism shipped at 60.
 _FIRST_CLAUSE_CHARS = 38
 
-#: And the same trick mid-reply, at a higher bar. Was 150 -- "only a sentence
-#: that has genuinely run away is worth breaking" -- and the barge-in scan's
-#: measurements said otherwise: piper renders at ~0.3x realtime, so a 150+
-#: char unit costs 2.6-4.2s of render that must finish before its first
-#: sample can play, and the render of a unit that big was most of every
-#: logged mid-reply gap. 100 starts considering a break earlier; the cap and
-#: minimum below keep what is actually cut a real phrase.
-_LONG_SENTENCE_CHARS = 100
+#: An opener clause must land in this window. The old rule took the FIRST
+#: break with no minimum, and "Yes, that is a great question..." shipped a
+#: four-character utterance ("Yes,") with sentence-final prosody -- measured,
+#: not hypothesised. Under _OPENER_MIN the break is skipped and the buffer
+#: waits for a better one; past _OPENER_CAP the latency win is spent, so the
+#: first break beyond it still cuts.
+_OPENER_MIN = 15
+_OPENER_CAP = 60
 
-#: Mid-reply units are cut at the LAST clause break no deeper than this, so a
-#: unit is never so long that its render outlives the previous unit's
-#: playback...
-_MID_CHUNK_CAP = 140
+#: Mid-reply, the DEFAULT unit is now the whole sentence. Piper was measured
+#: rendering a comma inside a sentence as its natural 64-95ms pause, while a
+#: fragment CUT at a comma comes out with sentence-final prosody and a
+#: 300-500ms manufactured gap -- the exact "punctuation isn't respected"
+#: complaint. Render-ahead affords it: a sentence's render (~0.31x realtime)
+#: hides behind the previous sentence's ~3.2x-longer playback.
+#:
+#: Two situations cannot afford it, and fall back to the catch-up cuts below:
+#: a COLD pipeline (the previous unit was shorter than _WARM_PREV_CHARS, so
+#: its playback cannot cover the next render -- "Yes." followed by a 225-char
+#: sentence measured as a ~4.5s gap), and the SLOW local model (15-35 tok/s
+#: cannot deliver 200 chars of text while an opener plays).
+_RUNAWAY_CHARS = 220
+_RUNAWAY_CAP = 260
 
-#: ...and never so short that it is a comma-stub. "That's exciting," followed
-#: by nine seconds of silence was heard live; a break earlier than this is
-#: skipped and the buffer waits for a better one (or the sentence end).
+#: The catch-up cuts: the pre-sentence-first behaviour, kept for the two
+#: cases above. A unit is cut at the last clause break in [MIN, CAP] once the
+#: buffer passes the floor.
+_CATCHUP_CHARS = 100
+_CATCHUP_CAP = 140
 _MID_CHUNK_MIN = 60
+
+#: A previous unit at least this long buys the next sentence its render time.
+#: ~60 chars is ~3.5s of playback against ~4.5s of prep for a 200-char
+#: sentence -- close enough that the difference sits inside the breath and
+#: the queue's head start.
+_WARM_PREV_CHARS = 60
 
 _CLAUSE_BREAK_RE = re.compile(r"(?<=,)\s+|(?<=;)\s+|\s+(?=--\s)")
 
@@ -209,6 +227,9 @@ def stream_reply(
         # glued onto the replacement's answer.
         buffer = ""
         raw_parts = []
+        # How much the room just heard, in characters -- what decides whether
+        # the pipeline is warm enough to afford a whole-sentence next unit.
+        last_unit_len = 0
         try:
             for piece in backend.stream(messages, max_tokens=max_tokens, web=web and backend.supports_web):
                 raw_parts.append(piece)
@@ -222,6 +243,7 @@ def stream_reply(
                             _mark_first_words(time.monotonic() - asked_at, backend.name)
                             logger.info("first words in %.2fs (%s)", time.monotonic() - asked_at, backend.name)
                         spoken_a_sentence = True
+                        last_unit_len = len(candidate)
                         yield candidate, "thinking"
                     match = _SENTENCE_BOUNDARY_RE.search(buffer)
                 # A long opening sentence is flushed at its first clause break
@@ -252,8 +274,16 @@ def stream_reply(
                 # purpose. Splitting costs naturalness -- a comma becomes a hard
                 # stop -- and is only worth paying when the alternative is
                 # silence, which is what a very long run means.
+                # Whether the next unit can be a whole sentence: the model
+                # must stream fast enough to deliver it, and the previous
+                # unit's playback must be long enough to hide its render.
+                affords_whole = (
+                    getattr(backend, "name", "") != "ollama"
+                    and last_unit_len >= _WARM_PREV_CHARS
+                )
                 clause_floor = (_FIRST_CLAUSE_CHARS if not spoken_a_sentence
-                                else _LONG_SENTENCE_CHARS)
+                                else (_RUNAWAY_CHARS if affords_whole
+                                      else _CATCHUP_CHARS))
                 if len(buffer) >= clause_floor:
                     # The OPENER flushes at the first break -- its whole job is
                     # starting the voice as early as possible. Mid-reply the
@@ -265,26 +295,37 @@ def stream_reply(
                     # because once the buffer passed the floor, each iteration
                     # peeled off exactly one clause however short it was.
                     if spoken_a_sentence:
-                        # ...but "last" is bounded by _MID_CHUNK_CAP: an
-                        # uncapped last-break cut a measured 230-char monster
-                        # whose render alone was 4.2s. A break under
-                        # _MID_CHUNK_MIN is a comma-stub and never chosen. And
-                        # when NOTHING lands between the two -- the "Well,
-                        # <180 break-free chars>, ..." shape review reproduced
-                        # -- the first break past the cap still bounds the
-                        # unit: a first draft made that fallback unreachable
-                        # whenever a stub existed inside the cap, and the
-                        # whole 299-char sentence rendered as one silent gap.
+                        # The last break in [MIN, cap]: bounded above so a
+                        # unit's render cannot outlive the previous unit's
+                        # playback (an uncapped last-break once cut a 230-char
+                        # monster whose render alone was 4.2s), bounded below
+                        # so no comma-stub. When nothing lands between the two
+                        # -- the "Well, <180 break-free chars>, ..." shape --
+                        # the first break past the cap still bounds the unit:
+                        # a first draft made that fallback unreachable
+                        # whenever a stub existed inside the cap, and a whole
+                        # 299-char sentence rendered as one silent gap.
+                        cap = _RUNAWAY_CAP if affords_whole else _CATCHUP_CAP
                         breaks = list(_CLAUSE_BREAK_RE.finditer(buffer))
                         usable = [b for b in breaks
-                                  if _MID_CHUNK_MIN <= b.end() <= _MID_CHUNK_CAP]
+                                  if _MID_CHUNK_MIN <= b.end() <= cap]
                         if usable:
                             clause = usable[-1]
                         else:
-                            beyond = [b for b in breaks if b.end() > _MID_CHUNK_CAP]
+                            beyond = [b for b in breaks if b.end() > cap]
                             clause = beyond[0] if beyond else None
                     else:
-                        clause = _CLAUSE_BREAK_RE.search(buffer)
+                        # The opener: the LAST break inside the opener window,
+                        # never a stub, and the first break beyond the window
+                        # when the sentence offers no earlier one.
+                        breaks = list(_CLAUSE_BREAK_RE.finditer(buffer))
+                        usable = [b for b in breaks
+                                  if _OPENER_MIN <= b.end() <= _OPENER_CAP]
+                        if usable:
+                            clause = usable[-1]
+                        else:
+                            beyond = [b for b in breaks if b.end() > _OPENER_CAP]
+                            clause = beyond[0] if beyond else None
                     if clause:
                         candidate, _ = extract_emotion_tag(buffer[: clause.end()])
                         buffer = buffer[clause.end() :]
@@ -294,6 +335,7 @@ def stream_reply(
                                 logger.info("first words in %.2fs (%s, clause)",
                                             time.monotonic() - asked_at, backend.name)
                             spoken_a_sentence = True
+                            last_unit_len = len(candidate)
                             yield candidate, "thinking"
             break
         except Exception as exc:

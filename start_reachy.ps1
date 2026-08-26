@@ -227,6 +227,14 @@ $LINK_LOST = 3
 $restarts = 0
 
 while ($true) {
+    # Keep ONE previous log. Start-Process truncates the log on every launch,
+    # which destroyed the evidence for a live pacing complaint within a minute
+    # of the restart that followed it -- the session under investigation was
+    # simply gone. One generation back is enough to diagnose "it was doing X
+    # before I restarted it" and costs a couple of megabytes.
+    if (Test-Path $logPath) { Copy-Item $logPath "$logPath.prev" -Force }
+    if (Test-Path $errPath) { Copy-Item $errPath "$errPath.prev" -Force }
+
     $py = Start-Process -FilePath $python -ArgumentList "-u", "main.py" `
         -NoNewWindow -PassThru -Wait `
         -RedirectStandardOutput $logPath -RedirectStandardError $errPath

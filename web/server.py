@@ -443,6 +443,11 @@ def set_pace(req: PaceRequest) -> JSONResponse:
     low, high = SPEECH_PACE_RANGE
     pace = max(low, min(high, float(req.pace or 0.0)))
     settings.put(SPEECH_PACE_KEY, f"{pace:.2f}")
+    # Logged because it was not, and it cost an afternoon: the robot spent a
+    # whole session at 1.40 -- the maximum-slow drawl end -- and no log line
+    # recorded who moved it or when, so the pacing complaint that followed
+    # was undiagnosable until someone read the settings table directly.
+    logger.info("Speaking speed set to %.2f (higher is slower)", pace)
     STATE.add("status", f"Speaking speed set to {pace:.2f} (higher is slower)")
     return JSONResponse({"ok": True, "pace": pace})
 
