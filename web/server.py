@@ -1044,6 +1044,215 @@ def _closed(text: str) -> str:
     return trimmed + closing
 
 
+# --- learned answers: the teach-the-robot loop ---------------------------
+#
+# Same discipline as the features handlers: no hardware, no STATE.request,
+# never raise, and the model NEVER writes an approved row -- suggestions land
+# approved=0 and a person promotes them, because a wrong claim about the Hub
+# spoken confidently to a visitor is the failure this whole app is built to
+# avoid.
+
+
+class KnowledgeRequest(BaseModel):
+    question: str = ""
+    answer: str = ""
+    cues: list = []
+
+
+class KnowledgeApprovedRequest(BaseModel):
+    approved: bool = True
+
+
+def _knowledge_cues(raw: list) -> list[str]:
+    # Capped rather than trusted, like every staff-typed field here.
+    return [str(c)[:200] for c in raw[:12] if str(c).strip()]
+
+
+@app.get("/api/knowledge")
+def list_knowledge() -> JSONResponse:
+    from brain import knowledge
+
+    out = [
+        {
+            "id": a.id,
+            "question": a.question,
+            "answer": a.answer,
+            "cues": list(a.cues),
+            "source": a.source,
+            "approved": a.approved,
+        }
+        for a in knowledge.list_answers()
+    ]
+    return JSONResponse({
+        "answers": out,
+        "available": knowledge._available,
+        "limits": {
+            "max_answers": knowledge.MAX_ANSWERS,
+            "max_question_chars": knowledge.MAX_QUESTION_CHARS,
+            "max_answer_chars": knowledge.MAX_ANSWER_CHARS,
+            "max_cues": knowledge.MAX_CUES,
+        },
+    })
+
+
+@app.post("/api/knowledge")
+def create_knowledge(req: KnowledgeRequest) -> JSONResponse:
+    from brain import knowledge
+
+    ok, problems, new_id = knowledge.save(
+        req.question, req.answer, _knowledge_cues(req.cues)
+    )
+    if not ok:
+        return JSONResponse({"ok": False, "errors": problems}, status_code=400)
+    return JSONResponse({"ok": True, "id": new_id})
+
+
+@app.put("/api/knowledge/{answer_id}")
+def update_knowledge(answer_id: int, req: KnowledgeRequest) -> JSONResponse:
+    from brain import knowledge
+
+    if knowledge.get(answer_id) is None:
+        return JSONResponse({"ok": False, "errors": ["That answer no longer exists."]},
+                            status_code=404)
+    ok, problems, _ = knowledge.save(
+        req.question, req.answer, _knowledge_cues(req.cues), answer_id=answer_id
+    )
+    if not ok:
+        return JSONResponse({"ok": False, "errors": problems}, status_code=400)
+    return JSONResponse({"ok": True, "id": answer_id})
+
+
+@app.delete("/api/knowledge/{answer_id}")
+def delete_knowledge(answer_id: int) -> JSONResponse:
+    from brain import knowledge
+
+    if not knowledge.delete(answer_id):
+        return JSONResponse({"ok": False, "error": "no such answer"}, status_code=404)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/knowledge/{answer_id}/approved")
+def approve_knowledge(answer_id: int, req: KnowledgeApprovedRequest) -> JSONResponse:
+    from brain import knowledge
+
+    ok, problems = knowledge.approve(answer_id, req.approved)
+    if not ok:
+        status = 404 if problems == ["That answer no longer exists."] else 400
+        return JSONResponse({"ok": False, "errors": problems}, status_code=status)
+    return JSONResponse({"ok": True})
+
+
+#: One suggestion run at a time, for the same reason as _drafting below.
+_suggesting = threading.Lock()
+
+_SUGGEST_SYSTEM = """You are helping staff at the AI XR Hub teach Reachy Mini, \
+a small desk robot, better answers.
+
+You are given the Hub's approved facts, and a list of real questions visitors
+asked that the robot could not answer well. Draft answers ONLY for the
+questions that are genuinely about the Hub, the Business School, the robot, or
+visiting -- skip mishearings, fragments, and off-topic questions entirely.
+
+Reply with a single JSON array in a ```json fence and nothing else:
+
+```json
+[{"question": "Is there parking at the Business School?",
+  "answer": "There's no visitor parking at the building itself, but [nearest
+parking option] is a short walk away."}]
+```
+
+Rules:
+- An answer is one or two short sentences, written for the ear: it will be
+  SPOKEN by the robot. No lists, no headings, no markdown.
+- Every factual claim must come from the Hub facts provided. Anything you do
+  not know -- a name, a number, a time, a place -- write as a placeholder in
+  square brackets, like [opening hours]. NEVER invent a fact about the Hub.
+- Fewer, better answers beat more. An empty array is a fine reply.
+"""
+
+
+@app.post("/api/knowledge/suggest")
+def suggest_knowledge() -> JSONResponse:
+    """Draft answers for today's unanswered questions, stored UNAPPROVED.
+
+    The whole security-and-truth model in one line: the model drafts, a
+    person edits the [placeholders] out, and only approve() makes it real.
+    """
+    import json
+    import re
+
+    from brain import hub, knowledge, llm
+    from brain import stats as visit_stats
+
+    if not _suggesting.acquire(blocking=False):
+        return JSONResponse(
+            {"ok": False, "error": "Already drafting suggestions. Try again in a moment."},
+            status_code=429,
+        )
+    try:
+        today = visit_stats.day(None) or {}
+        stuck = [q.get("question", "") for q in today.get("unanswered", [])]
+        stuck = [q for q in stuck if q.strip()][:12]
+        if not stuck:
+            return JSONResponse({"ok": True, "added": 0,
+                                 "note": "Nothing unanswered today."})
+        known = {a.question.strip().lower() for a in knowledge.list_answers()}
+        messages = [
+            {"role": "system", "content": f"{_SUGGEST_SYSTEM}\n\nHUB FACTS\n{hub.GROUNDING}"},
+            {"role": "user", "content": "Visitors asked, and the robot could not answer:\n"
+             + "\n".join(f"- {q}" for q in stuck)},
+        ]
+        raw = llm.generate_response(messages, max_tokens=_DRAFT_MAX_TOKENS)
+        matched = re.search(r"```(?:json)?\s*(.*?)```", raw, re.DOTALL)
+        body = matched.group(1) if matched else raw
+        try:
+            drafts = json.loads(_closed(body.strip()))
+        except (ValueError, TypeError):
+            return JSONResponse(
+                {"ok": False, "error": "The model's draft was not usable. Try again."},
+                status_code=503,
+            )
+        if not isinstance(drafts, list):
+            drafts = []
+        added = 0
+        for item in drafts[:12]:
+            if not isinstance(item, dict):
+                continue
+            question = str(item.get("question", "")).strip()
+            answer = str(item.get("answer", "")).strip()
+            if not question or not answer or question.lower() in known:
+                continue
+            # Stored as a DRAFT: validate() would refuse placeholders, and
+            # placeholders are exactly what an honest draft contains -- so
+            # drafts bypass validation on the way IN and face it in full at
+            # approve(), where a human has already edited them.
+            try:
+                from brain import db as _db
+
+                with _db._write_lock, _db._connection() as conn:
+                    conn.execute(
+                        "INSERT INTO learned_answers "
+                        "(question, cues, answer, source, approved, created_at, updated_at) "
+                        "VALUES (?, ?, ?, 'suggested', 0, ?, ?)",
+                        (question[: knowledge.MAX_QUESTION_CHARS],
+                         "[]",
+                         answer[: knowledge.MAX_ANSWER_CHARS],
+                         _db._now(), _db._now()),
+                    )
+                added += 1
+            except Exception:
+                logger.exception("Could not store a suggested answer")
+        return JSONResponse({"ok": True, "added": added})
+    except Exception:
+        logger.exception("Suggesting answers failed")
+        return JSONResponse(
+            {"ok": False, "error": "The model could not be reached. You can still teach answers by hand."},
+            status_code=503,
+        )
+    finally:
+        _suggesting.release()
+
+
 class DraftRequest(BaseModel):
     messages: list = []
     steps: list = []

@@ -1693,6 +1693,41 @@
     <table class="data" id="health-table"><tbody id="health-rows"></tbody></table>
   </details>
 
+  <details class="panel" id="teach">
+    <summary><h2>Teach Reachy</h2> <span class="dim" id="teach-count"></span></summary>
+    <p class="dim">
+      Answers the Hub has taught the robot. A taught answer is spoken exactly
+      as written the moment its question is asked, and guides the AI on
+      related questions. AI-drafted suggestions stay off until you approve
+      them &mdash; edit out any [bracketed placeholders] first.
+    </p>
+    <div id="teach-list"></div>
+    <div class="ctl-row">
+      <button id="teach-new" class="act" type="button">Teach an answer</button>
+      <button id="teach-suggest" class="act" type="button">Draft suggestions from unanswered questions</button>
+    </div>
+    <div id="teach-editor" hidden>
+      <div class="ctl-row">
+        <input id="teach-q" type="text" maxlength="160"
+               placeholder="The question, e.g. Is there parking?">
+      </div>
+      <div class="ctl-row">
+        <textarea id="teach-a" maxlength="700" rows="3"
+                  placeholder="Exactly what Reachy should say"></textarea>
+      </div>
+      <div class="ctl-row">
+        <input id="teach-cues" type="text" maxlength="400"
+               placeholder="Other ways of asking it, separated by commas (optional)">
+      </div>
+      <ul id="teach-errors" class="errors"></ul>
+      <div class="ctl-row">
+        <button id="teach-save" class="act accent" type="button">Save</button>
+        <button id="teach-cancel" class="act" type="button">Cancel</button>
+      </div>
+    </div>
+    <div id="teach-stuck"></div>
+  </details>
+
   <details class="panel" id="stats">
     <summary><h2>How the visit went</h2> <span class="dim" id="stats-count"></span></summary>
     <div id="stats-body"><span class="dim">loading&hellip;</span></div>
@@ -3625,6 +3660,146 @@
       panel.hidden = false;
       for (const link of links) row.appendChild(await drawOne(link));
     };
+  })();
+
+  // ── teach reachy ─────────────────────────────────────────────────────────
+  // The learning loop: the robot's unanswered questions become taught
+  // answers. NOTHING from the server reaches innerHTML below -- every string
+  // here is typed by staff or spoken by visitors, on a page with no
+  // authentication, so it is all createElement and textContent.
+  (() => {
+    const panel = $("teach"), listBox = $("teach-list"),
+          editor = $("teach-editor"), errorsBox = $("teach-errors"),
+          stuckBox = $("teach-stuck");
+    if (!panel) return;
+    let editing = null;
+    let timer = 0;
+
+    async function api(path, opts) {
+      const r = await fetch(path, opts);
+      let body = {};
+      try { body = await r.json(); } catch (e) { /* a 500 with no JSON body */ }
+      return {ok: r.ok, status: r.status, body};
+    }
+    const json = (body, method) => ({
+      method: method || "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)
+    });
+    function button(text, onclick, cls) {
+      const b = el("button", cls || "act", text);
+      b.type = "button";
+      b.onclick = onclick;
+      return b;
+    }
+    function showErrors(list) {
+      errorsBox.textContent = "";
+      for (const e of list || []) errorsBox.appendChild(el("li", "", e));
+    }
+
+    function openEditor(a) {
+      editing = a && a.id != null ? a.id : null;
+      $("teach-q").value = a ? a.question : "";
+      $("teach-a").value = a ? a.answer : "";
+      // cues[0] is the question itself, added automatically -- only the
+      // extra phrasings are the operator's to edit.
+      $("teach-cues").value = a && a.cues ? a.cues.slice(1).join(", ") : "";
+      showErrors([]);
+      editor.hidden = false;
+      $("teach-q").focus();
+    }
+
+    async function refresh() {
+      const know = await api("/api/knowledge");
+      const stats = await api("/api/stats");
+      const answers = know.body.answers || [];
+      $("teach-count").textContent = answers.length
+        ? `${answers.length} taught` : "none yet";
+      listBox.textContent = "";
+      if (know.body.available === false) {
+        listBox.appendChild(el("p", "dim",
+          "The robot's database is unavailable, so nothing can be taught."));
+      }
+      for (const a of answers) {
+        const row = el("div", "feat");
+        const dot = el("span", "dot" + (a.approved ? " on" : ""));
+        dot.title = a.approved
+          ? "Live -- spoken when its question is asked"
+          : "Not approved yet -- never spoken";
+        row.appendChild(dot);
+        row.appendChild(el("span", "name", a.question));
+        if (a.source === "suggested" && !a.approved) {
+          row.appendChild(el("span", "chip", "AI draft"));
+        }
+        row.appendChild(el("span", "spacer"));
+        row.appendChild(button("Edit", () => openEditor(a), "act sm"));
+        row.appendChild(button(a.approved ? "Turn off" : "Approve", async () => {
+          const res = await api(`/api/knowledge/${a.id}/approved`,
+                                json({approved: !a.approved}));
+          if (!res.ok) { openEditor(a); showErrors(res.body.errors || ["Could not approve that."]); }
+          refresh();
+        }, "act sm" + (a.approved ? "" : " accent")));
+        row.appendChild(button("Delete", async () => {
+          if (!confirm(`Forget "${a.question}"?`)) return;
+          await api(`/api/knowledge/${a.id}`, {method: "DELETE"});
+          refresh();
+        }, "act sm danger"));
+        listBox.appendChild(row);
+        listBox.appendChild(el("p", "dim",
+          a.answer.length > 120 ? a.answer.slice(0, 120) + "…" : a.answer));
+      }
+
+      // Today's unanswered questions, each one press away from being taught.
+      stuckBox.textContent = "";
+      const stuck = ((stats.body.today || {}).unanswered) || [];
+      if (stuck.length) {
+        stuckBox.appendChild(el("h2", "mt", "It could not answer these today"));
+        for (const q of stuck.slice(0, 10)) {
+          const row = el("div", "feat");
+          row.appendChild(el("span", "name", q.question));
+          row.appendChild(el("span", "spacer"));
+          row.appendChild(button("Teach", () => openEditor(
+            {id: null, question: q.question, answer: "", cues: []}), "act sm accent"));
+          stuckBox.appendChild(row);
+        }
+      }
+    }
+
+    $("teach-save").onclick = async () => {
+      const cues = $("teach-cues").value.split(",").map(s => s.trim()).filter(Boolean);
+      const payload = {
+        question: $("teach-q").value.trim(),
+        answer: $("teach-a").value.trim(),
+        cues
+      };
+      const res = editing == null
+        ? await api("/api/knowledge", json(payload))
+        : await api(`/api/knowledge/${editing}`, json(payload, "PUT"));
+      if (!res.ok) { showErrors(res.body.errors || ["Could not save that."]); return; }
+      editor.hidden = true;
+      refresh();
+    };
+    $("teach-cancel").onclick = () => { editor.hidden = true; };
+    $("teach-new").onclick = () => openEditor(null);
+    $("teach-suggest").onclick = async () => {
+      const btn = $("teach-suggest");
+      const old = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Thinking…";
+      try {
+        const res = await api("/api/knowledge/suggest", {method: "POST"});
+        if (!res.ok) alert(res.body.error || "Could not draft suggestions.");
+        else if (!res.body.added) alert(res.body.note || "Nothing new to suggest today.");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = old;
+        refresh();
+      }
+    };
+
+    panel.addEventListener("toggle", () => {
+      clearInterval(timer);
+      if (panel.open) { refresh(); timer = setInterval(refresh, 30000); }
+    });
   })();
 
   // ── visit stats ──────────────────────────────────────────────────────────

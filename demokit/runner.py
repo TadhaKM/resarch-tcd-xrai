@@ -817,6 +817,11 @@ class DemoRunner:
 
             if _set_pieces.perform(ctx, heard):
                 return
+            # Then anything the Hub has taught it from the dashboard.
+            from brain import knowledge
+
+            if knowledge.speak_if_taught(ctx, heard):
+                return
             ctx.reply(heard, person_id=ctx.person_id())
         except Interrupted:
             # The visitor talked over the answer. Their new question is already

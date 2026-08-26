@@ -3539,5 +3539,108 @@ check("the model's grounding carries the approved framing",
       and "Immersive Intelligence" in _hub58.GROUNDING, True)
 
 print()
+print("[59] the robot can be taught, and taught answers behave")
+from brain import knowledge as _kn59
+
+# Earlier sections re-pointed brain.db at temp files (the features and layout
+# sections both do), so the import-time table creation ran against a database
+# that is gone. Re-run it against whichever database is live now -- the same
+# move the features section makes at its top.
+_kn59._init_knowledge()
+_kn59._available = True
+
+# Validation speaks operator language and reuses the trigger audit.
+check("an empty answer is refused",
+      bool(_kn59.validate("Is there parking?", "", [])), True)
+check("placeholders must be edited out before an answer is real",
+      any("placeholder" in p for p in _kn59.validate(
+          "Who hosts the visits?", "Usually [name of professor] hosts them.", [])), True)
+check("a phrasing that would switch demos is refused",
+      any("look" in p for p in _kn59.validate(
+          "What do you see there?", "A perfectly good answer.", ["what do you see"])), True)
+check("a one-word phrasing is refused as unsafe to match",
+      any("too short" in p for p in _kn59.validate(
+          "Parking?", "There is parking nearby.", [])), True)
+
+# The full loop: teach, match, speak, brief, forget.
+_ok59, _probs59, _id59 = _kn59.save(
+    "Is there a wifi network for visitors",
+    "Yes -- ask whoever is hosting for the guest wifi code.",
+    ["visitor wifi", "guest wifi"])
+check("teaching succeeds", (_ok59, _probs59), (True, []))
+# A draft lands the way the suggest endpoint writes it: raw, unapproved, and
+# WITHOUT validation -- placeholders are exactly what an honest draft holds.
+from brain import db as _db59
+with _db59._write_lock, _db59._connection() as _conn59:
+    _draft_id59 = _conn59.execute(
+        "INSERT INTO learned_answers "
+        "(question, cues, answer, source, approved, created_at, updated_at) "
+        "VALUES (?, '[]', ?, 'suggested', 0, ?, ?)",
+        ("What time does the hub close", "It closes at [closing time].",
+         _db59._now(), _db59._now())).lastrowid
+try:
+    check("a taught question is matched",
+          _kn59.match("Is there a wifi network for visitors?").id, _id59)
+    check("a different phrasing matches through its cue",
+          _kn59.match("do you have visitor wifi here").id, _id59)
+    check("a long multi-part ask still goes to the model",
+          _kn59.match("is there a wifi network for visitors and also can you "
+                      "tell me all about the masters programmes and how to "
+                      "apply for the scholarships this year"), None)
+    _pa59 = FakeAudio()
+    _ctx59 = _DC57(audio=_pa59, motion=FakeMotion(), tracker=None,
+                   state=RobotState(), demo_id="t59", store={})
+    from brain import memory as _mem59
+    _mem59.clear_history(0)
+    check("the taught answer is spoken, instantly",
+          _kn59.speak_if_taught(_ctx59, "is there a wifi network for visitors"), True)
+    check("  ...exactly as written",
+          " ".join(_pa59.said),
+          "Yes -- ask whoever is hosting for the guest wifi code.")
+    check("  ...and remembered for follow-ups",
+          _mem59.get_history(0)[0][1],
+          "Yes -- ask whoever is hosting for the guest wifi code.")
+    _mem59.clear_history(0)
+    check("a paraphrase briefs the model with the taught answer",
+          "guest wifi code" in _kn59.brief("can visitors get on the wifi network"), True)
+    check("an unrelated turn briefs nothing",
+          _kn59.brief("tell me a story about dragons"), "")
+
+    # Drafts are inert until a person approves them, and approval re-runs
+    # validation -- a placeholder cannot be approved into the robot's mouth.
+    check("an unapproved draft is never matched",
+          _kn59.match("what time does the hub close"), None)
+    check("  ...and never briefed",
+          _kn59.brief("when does the hub close today please"), "")
+    _app_ok59, _app_probs59 = _kn59.approve(_draft_id59, True)
+    check("approving a draft with placeholders is refused",
+          (_app_ok59, any("placeholder" in p for p in _app_probs59)), (False, True))
+finally:
+    _kn59.delete(_id59)
+    if _draft_id59 is not None:
+        _kn59.delete(_draft_id59)
+check("forgetting works", _kn59.match("is there a wifi network for visitors"), None)
+
+# Wired in the right order everywhere questions arrive: the Hub script first,
+# then taught answers, then the model -- and the model gets the taught brief.
+_conv59 = (_pl36.Path(__file__).parent / "demos" / "conversation.py").read_text(encoding="utf-8")
+check("conversation: script, then taught, then model",
+      _conv59.index("_set_pieces.perform")
+      < _conv59.index("knowledge.speak_if_taught")
+      < _conv59.index("ctx.reply(text"), True)
+_run59 = (_pl36.Path(__file__).parent / "demokit" / "runner.py").read_text(encoding="utf-8")
+check("every other mode's fall-through: the same order",
+      _run59.index("_set_pieces.perform")
+      < _run59.index("knowledge.speak_if_taught")
+      < _run59.index("ctx.reply(heard"), True)
+_base59 = (_pl36.Path(__file__).parent / "demokit" / "base.py").read_text(encoding="utf-8")
+check("the model is briefed with taught answers, like courses",
+      _base59.index("courses.brief(message)")
+      < _base59.index("knowledge.brief(message)"), True)
+_srv59 = (_pl36.Path(__file__).parent / "web" / "server.py").read_text(encoding="utf-8")
+check("AI suggestions are stored switched OFF",
+      "'suggested', 0" in _srv59, True)
+
+print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")
 sys.exit(1 if failures else 0)

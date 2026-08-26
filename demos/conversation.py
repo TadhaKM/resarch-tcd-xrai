@@ -163,6 +163,13 @@ class Conversation(Demo):
 
         if _set_pieces.perform(ctx, text):
             return True
+        # Then whatever the Hub has TAUGHT it since -- the dashboard's
+        # teach panel writes these, so the robot gets smarter without
+        # anyone editing code. Same instant delivery, same reasons.
+        from brain import knowledge
+
+        if knowledge.speak_if_taught(ctx, text):
+            return True
         try:
             ctx.reply(text, person_id=ctx.person_id(), system=_HUB_BRIEFING)
         except (DemoStopped, Interrupted):

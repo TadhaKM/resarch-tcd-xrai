@@ -531,6 +531,16 @@ class DemoContext:
         if study:
             system = f"{system}\n\n{study}" if system else study
 
+        # And what the Hub has TAUGHT it, the same way: a paraphrase the
+        # verbatim tier refused still reaches the model with the taught
+        # answer in front of it, so the robot's answers improve everywhere a
+        # staff member teaches it once. "" is the common case.
+        from brain import knowledge
+
+        taught = knowledge.brief(message)
+        if taught:
+            system = f"{system}\n\n{taught}" if system else taught
+
         # The robot's standing manner, layered on the same way. Deliberately
         # here rather than in prompts.py's base prompt: extra_system is what
         # brain/qa_cache.py digests into its key, so a persona that rides here

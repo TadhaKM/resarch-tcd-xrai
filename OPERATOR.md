@@ -460,6 +460,35 @@ Full instructions: `docs/CUSTOM_FEATURES.md`.
 
 ---
 
+## Teaching it answers — the Teach Reachy panel
+
+This is how the robot gets smarter over time, and it takes thirty seconds.
+
+Open **Teach Reachy** on the dashboard. At the bottom is **"It could not
+answer these today"** — real questions visitors asked that the robot deflected.
+Press **Teach** next to one, type exactly what Reachy should say, and Save.
+From that moment the robot speaks your answer **instantly** whenever that
+question (or one of the extra phrasings you add) is asked — and the AI is shown
+your answer when someone asks a *paraphrase* of it, so related questions
+improve too. **No restart needed.**
+
+**Draft suggestions from unanswered questions** asks the AI to write first
+drafts for today's list. Drafts arrive **switched off** and are never spoken
+until you approve them. Anything the AI didn't know it writes as a
+`[bracketed placeholder]` — you must fill those in before Approve will accept
+it. That's deliberate: the robot must never invent a fact about the Hub, and
+that includes facts an AI drafted confidently.
+
+Rules the panel enforces for you: an answer caps at ~700 characters (half a
+minute of speech), a phrasing must be at least two words, and a phrasing that
+would collide with a demo's trigger words (like "what do you see", which
+belongs to the camera demo) is refused with an explanation.
+
+The Hub's scripted answers (the Dean's dialogue) always win over taught
+answers, and taught answers always win over the AI improvising.
+
+---
+
 ## Web search — the 🌐 tick box
 
 **Off by default, and usually leave it off.**
