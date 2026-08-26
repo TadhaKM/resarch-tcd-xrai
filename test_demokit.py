@@ -450,6 +450,14 @@ def _fake_stream(person_id, message, style=None, extra_system=None, cache=True, 
 
 _bi.stream_reply = _fake_stream
 
+# The robot rests a third of a second after each spoken sentence, which is the
+# whole point of it -- and with a fake speaker there is no sound to rest
+# between, so the suite would simply sleep. Measured: 28s of tests became
+# 2m31s. Zeroed here and exercised for real in section [61], which checks the
+# durations themselves and that both speaking loops ask for them.
+import demokit.base as _bb
+_bb.breath_after = lambda text: 0.0
+
 
 class Talker(Demo):
     """Speaks several lines from one hook, the way scripted demos do."""
@@ -3743,6 +3751,50 @@ _r60._attracted = False
 _r60._last_heard_at = _time57.monotonic()
 check("it never offers over a conversation",
       _r60._attract_if_lingering(_ctx60), False)
+
+
+print()
+print("[61] the robot breathes between sentences")
+# Live complaint, after the gap-removal work went too far the other way:
+# "between each sentence theres no gaps and theres no flow or punctuation".
+# Piper renders every chunk as its own isolated utterance, so once the
+# barge-in scan moved off the critical path there was nothing between them at
+# all, and a scripted answer arrived as one flat run.
+import demokit.base as _mod61
+
+_base61 = (_pl36.Path(__file__).parent / "demokit" / "base.py").read_text(encoding="utf-8")
+# The REAL function, rebuilt from source -- the module attribute is stubbed to
+# zero at the top of this file so the suite does not sleep for two minutes.
+_ns61 = {}
+exec(compile(_base61[_base61.index("def breath_after"):
+                     _base61.index("@dataclass(frozen=True)")],
+             "breath_after", "exec"),
+     {"_BREATH_QUESTION_S": _mod61._BREATH_QUESTION_S,
+      "_BREATH_FULL_STOP_S": _mod61._BREATH_FULL_STOP_S,
+      "_BREATH_CLAUSE_S": _mod61._BREATH_CLAUSE_S,
+      "_BREATH_DEFAULT_S": _mod61._BREATH_DEFAULT_S}, _ns61)
+_ba61 = _ns61["breath_after"]
+
+check("a full stop gets a beat", _ba61("Be curious.") >= 0.3, True)
+check("a question gets a little longer, to invite the answer",
+      _ba61("And the best part?") > _ba61("Be curious."), True)
+# The one that matters for flow: a chunk ending in a comma is a long sentence
+# split for rendering. Resting there as though it were a sentence is exactly
+# the flat delivery this fixes.
+check("a comma is only a breath, not a stop",
+      _ba61("hands-on time with AI,") < _ba61("Be curious."), True)
+check("and nothing rests after nothing", _ba61("   "), 0.0)
+# Short enough that a breath can never read as the robot having finished --
+# the silences that caused THAT complaint measured 1.7 to 4.6 seconds.
+check("every breath is far shorter than a suspicious silence",
+      max(_ba61(x) for x in ("A.", "A?", "A,", "A")) < 0.5, True)
+
+# Both speaking loops must ask for one: the scripted path and the generated
+# path drew the same complaint and need the same fix.
+check("both speaking loops breathe",
+      _base61.count("self._breathe(breath_after(") >= 2, True)
+check("  ...on the loop thread that owns the speaker",
+      "def _breathe(self, seconds: float)" in _base61, True)
 
 print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")

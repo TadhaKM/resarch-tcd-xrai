@@ -89,6 +89,45 @@ def split_sentences(script: str) -> tuple[str, ...]:
     )
 
 
+#: How long the robot rests after a spoken chunk, by what ended it. Piper
+#: renders each chunk as its own isolated utterance, so nothing between them
+#: is silent unless something puts silence there -- and once the barge-in scan
+#: moved off the critical path there WAS nothing, so a scripted answer came out
+#: as one long run with the full stops inaudible. These are breaths, not gaps:
+#: the silences that made the robot sound finished mid-answer measured 1.7 to
+#: 4.6 seconds, and the longest of these is a third of one.
+#:
+#: They are a real cost, paid deliberately: the next chunk starts this much
+#: later, because its audio was ready and is being held back. That is what a
+#: pause IS. An earlier draft of this comment claimed the breath hid inside
+#: the barge-in scan; it does not -- the scan runs on its own thread and never
+#: gated the next chunk.
+_BREATH_FULL_STOP_S = 0.34
+_BREATH_QUESTION_S = 0.40
+_BREATH_CLAUSE_S = 0.16
+_BREATH_DEFAULT_S = 0.22
+
+
+def breath_after(text: str) -> float:
+    """Seconds of rest owed after speaking `text`.
+
+    A full stop is a beat, a question needs slightly longer for the answer to
+    feel invited, and a comma is only a breath -- a chunk ending in one is a
+    long sentence that was split for rendering, so stopping there as though it
+    were a sentence is exactly the flat delivery this exists to fix.
+    """
+    tail = (text or "").rstrip()
+    if not tail:
+        return 0.0
+    if tail.endswith("?"):
+        return _BREATH_QUESTION_S
+    if tail.endswith((".", "!", "…")):
+        return _BREATH_FULL_STOP_S
+    if tail.endswith((",", ";", ":", "-")):
+        return _BREATH_CLAUSE_S
+    return _BREATH_DEFAULT_S
+
+
 @dataclass(frozen=True)
 class IdleResult:
     """What a demo wants to happen during one idle slice.
@@ -294,6 +333,17 @@ class DemoContext:
         if self.audio.wake_word_in_backlog():
             raise Interrupted()
 
+    def _breathe(self, seconds: float) -> None:
+        """Rest between two spoken chunks, still noticing a mode change.
+
+        Deliberately not ctx.sleep: that slices at a full second, which is
+        three breaths long, and raises DemoStopped from inside a reply the
+        caller is midway through speaking.
+        """
+        if seconds <= 0:
+            return
+        time.sleep(seconds)
+
     def _begin_backlog_scan(self, just_said: str):
         """Start the concurrent barge-in scan for the chunk just spoken.
 
@@ -455,6 +505,10 @@ class DemoContext:
                     if scan is not None and scan.finish():
                         raise Interrupted()
                     scan = self._begin_backlog_scan(text)
+                # The breath goes AFTER the scan is started, so the rest and
+                # the scan happen at the same time rather than one after the
+                # other. See breath_after.
+                self._breathe(breath_after(text))
             if scan is not None and scan.finish():
                 raise Interrupted()
         except BaseException:
@@ -696,6 +750,7 @@ class DemoContext:
                 if scan is not None and scan.finish():
                     raise Interrupted()
                 scan = self._begin_backlog_scan(sentence)
+                self._breathe(breath_after(sentence))
             if scan is not None and scan.finish():
                 # Found during the final chunk: the visitor talked over the
                 # end of the reply, and their words are waiting in the backlog.
