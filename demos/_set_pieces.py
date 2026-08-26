@@ -31,11 +31,11 @@ PACE = 1.1
 
 #: How many words an utterance may run past the matched cue and still be "the
 #: same question". Exists for the same reason as the runner's fuzzy-trigger
-#: allowance. Was 5, raised to 8 after a live run: the natural way people
-#: actually ask these ("Indeed it is -- any final advice for our new
-#: students, Reachy?") runs 11-12 words and was being thrown to the model,
-#: while the multi-part questions this guard protects run past 20.
-_MAX_EXTRA_WORDS = 8
+#: allowance. Was 5, then 8, now 10, each raise from a live run: people lead
+#: with filler the script never has ("Thank you.", "So Reachy,") and the
+#: natural phrasings run 11-12 words -- while the multi-part questions this
+#: guard protects run past 20.
+_MAX_EXTRA_WORDS = 10
 
 #: What the recogniser reliably mishears these questions as, mapped back --
 #: every entry here was observed in a live transcript before being added.
@@ -48,6 +48,7 @@ _HEARD_AS = (
     ("xr hall", "xr hub"),
     ("xr hump", "xr hub"),
     ("xr hob", "xr hub"),
+    ("xr mode", "xr hub"),
     ("do in a home", "do in the hub"),
     ("do in the home", "do in the hub"),
     ("do in a hall", "do in the hub"),
@@ -193,15 +194,33 @@ BLOCKS: tuple[SetPiece, ...] = (
 )
 
 
+#: Question words whose answers the script does NOT hold. "Who runs the Hub"
+#: has a real, specific answer (Professors Na Fu and Laura Berry, in the
+#: model's grounding); a canned mission speech in reply reads as a robot that
+#: did not listen. These keep the shape-tier below out of such questions.
+_NOT_OURS = frozenset(("who", "where", "when", "which", "how"))
+
+#: Ways of asking WHAT something is, for the shape tier.
+_WHAT_ISH = frozenset(("what", "whats", "explain", "describe", "exactly", "about"))
+
+#: Renderings of the Hub's name a transcript can contain, post-normalise.
+_HUB_PHRASES = ("the ai xr hub", "the xr hub", "the ai hub", "the hub")
+
+
 def match(text: str):
     """The SetPiece this utterance is asking for, or None for the model.
 
-    None is the common and correct answer: only a short, direct phrasing of
-    one of the scripted questions is taken over. See the module docstring for
-    why the length guard is not negotiable.
+    Two tiers. The first is literal: a known phrasing, within the length
+    guard. The second matches the SHAPE of a question -- its subject plus a
+    what-ish word -- because two live sessions proved the literal tier cannot
+    keep up with the recogniser ("the AI XR Hub" arrived as home, hall, and
+    mode in one morning, and word order moved every time). The shape tier
+    stays out of who/where/when/which/how questions: those have specific
+    answers the script does not hold, and the model's grounding does.
     """
     from demokit.runner import _word_stream, contains_phrase
 
+    by_name = {piece.name: piece for piece in BLOCKS}
     words = normalise(_word_stream(text))
     total = len(words.split())
     for piece in BLOCKS:
@@ -209,6 +228,21 @@ def match(text: str):
             if (contains_phrase(words, cue)
                     and total <= len(cue.split()) + _MAX_EXTRA_WORDS):
                 return piece
+
+    tokens = set(words.split())
+    if total > 14 or tokens & _NOT_OURS:
+        return None
+    # Order matters: "what do students do in the hub" names both subjects,
+    # and the students are the question.
+    if "students" in tokens and "do" in tokens:
+        return by_name["what you do here"]
+    if total <= 12 and tokens & _WHAT_ISH and any(
+            contains_phrase(words, p) for p in _HUB_PHRASES):
+        return by_name["what the hub is"]
+    if total <= 12 and "advice" in tokens:
+        return by_name["advice"]
+    if total <= 12 and contains_phrase(words, "human skills"):
+        return by_name["why people matter"]
     return None
 
 

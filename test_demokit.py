@@ -3424,6 +3424,26 @@ check("the Dean's own polite phrasing of the advice question matches",
                   "achieve.").name, "advice")
 check("but a bare 'what is AI' is a different question -- the model's",
       _sp58.match("What is the AI?"), None)
+
+# Round two, same morning: 'Hub' arrived as 'mode', filler ('Thank you.',
+# 'So Ritchie,') pushed matched questions past the slack, and word order
+# moved. The SHAPE tier -- subject plus a what-ish word -- catches these.
+check("'What is exactly the AI XR mode?' is the hub question",
+      _sp58.match("Thank you. What is exactly the AI XR mode?").name,
+      "what the hub is")
+check("'...master students actually do at the home?' is the students question",
+      _sp58.match("So Ritchie, what will our master students actually do at "
+                  "the home?").name, "what you do here")
+check("'what do students do in the hub' picks the students, not the hub",
+      _sp58.match("what do students do in the hub").name, "what you do here")
+# The shape tier must stay out of questions with specific answers the script
+# does not hold -- the model's grounding names who runs the Hub.
+check("'who runs the AI XR hub' still reaches the model",
+      _sp58.match("who runs the AI XR hub"), None)
+check("'when is the hub open' still reaches the model",
+      _sp58.match("when is the hub open"), None)
+check("'how do I get to the hub' still reaches the model",
+      _sp58.match("how do I get to the hub"), None)
 # The guard that keeps this from repeating the welcome-hijack failure: a rich
 # question that merely CONTAINS a cue must reach the model, which can answer
 # all of it. This is the live sentence from that failure.
