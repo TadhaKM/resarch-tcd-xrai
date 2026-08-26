@@ -68,3 +68,9 @@ src/my_conversation_app/profiles/user_personalities/
 external_content/external_profiles/*
 external_content/external_tools/*
 external_content/installed_tool_spaces.json
+
+# The companion app is its own repository, and the local dev hooks are not
+# part of this one. Committing the app as a gitlink makes clones of this repo
+# arrive without it.
+dev/
+reachy_companion/
