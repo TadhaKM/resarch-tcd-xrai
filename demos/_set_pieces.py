@@ -49,6 +49,7 @@ _HEARD_AS = (
     ("xr hump", "xr hub"),
     ("xr hob", "xr hub"),
     ("xr mode", "xr hub"),
+    ("xr help", "xr hub"),
     ("do in a home", "do in the hub"),
     ("do in the home", "do in the hub"),
     ("do in a hall", "do in the hub"),
@@ -200,11 +201,20 @@ BLOCKS: tuple[SetPiece, ...] = (
 #: did not listen. These keep the shape-tier below out of such questions.
 _NOT_OURS = frozenset(("who", "where", "when", "which", "how"))
 
-#: Ways of asking WHAT something is, for the shape tier.
-_WHAT_ISH = frozenset(("what", "whats", "explain", "describe", "exactly", "about"))
+#: Ways of asking WHAT something is, for the shape tier. "this" earned its
+#: place from a live transcript: "What is the AI XR hub" arrived as "This is
+#: the AI XR hub" -- and a guide SAYING "this is the AI XR hub" to a group is
+#: a moment the block answers well anyway.
+_WHAT_ISH = frozenset(("what", "whats", "explain", "describe", "exactly",
+                       "about", "this"))
 
 #: Renderings of the Hub's name a transcript can contain, post-normalise.
-_HUB_PHRASES = ("the ai xr hub", "the xr hub", "the ai hub", "the hub")
+#: Bare "the ai xr" is here because the word AFTER it has arrived as home,
+#: hall, mode, and help in two mornings -- whatever follows "the AI XR", the
+#: subject is the Hub; mapping each new mishearing one at a time was a race
+#: that could not be won.
+_HUB_PHRASES = ("the ai xr hub", "the xr hub", "the ai hub", "the hub",
+                "the ai xr")
 
 
 def match(text: str):
@@ -259,8 +269,10 @@ def perform(ctx, text: str) -> bool:
     if piece is None:
         return False
     ctx.status(f"Answered from the Hub script: {piece.name}.")
-    for line, emotion in piece.lines:
-        ctx.say(line, emotion, pace=PACE)
+    # One pipelined delivery, not a say() per line: rendering runs ahead and
+    # the barge-in scan rides beside playback, so the lines flow -- a plain
+    # say() per line put 2-3 silent seconds between one-word lines.
+    ctx.say_script(piece.lines, pace=PACE)
     try:
         from brain import memory
 

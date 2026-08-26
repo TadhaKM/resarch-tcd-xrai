@@ -376,6 +376,103 @@ class DemoContext:
             self._stop_if_switched()
             self.say(line, emotion)
 
+    def say_script(self, lines, *, pace: Optional[float] = None,
+                   interruptible: bool = True) -> None:
+        """Speak scripted (text, emotion) lines as one flowing delivery.
+
+        reply()'s pipeline applied to fixed text: line N+1 renders on a worker
+        while line N is still coming out of the speaker, and the barge-in scan
+        runs BESIDE the next line's playback instead of standing between
+        lines. Before this, scripted blocks went through say() a line at a
+        time, and every gap paid a render plus a full synchronous backlog scan
+        -- measured live as 2-3 seconds of silence between one-word lines of a
+        script whose whole point is that it is already written.
+
+        interruptible=False skips the scans entirely (a stage performance may
+        not be talked over); otherwise a wake word raises Interrupted exactly
+        as say() would have. Ends by arming the same windows reply() does: a
+        script closing on a question opens the answer window, anything else
+        invites a follow-up.
+        """
+        self._require_loop_thread("say_script")
+        script = [(t.strip(), e) for t, e in lines if t and t.strip()]
+        if not script:
+            return
+        self._stop_if_switched()
+        feed: queue.Queue = queue.Queue(maxsize=3)
+        abandon = threading.Event()
+
+        def _offer_item(item) -> bool:
+            while not abandon.is_set():
+                try:
+                    feed.put(item, timeout=0.2)
+                    return True
+                except queue.Full:
+                    continue
+            return False
+
+        def _produce() -> None:
+            try:
+                for text, emotion in script:
+                    chunks = self.audio.render(text, pace=pace)
+                    if not _offer_item(("say", text, emotion, chunks)):
+                        return
+                _offer_item(("end",))
+            except Exception as exc:  # pragma: no cover - surfaced on the loop thread
+                _offer_item(("error", exc))
+
+        producer = threading.Thread(target=_produce, name="script-render", daemon=True)
+        producer.start()
+        scan = None
+        last_line = ""
+        try:
+            while True:
+                # Sliced like reply()'s wait, so a scan hit lands even while
+                # the producer is still rendering.
+                while True:
+                    if scan is not None and scan.done and scan.finish():
+                        raise Interrupted()
+                    try:
+                        item = feed.get(timeout=0.2)
+                        break
+                    except queue.Empty:
+                        continue
+                if item[0] == "end":
+                    break
+                if item[0] == "error":
+                    raise item[1]
+                _kind, text, emotion, chunks = item
+                self._stop_if_switched()
+                if scan is not None and scan.done and scan.finish():
+                    raise Interrupted()
+                self.state.add("said", text)
+                self.state.set_flags(speaking=True)
+                self.motion.express(emotion)
+                self.audio.speak_rendered(chunks, motion=self.motion)
+                self.state.set_flags(speaking=False)
+                last_line = text
+                if interruptible:
+                    if scan is not None and scan.finish():
+                        raise Interrupted()
+                    scan = self._begin_backlog_scan(text)
+            if scan is not None and scan.finish():
+                raise Interrupted()
+        except BaseException:
+            abandon.set()
+            self.state.set_flags(speaking=False)
+            if scan is not None:
+                scan.finish()
+            while True:
+                try:
+                    feed.get_nowait()
+                except queue.Empty:
+                    break
+            raise
+        if last_line.rstrip().endswith("?"):
+            self.state.expect_answer(ANSWER_WINDOW_S)
+        else:
+            self.state.invite_followup(FOLLOW_UP_WINDOW_S)
+
     def reply(
         self,
         message: str,

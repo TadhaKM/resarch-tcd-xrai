@@ -135,8 +135,7 @@ class DeansOffice(Demo):
 
     def _perform(self, ctx: DemoContext, index: int) -> None:
         """Deliver one block, uninterruptible, and remember it was given."""
-        for line, emotion in _BLOCKS[index].lines:
-            ctx.say(line, emotion, pace=_PACE, interruptible=False)
+        ctx.say_script(_BLOCKS[index].lines, pace=_PACE, interruptible=False)
         ctx.store.setdefault("spoken", set()).add(index)
         ctx.store["last"] = index
         ctx.status(f"Dean's Office: answered cue {index + 1} of {len(_BLOCKS)}.")

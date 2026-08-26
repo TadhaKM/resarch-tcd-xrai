@@ -3444,6 +3444,14 @@ check("'when is the hub open' still reaches the model",
       _sp58.match("when is the hub open"), None)
 check("'how do I get to the hub' still reaches the model",
       _sp58.match("how do I get to the hub"), None)
+
+# Round three: 'Hub' arrived as 'help' (the fourth different word in two
+# mornings), so bare 'the AI XR' now names the Hub whatever follows it; and
+# 'What is...' arrived as 'This is...', so a statement-shaped ask counts.
+check("'exactly is the AIXR help' is the hub question",
+      _sp58.match("exactly is the AIXR help").name, "what the hub is")
+check("'This is the AI XR hub' gets the hub speech",
+      _sp58.match("This is the AI XR hub").name, "what the hub is")
 # The guard that keeps this from repeating the welcome-hijack failure: a rich
 # question that merely CONTAINS a cue must reach the model, which can answer
 # all of it. This is the live sentence from that failure.
@@ -3456,11 +3464,12 @@ class _PaceAudio58(FakeAudio):
     def __init__(self):
         super().__init__()
         self.paces = []
-    def speak(self, text, emotion, motion=None, expressive=False, pace=None,
-              variation=None):
+    # Set pieces deliver through the say_script pipeline (render ahead, then
+    # speak_rendered), so the pace surfaces at render().
+    def render(self, text, expressive=False, pace=None, variation=None):
         self.paces.append(pace)
-        super().speak(text, emotion, motion=motion, expressive=expressive,
-                      pace=pace, variation=variation)
+        return super().render(text, expressive=expressive, pace=pace,
+                              variation=variation)
 
 from brain import memory as _mem58
 _mem58.clear_history(0)
@@ -3477,6 +3486,20 @@ check("and remembered, so follow-ups have context",
 _mem58.clear_history(0)
 check("an unscripted question is declined for the model",
       _sp58.perform(_ctx58, "what do you think about the weather"), False)
+
+# Delivery is the pipelined script path: lines flow, a script not ending on a
+# question invites a follow-up, and a wake word mid-script still interrupts.
+check("a finished block leaves the follow-up window open",
+      _ctx58.state.followup_expected, True)
+_ia58 = FakeAudio(interrupt_after={0})
+_ctxi58 = _DC57(audio=_ia58, motion=FakeMotion(), tracker=None,
+                state=RobotState(), demo_id="t58", store={})
+try:
+    _sp58.perform(_ctxi58, "what is the hub")
+    _cut58 = False
+except _Int57:
+    _cut58 = True
+check("a wake word over a scripted block still takes the floor", _cut58, True)
 
 # Wired into both places questions can arrive: the conversation demo (before
 # its model call) and the runner's fall-through from every other mode.
