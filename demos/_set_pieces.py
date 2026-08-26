@@ -50,6 +50,16 @@ _HEARD_AS = (
     ("xr hob", "xr hub"),
     ("xr mode", "xr hub"),
     ("xr help", "xr hub"),
+    # The word after "AI XR" is the one the recogniser keeps losing -- it has
+    # arrived as home, hall, hump, hob, mode, help, of, up and are across four
+    # live sessions. The shape tier below no longer depends on getting it, but
+    # correcting it here is what lets the LLM see the real question on the
+    # turns that do fall through.
+    ("xr of", "xr hub"),
+    ("xr up", "xr hub"),
+    ("xr are", "xr hub"),
+    ("xr hut", "xr hub"),
+    ("xr her", "xr hub"),
     ("do in a home", "do in the hub"),
     ("do in the home", "do in the hub"),
     ("do in a hall", "do in the hub"),
@@ -209,12 +219,19 @@ _WHAT_ISH = frozenset(("what", "whats", "explain", "describe", "exactly",
                        "about", "this"))
 
 #: Renderings of the Hub's name a transcript can contain, post-normalise.
-#: Bare "the ai xr" is here because the word AFTER it has arrived as home,
-#: hall, mode, and help in two mornings -- whatever follows "the AI XR", the
-#: subject is the Hub; mapping each new mishearing one at a time was a race
-#: that could not be won.
-_HUB_PHRASES = ("the ai xr hub", "the xr hub", "the ai hub", "the hub",
-                "the ai xr")
+#:
+#: NO DETERMINER. Every phrase here used to start "the", and a visitor asking
+#: "So what exactly is THIS AI XR hub?" got an improvised answer for want of
+#: one word -- the recogniser had heard the sentence almost perfectly. People
+#: say this, that, our, your and the Hub's name bare; the determiner carries
+#: no meaning here and matching on it only creates ways to miss.
+#:
+#: Bare "ai xr" is deliberate too: the word AFTER it has arrived as home,
+#: hall, hump, mode, help, of, up and are across four live sessions, so
+#: whatever follows "AI XR", the subject is the Hub. Mapping each new
+#: mishearing one at a time was a race that could not be won.
+_HUB_PHRASES = ("ai xr hub", "xr hub", "ai hub", "ai xr", "the hub",
+                "this hub", "that hub")
 
 
 def match(text: str):

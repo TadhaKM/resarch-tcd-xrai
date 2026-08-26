@@ -3452,6 +3452,24 @@ check("'exactly is the AIXR help' is the hub question",
       _sp58.match("exactly is the AIXR help").name, "what the hub is")
 check("'This is the AI XR hub' gets the hub speech",
       _sp58.match("This is the AI XR hub").name, "what the hub is")
+
+# Round four, verbatim: the recogniser heard this almost perfectly and the
+# match still failed, because every Hub phrase demanded the word "the" and the
+# visitor said "this". One word of grammar cost the approved answer.
+check("'what exactly is THIS AI XR of' is still the hub question",
+      _sp58.match("Welcome Richi. So what exactly is this AI XR of?").name,
+      "what the hub is")
+for _phrasing59 in ("what is our AI XR hub", "so what is AI XR hub then",
+                    "can you explain this hub", "what is that hub about"):
+    check(f"  {_phrasing59!r} too",
+          (_sp58.match(_phrasing59) or None) and _sp58.match(_phrasing59).name,
+          "what the hub is")
+# The determiner-free phrases must not start swallowing questions that have
+# their own real answers.
+check("'who runs this AI XR hub' still reaches the model",
+      _sp58.match("who runs this AI XR hub"), None)
+check("'how do I book the hub' still reaches the model",
+      _sp58.match("how do I book the hub"), None)
 # The guard that keeps this from repeating the welcome-hijack failure: a rich
 # question that merely CONTAINS a cue must reach the model, which can answer
 # all of it. This is the live sentence from that failure.
