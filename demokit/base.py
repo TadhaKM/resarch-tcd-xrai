@@ -792,6 +792,13 @@ class Demo(ABC):
     #: answer sequence, where a visitor's answer would otherwise be swallowed
     #: by another demo's trigger word.
     claims_utterances: ClassVar[bool] = False
+    #: When True, a transcript the recogniser had no confidence in is dropped
+    #: SILENTLY instead of answered with "Sorry -- I did not catch that. Say
+    #: it again?". For performance demos that hold the mic through a live
+    #: event: the mic hears the whole room, most of what arrives is not a cue,
+    #: and the robot asking the audience to repeat itself mid-performance is
+    #: worse than missing one cue the presenter can simply say again.
+    quiet_when_unsure: ClassVar[bool] = False
 
     #: The manner this demo asks to be run in, by persona id (see
     #: brain/personas.py), or "" for the robot's own. A default, not a setting:

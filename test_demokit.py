@@ -3054,46 +3054,86 @@ check("brainstorming is listed as a thing it CAN do",
       "brainstorm ideas out loud" in _base54, True)
 
 print()
-print("[55] the Dean's Office introduction behaves like a scripted demo should")
+print("[55] the Dean's Office dialogue performs on cue and only on cue")
 import demos.deans_office as _do55
 
 _d55 = _do55.DeansOffice()
 _r55, _s55, _a55, _ = build([Chatty(), _d55])
 _s55.set_mode(_d55.id)
-_windows55 = []
-for _ in range(len(_do55._SCRIPT) + 3):
-    _r55.cycle()
-
-check("every line of the script is spoken, in order",
-      _a55.said[:len(_do55._SCRIPT)], [t for t, _e in _do55._SCRIPT])
-check("it introduces the robot", "Reachy Mini" in _a55.said[0], True)
-check("it names the Hub and the school",
-      any("Trinity Business School" in x for x in _a55.said), True)
-check("it carries the soft-skills invitation",
-      any("soft skills" in x for x in _a55.said), True)
-check("and asks nobody to hold anything up",
-      any("hold" in x.lower() for x in _a55.said), False)
-
-# One line per slice, and the whole thing short enough for a standing
-# listener: the welcome demo's file records ~40s as where a room drifts.
-_words55 = sum(len(t.split()) for t, _e in _do55._SCRIPT)
-check("the script fits a standing audience (under ~90 words)",
-      _words55 <= 90, True)
-
-# Restart on request, from the words a person would actually use.
+_r55.cycle()
 _ctx55 = _r55._ctx
-check("'say it again' restarts it", _d55.on_utterance(_ctx55, "can you say it again"), True)
-check("and the script rewinds", _ctx55.store["line"], 0)
 
-# Its own trigger is swallowed apostrophe-and-all -- the quiz shipped this
-# exact bug, and [33] audits the plain spelling only.
-_ctx55.store["line"] = 1
-check("the trigger that started it is swallowed",
-      _d55.on_utterance(_ctx55, "hey reachy do the dean's office"), True)
-# A real question mid-script falls through to the conversation model.
-_ctx55.store["line"] = len(_do55._SCRIPT)
-check("a real question is left for the conversation model",
-      _d55.on_utterance(_ctx55, "what masters programmes are there"), False)
+check("entering the mode holds the microphone for the Dean",
+      _s55.open_mic_held, True)
+check("and opens the wake-free listening window", _s55.answer_expected, True)
+check("but says nothing until a cue lands", _a55.said, [])
+
+# The Dean's own lines -- and anything else the room produces -- are
+# swallowed in silence. On stage, the robot chiming into the Dean's half of
+# the dialogue, or freelancing an answer through the conversation model, is
+# the one failure this mode must never have.
+check("the Dean's preamble is swallowed",
+      _d55.on_utterance(_ctx55, "Before I tell you more about one of the "
+                        "spaces you'll have access to at Trinity Business "
+                        "School"), True)
+check("  ...in silence", _a55.said, [])
+
+# Each of the Dean's five questions lands its block, exactly as scripted.
+_d55.on_utterance(_ctx55, "Reachy, would you like to introduce yourself?")
+check("the introduction opens with 'Of course!'", _a55.said[0], "Of course!")
+check("and greets the new students",
+      any("Hello new friends" in x for x in _a55.said), True)
+_d55.on_utterance(_ctx55, "Welcome, Reachy. So, what exactly is the AI XR Hub?")
+check("the Hub answer leads with people, not technology",
+      any("technology isn't the point. People are." in x for x in _a55.said), True)
+_d55.on_utterance(_ctx55, "Why are the students so important?")
+check("the students answer lands",
+      any("human skills matter more, not less" in x for x in _a55.said), True)
+_d55.on_utterance(_ctx55, "So what will our MSc students actually do in the Hub?")
+check("the hands-on answer lands",
+      any("VR headset" in x for x in _a55.said), True)
+_d55.on_utterance(_ctx55, "Indeed it is! Any final advice for our new students, Reachy?")
+check("the advice lands", any(x == "Be curious." for x in _a55.said), True)
+check("and closes on the Hub's own line",
+      any("Immersive Intelligence" in x for x in _a55.said), True)
+_len_after_script55 = len(_a55.said)
+check("every scripted line was delivered",
+      _len_after_script55,
+      sum(len(b["lines"]) for b in _do55._BLOCKS))
+
+_d55.on_utterance(_ctx55, "Thank you, Reachy.")
+check("the Dean's thanks gets a bow, not a speech",
+      len(_a55.said), _len_after_script55)
+
+# Operator fallbacks: a missed cue is recovered with "next", a block the room
+# missed is repeated with "say it again", and "start again" rewinds silently.
+check("'say it again' repeats the last block",
+      _d55.on_utterance(_ctx55, "say it again"), True)
+check("  ...verbatim", _a55.said[-1], _a55.said[_len_after_script55 - 1])
+_d55.on_utterance(_ctx55, "start again")
+check("'start again' rewinds without speaking",
+      _ctx55.store["spoken"], set())
+_before_next55 = len(_a55.said)
+_d55.on_utterance(_ctx55, "next")
+check("'next' then performs the first unspoken block",
+      _a55.said[_before_next55], "Of course!")
+
+# The performance cannot be hijacked or embarrassed: it sees utterances
+# before other demos' triggers, and a garbled pickup is dropped silently
+# instead of asking a room to repeat itself.
+check("the performance claims every utterance", _d55.claims_utterances, True)
+check("and never apologises to the audience", _d55.quiet_when_unsure, True)
+_r55._audio.last_confidence = -9.0
+_said_before_gate55 = len(_a55.said)
+check("a garbled pickup is dropped by the gate",
+      _r55._too_unsure_to_answer(_ctx55, "mmnph", quiet=True), True)
+check("  ...without a word", len(_a55.said), _said_before_gate55)
+_r55._audio.last_confidence = None
+
+# Leaving the mode releases everything it held.
+_d55.on_exit(_ctx55)
+check("leaving releases the microphone", _s55.open_mic_held, False)
+check("and closes the listening window", _s55.answer_expected, False)
 
 print()
 print("[56] a long sentence is spoken in phrases, not comma-stubs")

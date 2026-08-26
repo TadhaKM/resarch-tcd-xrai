@@ -658,7 +658,8 @@ class DemoRunner:
         self._dispatch(demo, ctx, heard, depth)
 
     def _too_unsure_to_answer(self, ctx: DemoContext, heard: str,
-                              in_window: bool = False) -> bool:
+                              in_window: bool = False,
+                              quiet: bool = False) -> bool:
         """Whether to ask again instead of answering. Logs the score either way.
 
         The score is logged on EVERY turn, answered or not, because the
@@ -686,6 +687,11 @@ class DemoRunner:
         logger.info("transcript confidence %.2f below %.2f -- asking again: %r",
                     score, floor, heard[:60])
         self._state.add("status", "That did not come through clearly.")
+        # A performance demo drops the turn without a word: the mic is open on
+        # a whole room, and "say it again?" to an audience mid-event is worse
+        # than missing a cue the presenter will simply repeat.
+        if quiet:
+            return True
         try:
             ctx.say("Sorry -- I did not catch that. Say it again?", "curious")
         except Exception:
@@ -770,7 +776,8 @@ class DemoRunner:
         # badly and was answered with "sorry, say that again?", so the one
         # thing that must always work stopped working exactly where it was
         # needed most.
-        if self._too_unsure_to_answer(ctx, heard, in_window=was_in_window):
+        if self._too_unsure_to_answer(ctx, heard, in_window=was_in_window,
+                                      quiet=demo.quiet_when_unsure):
             return
 
         if demo.claims_utterances and self._offer(demo, ctx, heard):
