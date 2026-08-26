@@ -17,6 +17,17 @@ MAX_TURNS = 12
 
 _HISTORY: dict[int, list[tuple[str, str]]] = defaultdict(list)
 
+# NOTE: there is deliberately NO way to move turns between buckets. A first
+# version had adopt_strays(), folding fresh person-0 turns into a recognised
+# person's empty bucket to heal camera dropouts -- review killed it: recency
+# alone cannot tell "same conversation, camera blinked" from "a different
+# stranger was just talking", so it could hand one visitor's conversation to
+# another AND summarise it into their permanent profile at "goodbye". The
+# dropout it healed is prevented upstream instead, by the sticky identity in
+# demokit.base.person_id, which keeps the turns from ever landing in the
+# wrong bucket. Turns misfiled despite that are bounded context loss; turns
+# MOVED to the wrong person are permanent contamination. Lose, don't leak.
+
 
 def get_history(person_id: int) -> list[tuple[str, str]]:
     """Return the (message, reply) turns recorded for this person so far this session."""

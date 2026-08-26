@@ -28,7 +28,8 @@ from typing import Any, Optional
 from body.face import clean_spoken_name
 from brain import db
 
-from .base import Demo, DemoContext, DemoStopped, IdleResult, Interrupted
+from .base import (Demo, DemoContext, DemoStopped, IdleResult, Interrupted,
+                   forget_identity)
 from .registry import FALLBACK_ID, REGISTRY
 
 
@@ -112,6 +113,21 @@ _AMBIENT_MIN_WORDS = 2
 _AMBIENT_MIN_CHARS = 7
 
 _OPEN_MIC_WINDOW_S = 30.0
+
+#: The floor-free part of an answer window. A direct short answer -- "yes",
+#: "purple", "For my startup" -- comes within seconds of the question; a
+#: visitor still thinking past this speaks in sentences when they do answer,
+#: which the ambient floor passes anyway. Without the split, the 30-second
+#: window would take ANY syllable the room produced for half a minute -- the
+#: "EH"/"OH" failure the floor exists for, wedged open threefold.
+_ANSWER_GRACE_S = 12.0
+
+#: A wake-word turn with NOBODY in view, this long after the last exchange,
+#: is a new visitor starting a new conversation -- so the sticky identity is
+#: dropped rather than handing them the previous person's name and history.
+#: Under this, it is somebody mid-conversation (a barge-in while the robot's
+#: head is turned away is the common case) and the identity holds.
+_WAKE_NEW_VISIT_S = 45.0
 _OPEN_MIC_SILENCE_S = 5.0
 
 #: A leading wake phrase, for stripping off an open-mic follow-up. Written as a
@@ -474,6 +490,15 @@ class DemoRunner:
         that needs addressing by name.
         """
         self._state.note("status", "Listening -- no wake word needed")
+        # The window is judged at speech ONSET, so it is read BEFORE the
+        # listen. Reading it after meant the utterance's own duration plus the
+        # endpoint wait plus the Whisper decode -- 5-10s on a real answer --
+        # silently shortened every window at the tail: a visitor who STARTED
+        # answering inside it was judged after it had expired. "Fresh" is the
+        # grace part of the window, where any syllable counts as the answer;
+        # past it the ambient floor returns (see _ANSWER_GRACE_S).
+        was_answer_window = (self._state.answer_expected
+                             and self._state.answer_window_age <= _ANSWER_GRACE_S)
         # Capped at the demo's own listening window. A demo mid-script returns
         # a short listen_for to say "I have more lines to deliver", and the old
         # fixed five-second wait here stretched every scripted sequence by five
@@ -490,12 +515,15 @@ class DemoRunner:
         heard = _strip_wake_phrase(heard)
         if not heard:
             return False
-        if not self._addressed_to_the_robot(heard):
+        if not self._addressed_to_the_robot(heard, answer_expected=was_answer_window):
             return False
-        self._dispatch(demo, ctx, heard)
+        # The same onset snapshot reaches the confidence gate: judged live at
+        # dispatch time, the decode's own 5-10s had already expired the window
+        # for exactly the late, thought-out answers the window exists for.
+        self._dispatch(demo, ctx, heard, answered_question=was_answer_window)
         return True
 
-    def _addressed_to_the_robot(self, heard: str) -> bool:
+    def _addressed_to_the_robot(self, heard: str, answer_expected: bool = False) -> bool:
         """Whether an open-mic fragment is somebody TALKING TO the robot.
 
         With the switch on in a live room, the recogniser returns whatever the
@@ -516,12 +544,19 @@ class DemoRunner:
         """
         if self._state.open_mic_held:
             return True
-        # An answer window is the robot having just ASKED something, so a
+        # A FRESH answer window is the robot having just ASKED something, so a
         # one-word reply is exactly what is expected -- "yes", "true",
         # "purple". The word-count floor is for ambient listening, where a
         # single syllable is the room; here the confidence gate alone decides,
-        # and it still runs in _dispatch.
-        if self._state.answer_expected:
+        # and it still runs in _dispatch. `answer_expected` is the caller's
+        # onset snapshot of the GRACE part of the window (see _open_mic_turn);
+        # the live read backs it up for callers that did not take one. Past
+        # the grace, the window still listens wake-free but the floor below
+        # returns: somebody genuinely answering twenty seconds later answers
+        # in a sentence, while "EH" twenty seconds later is the room.
+        if answer_expected or (
+                self._state.answer_expected
+                and self._state.answer_window_age <= _ANSWER_GRACE_S):
             return True
         words = _word_stream(heard)
         # Never gate the way out. "Goodbye" is one word and has to work from
@@ -602,6 +637,15 @@ class DemoRunner:
         nothing else.
         """
         self._motion.acknowledge()
+        # A wake word from somebody the camera cannot see, after a real lull,
+        # starts a NEW conversation -- the sticky identity must not hand them
+        # the previous visitor's name, history, and long-term profile. Found
+        # in review as a privacy hole: recognised visitor A leaves, visitor B
+        # walks up outside the camera cone within the sticky window, and B's
+        # whole conversation would have been filed -- permanently -- under A.
+        if (not ctx.face_visible()
+                and time.monotonic() - self._last_heard_at > _WAKE_NEW_VISIT_S):
+            forget_identity()
         heard = ""
         for _ in range(1 + _EMPTY_TRANSCRIPT_RETRIES):
             heard = self._listen()
@@ -613,7 +657,8 @@ class DemoRunner:
             return
         self._dispatch(demo, ctx, heard, depth)
 
-    def _too_unsure_to_answer(self, ctx: DemoContext, heard: str) -> bool:
+    def _too_unsure_to_answer(self, ctx: DemoContext, heard: str,
+                              in_window: bool = False) -> bool:
         """Whether to ask again instead of answering. Logs the score either way.
 
         The score is logged on EVERY turn, answered or not, because the
@@ -621,12 +666,20 @@ class DemoRunner:
         a real room -- the live distribution is the thing that will actually
         tune this, and it can only be read off a day's logs if the good turns
         are logged too.
+
+        `in_window` relaxes the floor by 1.0: a direct answer to a question
+        the robot itself just asked has a strong prior of being real speech,
+        and short answers -- exactly what a question invites -- have so few
+        tokens that their mean logprob is noise. The score confidence is the
+        ZIPFORMER's opinion of an utterance WHISPER transcribed; on three
+        clean words the two models disagreeing is routine.
         """
         score = getattr(self._audio, "last_confidence", None)
         if score is None:
             return False
-        from body.audio_io import _MIN_MEAN_TOKEN_LOGPROB as floor
+        from body.audio_io import _MIN_MEAN_TOKEN_LOGPROB
 
+        floor = _MIN_MEAN_TOKEN_LOGPROB - (1.0 if in_window else 0.0)
         if score >= floor:
             logger.info("transcript confidence %.2f (answering)", score)
             return False
@@ -639,7 +692,8 @@ class DemoRunner:
             logger.debug("Could not ask for a repeat", exc_info=True)
         return True
 
-    def _dispatch(self, demo: Demo, ctx: DemoContext, heard: str, depth: int = 0) -> None:
+    def _dispatch(self, demo: Demo, ctx: DemoContext, heard: str, depth: int = 0,
+                  answered_question: bool = False) -> None:
         """Decide who handles something a visitor said.
 
         Split out from _take_turn so open mic can reach it: a follow-up asked
@@ -666,6 +720,16 @@ class DemoRunner:
         # responded to -- the answer window must not outlive its answer, or
         # the NEXT stray remark is also treated as one. The follow-up window
         # closes with it; the reply this turn produces opens a fresh one.
+        # Snapshotted FIRST: the confidence gate below relaxes for a direct
+        # answer to the robot's own question, and reading the state after
+        # these two lines is reading a window that no longer exists. The
+        # caller's onset snapshot (answered_question) outranks the live read,
+        # which by dispatch time is 5-10s of decode stale. Follow-up windows
+        # deliberately do NOT relax the gate: nothing was asked, so the
+        # "direct answer to my own question" prior does not apply.
+        was_in_window = answered_question or (
+            self._state.answer_expected
+            and self._state.answer_window_age <= _ANSWER_GRACE_S)
         self._state.expect_answer(0.0)
         self._state.invite_followup(0.0)
 
@@ -706,7 +770,7 @@ class DemoRunner:
         # badly and was answered with "sorry, say that again?", so the one
         # thing that must always work stopped working exactly where it was
         # needed most.
-        if self._too_unsure_to_answer(ctx, heard):
+        if self._too_unsure_to_answer(ctx, heard, in_window=was_in_window):
             return
 
         if demo.claims_utterances and self._offer(demo, ctx, heard):
@@ -975,6 +1039,10 @@ class DemoRunner:
         from brain import memory
         from brain.interface import end_conversation
 
+        # The visit is over, so the conversation's owner is too -- without
+        # this, the sticky identity would hand the NEXT visitor's first turns
+        # to whoever just left. See demokit.base.person_id.
+        forget_identity()
         for person_id in list(memory.known_people()):
             try:
                 end_conversation(person_id)

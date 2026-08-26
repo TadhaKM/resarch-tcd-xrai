@@ -490,6 +490,10 @@ Quiet for longer than that and it goes back to normal — say "Hey Reachy" again
 and you're straight back into it. You'll see *"Listening — no wake word
 needed"* on the screen while it's open.
 
+Even with open mic **off**, whenever Reachy ends its answer by **asking you a
+question**, it listens for your answer without the wake phrase for about half
+a minute — take your time, a thought-out answer still counts.
+
 Everything else still works while it's open. "Go to sleep" still stops it,
 switching demos still works, and if you say "Hey Reachy" out of habit it just
 ignores the phrase rather than treating it as part of your question.

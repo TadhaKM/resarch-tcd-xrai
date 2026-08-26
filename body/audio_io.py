@@ -400,6 +400,12 @@ _MIN_MEAN_TOKEN_LOGPROB = -3.5
 
 _EARLY_DECODE_AFTER_S = 0.45
 
+#: How long a stale early decode must have been running before ONE fresh
+#: speculation may be stacked beside it. Long enough that the stale one is
+#: genuinely doomed (it will not finish inside the endpoint window anyway),
+#: short enough that the replacement still lands inside the trailing silence.
+_STALE_SPECULATION_S = 0.7
+
 
 class _EarlyDecode:
     """One speculative Whisper decode, begun before the endpoint fires.
@@ -424,6 +430,12 @@ class _EarlyDecode:
     def __init__(self, decode, samples: np.ndarray, partial: str) -> None:
         self.partial = partial
         self.started = time.monotonic()
+        #: True when this decode was launched BESIDE a still-running stale one
+        #: (see the launch condition in listen). Informational -- the actual
+        #: bound is listen()'s per-utterance stacked_once flag, because a
+        #: check against only the CURRENT decode ignored forgotten ancestors
+        #: that were still running.
+        self.stacked = False
         self._result = ""
         self._done = threading.Event()
         self._thread = threading.Thread(
@@ -450,6 +462,59 @@ class _EarlyDecode:
         """The transcript, waiting for the decode if it is still running."""
         self._done.wait()
         return self._result
+
+
+class _BackgroundScan:
+    """One barge-in backlog scan, run beside the next chunk's playback.
+
+    See AudioIO.scan_backlog_async for the contract. The thread does nothing
+    but call wake_word_in_backlog and, on a hit, set the abort flag that stops
+    the chunk currently playing; every conclusion is read on the voice-loop
+    thread through finish().
+    """
+
+    def __init__(self, audio: "AudioIO") -> None:
+        self._audio = audio
+        self.hit = False
+        self._done = threading.Event()
+        self._thread = threading.Thread(target=self._run, name="barge-scan", daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        try:
+            if self._audio.wake_word_in_backlog():
+                self.hit = True
+                self._audio._abort_speak.set()
+        except Exception:
+            # A failed scan is a missed interruption, not a broken reply.
+            logger.debug("Backlog scan failed", exc_info=True)
+        finally:
+            self._done.set()
+
+    @property
+    def done(self) -> bool:
+        return self._done.is_set()
+
+    def finish(self) -> bool:
+        """Join the scan and report the hit. Voice-loop thread only.
+
+        Call before any other microphone use -- two threads draining the same
+        backlog interleave it into nonsense. Safe to call more than once.
+        """
+        self._thread.join()
+        if self.hit:
+            # speak_rendered's finally marked the mic stale when the aborted
+            # chunk returned, AFTER the hit path had already drained to the
+            # match and declared what remains fresh. What remains is still the
+            # visitor's question; restore the flag so listen() keeps it.
+            self._audio._mic_fresh = True
+        # The abort has served its purpose (or never fired); cleared HERE, on
+        # the loop thread with the scan joined, so it can never leak into a
+        # later chunk, reply, or scripted line. Clearing it at playback entry
+        # instead was a race -- a hit landing between the caller's last check
+        # and the clear was erased, and the chunk played out over the visitor.
+        self._audio._abort_speak.clear()
+        return self.hit
 
 
 def _build_spotter() -> sherpa_onnx.KeywordSpotter:
@@ -527,6 +592,13 @@ class AudioIO:
         #: match, so listen() knows the audio waiting for it is the question
         #: itself rather than a backlog to throw away. See listen().
         self._mic_fresh = False
+        #: Set by the concurrent barge-in scan when it finds the wake word while
+        #: the NEXT chunk is already playing: _speak_robot checks it between
+        #: pushes and stops feeding the speaker, so an interruption cuts the
+        #: robot off within about a second instead of at the end of the chunk.
+        #: Cleared at the top of every speak so a stale abort from a finished
+        #: reply cannot silence an unrelated line. See scan_backlog_async.
+        self._abort_speak = threading.Event()
         if target.mode == "robot":
             if self._robot is None:
                 from reachy_mini import ReachyMini
@@ -1118,6 +1190,28 @@ class AudioIO:
         logger.log(level, "No wake word in backlog (%d chunk(s), peak %.3f).", chunks, loudest)
         return False
 
+    def scan_backlog_async(self) -> "_BackgroundScan":
+        """Run wake_word_in_backlog on a worker so playback never waits for it.
+
+        The synchronous scan was the floor under every mid-reply gap: it runs
+        between each pair of spoken chunks, costs ~0.8s per call even after
+        block-batching, and overlapped with nothing -- the room heard it as
+        silence. Started here instead, RIGHT AFTER chunk N finishes playing,
+        it decodes chunk N's backlog while chunk N+1 is already coming out of
+        the speaker. On a hit it sets _abort_speak, so the in-flight chunk
+        stops within about a second (see _speak_robot), and the caller's
+        finish() then raises the interruption exactly where it always did.
+
+        Mic exclusivity holds because the caller is the voice loop inside
+        speak_rendered's playback sleeps the whole time this thread runs -- it
+        touches no mic API until it has joined this scan. finish() must be
+        called before ANY other mic use, and it re-asserts _mic_fresh on a hit
+        because speak_rendered's own finally (which runs when the aborted
+        chunk returns) unconditionally marks the mic stale, clobbering the
+        drain-then-keep freshness the hit path just established.
+        """
+        return _BackgroundScan(self)
+
     def flush_mic(self) -> None:
         """Drop mic audio captured while the robot was busy.
 
@@ -1176,6 +1270,15 @@ class AudioIO:
         #: DURING the endpoint's trailing-silence wait instead of after it.
         last_change = started
         early: Optional[_EarlyDecode] = None
+        # At most ONE stacked speculation for the whole utterance. The doomed
+        # check below only sees the CURRENTLY tracked decode, so without this
+        # a chain of pauses could stack over forgotten-but-alive ancestors --
+        # A, C and D all decoding at once, which is the CPU-saturation regime
+        # measured as 5.1-6.8s transcript outliers before stacking was banned.
+        # Worst case with the flag: two abandoned decodes plus the endpoint's
+        # own serial one, briefly, once -- bounded, and rarer than the ~5s
+        # serial wait the single stack exists to prevent.
+        stacked_once = False
 
         def best_transcript(streaming_text: str) -> str:
             """Whisper's transcript by the cheapest route, else the streaming one."""
@@ -1239,23 +1342,43 @@ class AudioIO:
                 # (see best_transcript above), and waiting for a doomed decode
                 # of half a question was measured costing more than never
                 # speculating at all.
+                # Stack AT MOST one fresh speculation over a doomed one. The
+                # blanket no-stacking rule below exists because unbounded
+                # stacking measured as 5.1-6.8s transcript outliers -- but its
+                # cost showed up live too: on a long question with one
+                # mid-sentence pause, the stale half-question decode (started
+                # at the pause, invalidated when they kept talking) was still
+                # running at the endpoint, the guard had refused the fresh
+                # speculation, and the FULL decode then ran serially after the
+                # endpoint -- a ~5s wait for the transcript instead of ~2. One
+                # bounded extra thread is the same concurrency the
+                # post-endpoint path already runs and documents safe.
+                doomed = (
+                    early is not None
+                    and early._thread.is_alive()
+                    and early.partial != partial
+                    and time.monotonic() - early.started >= _STALE_SPECULATION_S
+                    and not stacked_once
+                )
                 if (
                     partial
                     and time.monotonic() - last_change >= _EARLY_DECODE_AFTER_S
                     and (early is None or early.partial != partial)
-                    # Never stack speculations: an abandoned decode keeps its
-                    # thread (and 4 whisper threads) running to completion, so
-                    # launching a fresh one beside it puts 8+ threads on a
-                    # 14-core laptop already running the zipformer and piper.
-                    # Measured as the 5.1-6.8s transcript outliers on long
-                    # questions -- every configuration showed them until
-                    # stacking stopped. Skipping a speculation costs at most
-                    # one ordinary post-endpoint decode (~0.6s at 4 threads).
-                    and (early is None or not early._thread.is_alive())
+                    # Never stack speculations blindly: an abandoned decode
+                    # keeps its thread (and 4 whisper threads) running to
+                    # completion, so launching fresh ones beside it puts 8+
+                    # threads on a 14-core laptop already running the zipformer
+                    # and piper. Measured as the 5.1-6.8s transcript outliers
+                    # on long questions -- every configuration showed them
+                    # until stacking stopped. The single `doomed` exception
+                    # above is capped at one.
+                    and (early is None or not early._thread.is_alive() or doomed)
                 ):
                     early = _EarlyDecode(
                         self._transcribe_whisper, np.concatenate(captured), partial
                     )
+                    early.stacked = doomed
+                    stacked_once = stacked_once or doomed
 
             if wait_for_speech_s is not None and not partial:
                 if time.monotonic() - started >= wait_for_speech_s:
@@ -1327,6 +1450,9 @@ class AudioIO:
         precedence, since a caller that named both meant them.
         """
         chunks = self._render_stream(text, expressive=expressive, pace=pace, variation=variation)
+        # Same stale-abort hygiene as speak_rendered: an interruption that
+        # ended the previous reply must not silence this unrelated line.
+        self._abort_speak.clear()
         if motion is not None:
             motion.begin_speech()
         try:
@@ -1405,7 +1531,16 @@ class AudioIO:
         return list(self._render_stream(text, expressive=expressive, pace=pace, variation=variation))
 
     def speak_rendered(self, chunks: list, motion: Optional[Any] = None) -> None:
-        """Play chunks render() produced. Loop thread only, like speak()."""
+        """Play chunks render() produced. Loop thread only, like speak().
+
+        Deliberately does NOT clear _abort_speak on entry: the running scan's
+        hit may land in the instants between the caller's last check and this
+        call, and an entry clear ate exactly that abort -- the chunk then
+        played to completion over the already-talking visitor. The event is
+        owned by the scan lifecycle instead: only a hit sets it, and
+        _BackgroundScan.finish() -- always called before the next scan starts
+        and on every path out of a reply -- clears it.
+        """
         if motion is not None:
             motion.begin_speech()
         try:
@@ -1475,6 +1610,8 @@ class AudioIO:
         """
         playing = False
         for chunk in chunks:
+            if self._abort_speak.is_set():
+                return
             if playing:
                 sd.wait()
             if motion is not None:
@@ -1504,6 +1641,12 @@ class AudioIO:
         pushed_s = 0.0
 
         for chunk in chunks:
+            # The concurrent barge-in scan found the wake word: stop feeding
+            # the speaker. The robot still holds up to _PLAYBACK_LEAD_S of
+            # queued audio, so the voice dies within about a second -- against
+            # a visitor already talking over it, faster is politer.
+            if self._abort_speak.is_set():
+                return
             if motion is not None:
                 motion.feed_speech_audio(chunk.audio_float_array)
             audio = _resample(chunk.audio_float_array, chunk.sample_rate, output_rate)
@@ -1513,6 +1656,10 @@ class AudioIO:
             if ahead > _PLAYBACK_LEAD_S:
                 time.sleep(ahead - _PLAYBACK_LEAD_S)
 
-        remaining = pushed_s - (time.monotonic() - started)
-        if remaining > 0:
-            time.sleep(remaining)
+        # Sliced so an abort can still cut the tail wait: everything is pushed
+        # by now, but there is no reason to stand here while a visitor talks.
+        while True:
+            remaining = pushed_s - (time.monotonic() - started)
+            if remaining <= 0 or self._abort_speak.is_set():
+                return
+            time.sleep(min(0.1, remaining))

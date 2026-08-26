@@ -48,14 +48,20 @@ logger = logging.getLogger(__name__)
 _GAP_WARN_S = 1.5
 
 #: How long the robot listens, wake-word-free, for the answer to a question
-#: its own reply just asked. Long enough to think; short enough that a question
-#: nobody answers does not leave the mic open to the room.
-ANSWER_WINDOW_S = 9.0
+#: its own reply just asked. 9.0 said "long enough to think" and was measured
+#: wrong the first live afternoon: asked what his ideas were FOR, a visitor
+#: answered "For my startup." 27 seconds after the question finished -- well
+#: past the window, so his three clean words were judged as ambient noise
+#: rules instead of as the answer. People formulating a real answer take
+#: 15-25s. The confidence gate still applies (relaxed, see runner._dispatch),
+#: and any utterance closes the window, so the cost of the longer wait is
+#: bounded to one stray remark after a question genuinely nobody answers.
+ANSWER_WINDOW_S = 30.0
 
-#: The wake-free window after a reply that did NOT ask anything. Longer than
-#: the answer window because thinking of a follow-up takes longer than
-#: answering a direct question.
-FOLLOW_UP_WINDOW_S = 12.0
+#: The wake-free window after a reply that did NOT ask anything. The ambient
+#: word-count floor still applies here (nothing was asked, so a stray syllable
+#: is the room), which is what makes the longer window cheap.
+FOLLOW_UP_WINDOW_S = 20.0
 
 MAX_LISTEN_WINDOW_S = 3.0
 
@@ -157,6 +163,50 @@ def _is_stop_phrase(text: str) -> bool:
 _WAKE_WORDS = ("reachy",)
 
 
+#: How long a recognised identity keeps its conversation after the face was
+#: last actually seen. The tracker forgets a face 3 seconds after losing it,
+#: and conversation history is keyed by person id -- so every time the robot's
+#: head turned away in its thinking pose, or the visitor leaned out of frame,
+#: the NEXT turn was filed under anonymous person 0 with an empty history.
+#: Measured live as the robot asking "Ideas for what, exactly?" one turn after
+#: a five-minute startup-ideas conversation, and answering a clean direct
+#: answer to its own question with "could you say that again?".
+#:
+#: 75 seconds, not more, and the bound is privacy rather than tuning: review
+#: found that a NEW visitor arriving outside the camera cone inside this
+#: window would inherit the previous person's name and history, and -- at the
+#: next "goodbye" -- have their conversation summarised into that person's
+#: permanent profile. The dropout this exists to bridge is one reply plus one
+#: thought (a long reply is ~30s, live thinking time measured at 27s);
+#: anything longer is more likely a new person than a long blink. The other
+#: half of the guard is the runner's: a wake word from nobody-in-view after a
+#: real lull drops the identity outright (_WAKE_NEW_VISIT_S). The residual --
+#: a second visitor diving into a live conversation, off camera, without the
+#: wake word, inside this window -- is accepted and recorded here.
+STICKY_IDENTITY_S = 75.0
+
+
+class _StickyIdentity:
+    """The person this conversation belongs to, surviving camera dropouts.
+
+    Module-level rather than on DemoContext because contexts are per-demo: a
+    conversation that wanders across demos ("tell me a story" mid-chat) must
+    not lose its owner at the switch. Written only from the voice-loop thread.
+    """
+
+    person_id = 0
+    seen_at = 0.0
+
+
+_STICKY = _StickyIdentity()
+
+
+def forget_identity() -> None:
+    """Drop the sticky conversation identity. Called when a visit ends."""
+    _STICKY.person_id = 0
+    _STICKY.seen_at = 0.0
+
+
 class DemoContext:
     """Everything a demo is allowed to do, and the only way it should do it.
 
@@ -243,6 +293,24 @@ class DemoContext:
             return
         if self.audio.wake_word_in_backlog():
             raise Interrupted()
+
+    def _begin_backlog_scan(self, just_said: str):
+        """Start the concurrent barge-in scan for the chunk just spoken.
+
+        Returns None for a chunk that itself contained the wake phrase -- its
+        own recorded voice is in the buffer being searched, so scanning it
+        would interrupt the robot with itself. On an audio object without the
+        async scan (test doubles, local playback stubs) the old synchronous
+        check runs instead, so nothing is lost beyond the gap it always cost.
+        """
+        lowered = just_said.lower()
+        if any(word in lowered for word in _WAKE_WORDS):
+            return None
+        starter = getattr(self.audio, "scan_backlog_async", None)
+        if starter is None:
+            self._stop_if_interrupted(just_said)
+            return None
+        return starter()
 
     # --- speaking --------------------------------------------------------
 
@@ -463,9 +531,34 @@ class DemoContext:
         # on the model generating, piper rendering, or the queue. Logged rather
         # than reasoned about, for the same reason the face-match score was.
         finished_at = None
+        # The barge-in scan for the chunk that just finished, running WHILE the
+        # next one plays. It used to run synchronously between chunks, and its
+        # ~0.8-2.5s was the floor under every mid-reply gap the instrumentation
+        # logged -- pure silence the room read as the robot having finished.
+        # Now the scan of chunk N's backlog overlaps chunk N+1's playback; a
+        # hit aborts that playback within about a second (see AudioIO
+        # scan_backlog_async), and the Interrupted still rises from this loop.
+        # None also encodes "the robot just said the wake word itself" -- that
+        # chunk's backlog contains its own voice saying the phrase, so it is
+        # not scanned at all, exactly as _stop_if_interrupted always skipped it.
+        scan = None
         try:
             while True:
-                item = feed.get()
+                # The wait for the producer is SLICED so a scan hit can
+                # interrupt it: review confirmed that a wake word said over
+                # chunk N, found by the scan while the producer was mid-stall,
+                # otherwise sat ignored until the next rendered sentence
+                # arrived -- the visitor barging in during the exact silence
+                # that already reads as the robot having finished, and being
+                # ignored the whole way through it.
+                while True:
+                    if scan is not None and scan.done and scan.finish():
+                        raise Interrupted()
+                    try:
+                        item = feed.get(timeout=0.2)
+                        break
+                    except queue.Empty:
+                        continue
                 if finished_at is not None and item[0] not in ("end", "error"):
                     waited = time.monotonic() - finished_at
                     if waited >= _GAP_WARN_S:
@@ -479,6 +572,10 @@ class DemoContext:
                 # Checked between sentences, not within: cutting the robot off
                 # mid-word reads as a fault, mid-sentence reads as responsive.
                 self._stop_if_switched()
+                # A scan that already concluded with a hit means the visitor
+                # interrupted during the PREVIOUS chunk -- do not start another.
+                if scan is not None and scan.done and scan.finish():
+                    raise Interrupted()
                 spoken.append(sentence)
                 self.state.add("said", sentence)
                 self.state.set_flags(speaking=True)
@@ -486,10 +583,16 @@ class DemoContext:
                 self.audio.speak_rendered(chunks, motion=self.motion)
                 finished_at = time.monotonic()
                 self.state.set_flags(speaking=False)
-                # A visitor can take the floor back here without waiting for a
-                # thirty-second story: their words were captured while this
-                # sentence played.
-                self._stop_if_interrupted(sentence)
+                # The scan for the chunk that just played must be collected
+                # before any new mic work begins -- two threads draining the
+                # same backlog interleave it into nonsense.
+                if scan is not None and scan.finish():
+                    raise Interrupted()
+                scan = self._begin_backlog_scan(sentence)
+            if scan is not None and scan.finish():
+                # Found during the final chunk: the visitor talked over the
+                # end of the reply, and their words are waiting in the backlog.
+                raise Interrupted()
         except BaseException:
             # Switched away, interrupted, or a real error: the producer must
             # stop generating into a conversation that has moved on. It may be
@@ -498,6 +601,10 @@ class DemoContext:
             # The dashboard must not say Thinking about a reply that died --
             # interrupted, switched away, or a real failure all land here.
             self.state.set_flags(thinking=False)
+            # The scan owns the microphone until joined; whoever catches this
+            # exception may listen immediately.
+            if scan is not None:
+                scan.finish()
             while True:
                 try:
                     feed.get_nowait()
@@ -605,11 +712,31 @@ class DemoContext:
         return face is not None
 
     def person_id(self) -> int:
-        """The recognised person, or 0 for an unknown visitor."""
+        """The recognised person, or 0 for an unknown visitor.
+
+        Sticky across camera dropouts: the tracker forgets a face 3 seconds
+        after it leaves frame, but a conversation does not change owners
+        because the robot turned its head. While NOBODY is in view, the last
+        recognised person keeps the conversation for STICKY_IDENTITY_S. A face
+        that IS in view always wins -- recognised, it takes over; unrecognised
+        past the tracker's own hold, it is a new visitor and the sticky id is
+        dropped rather than letting them inherit someone else's history.
+        """
         if self.tracker is None or not self.tracker.enabled:
             return 0
-        person_id, _face = self.tracker.current()
-        return int(person_id or 0)
+        person_id, face = self.tracker.current()
+        pid = int(person_id or 0)
+        now = time.monotonic()
+        if pid:
+            _STICKY.person_id = pid
+            _STICKY.seen_at = now
+            return pid
+        if face is not None:
+            forget_identity()
+            return 0
+        if _STICKY.person_id and now - _STICKY.seen_at < STICKY_IDENTITY_S:
+            return _STICKY.person_id
+        return 0
 
     def person_name(self) -> Optional[str]:
         """The recognised visitor's name, or None for a stranger.

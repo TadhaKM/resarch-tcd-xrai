@@ -82,6 +82,10 @@ class RobotState:
         #: Until when the robot is waiting for the ANSWER to a question it just
         #: asked -- see expect_answer. Monotonic deadline; 0.0 means not waiting.
         self._answer_until = 0.0
+        #: When the current answer window was armed. What lets the runner tell
+        #: a prompt short answer (floor-free grace) from a late one, where the
+        #: ambient floor comes back -- see runner._ANSWER_GRACE_S.
+        self._answer_armed_at = 0.0
         self._followup_until = 0.0
         #: Which answering style the personality demo should use next. Held in
         #: the core rather than in the demo's own store so the dashboard can
@@ -339,6 +343,8 @@ class RobotState:
         """
         with self._lock:
             self._answer_until = time.monotonic() + max(0.0, seconds)
+            if seconds > 0:
+                self._answer_armed_at = time.monotonic()
 
     def invite_followup(self, seconds: float) -> None:
         """A reply just finished; give the room a moment to follow up freely.
@@ -362,6 +368,14 @@ class RobotState:
     def answer_expected(self) -> bool:
         with self._lock:
             return time.monotonic() < self._answer_until
+
+    @property
+    def answer_window_age(self) -> float:
+        """Seconds since the current answer window was armed. inf if never."""
+        with self._lock:
+            if not self._answer_armed_at:
+                return float("inf")
+            return time.monotonic() - self._answer_armed_at
 
     def hold_open_mic(self, held: bool) -> None:
         """Keep the microphone open for one exchange, whatever the switch says.

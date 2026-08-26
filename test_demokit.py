@@ -3128,5 +3128,229 @@ _aio56 = (_pl36.Path(__file__).parent / "body" / "audio_io.py").read_text(encodi
 check("the backlog scan feeds the decoder in blocks", "_feed_block()" in _aio56, True)
 
 print()
+print("[57] the robot keeps up: identity, windows, and no scan in the gap")
+import time as _time57
+
+from demokit import base as _b57
+from demokit.base import DemoContext as _DC57, Interrupted as _Int57
+
+# --- sticky conversation identity. Live: the tracker forgets a face 3s after
+# losing it, and history is keyed by person id -- so the robot's own thinking
+# pose split a five-minute startup conversation across two memory buckets and
+# it asked "Ideas for what, exactly?" one turn after discussing exactly that.
+class _Flap57:
+    enabled = True
+    def __init__(self):
+        self.feed = []
+    def current(self, max_age_s=1.5):
+        return self.feed.pop(0) if self.feed else (None, None)
+
+_b57.forget_identity()
+_tr57 = _Flap57()
+_ctx57 = _DC57(audio=FakeAudio(), motion=FakeMotion(), tracker=_tr57,
+               state=RobotState(), demo_id="t57", store={})
+_tr57.feed = [(7, object()), (None, None), (None, None)]
+check("a recognised face is the person", _ctx57.person_id(), 7)
+check("a camera dropout does not change who is talking", _ctx57.person_id(), 7)
+check("  ...however many turns the dropout lasts", _ctx57.person_id(), 7)
+_tr57.feed = [(None, object())]
+check("an unrecognised face IN VIEW is a new visitor", _ctx57.person_id(), 0)
+_tr57.feed = [(None, None)]
+check("  ...and the old identity is dropped, not lurking", _ctx57.person_id(), 0)
+_tr57.feed = [(7, object()), (None, None)]
+_ctx57.person_id()
+_b57.forget_identity()
+check("ending the visit ends the stickiness", _ctx57.person_id(), 0)
+
+# --- turns never move between people. A first version had adopt_strays()
+# folding fresh person-0 turns into a recognised person's empty bucket; review
+# killed it -- recency cannot tell "same conversation, camera blinked" from "a
+# different stranger was just talking", so one visitor's conversation could be
+# handed to another and summarised into their permanent profile at "goodbye".
+# The dropout it healed is prevented upstream by the sticky identity instead.
+from brain import memory as _mem57
+
+_mem57.clear_history(0), _mem57.clear_history(5)
+_mem57.remember_turn(0, "something private a stranger said", "noted")
+check("no machinery exists to move turns between buckets",
+      hasattr(_mem57, "adopt_strays"), False)
+check("a stranger's words never surface in someone else's history",
+      _mem57.get_history(5), [])
+_mem57.clear_history(0)
+
+# --- the cache can never answer mid-conversation: a cached reply is context-
+# blind, and "give me three ideas" twenty turns in must reach the model.
+_iface_src57 = (_pl36.Path(__file__).parent / "brain" / "interface.py").read_text(encoding="utf-8")
+check("the qa cache is gated on an empty history",
+      "if cache and not history else None" in _iface_src57, True)
+check("and nothing in the reply path adopts other buckets' turns",
+      "adopt_strays" in _iface_src57, False)
+
+# --- answer windows sized for people, judged at speech onset. Live: a visitor
+# answered "For my startup." 27 seconds after the question -- 18s past the old
+# window -- and was treated as ambient noise.
+check("the answer window outlasts real thinking time", _b57.ANSWER_WINDOW_S, 30.0)
+check("the follow-up window too", _b57.FOLLOW_UP_WINDOW_S, 20.0)
+_run57 = (_pl36.Path(__file__).parent / "demokit" / "runner.py").read_text(encoding="utf-8")
+check("the window is read before the listen, not after the decode",
+      _run57.index("was_answer_window = (self._state.answer_expected")
+      < _run57.index("heard = self._listen(wait_for_speech_s=min("), True)
+check("the gate reads the caller's onset snapshot, not the decayed live state",
+      _run57.index("was_in_window = answered_question")
+      < _run57.index("self._state.expect_answer(0.0)"), True)
+check("  ...and the open-mic path threads its snapshot through to dispatch",
+      "answered_question=was_answer_window" in _run57, True)
+check("follow-up windows do not relax the gate -- nothing was asked",
+      "was_in_window = self._state.answer_expected or self._state.followup_expected"
+      in _run57, False)
+
+# --- inside the answer window, any syllable counts only during the GRACE:
+# a prompt "yes"/"purple" is floor-free, but twenty seconds later "EH" is the
+# room again -- review showed the flat 30s floor-free window would hold the
+# robot answering stray syllables for half a minute after every question.
+_r57w, _s57w, _a57w, _ = build([Chatty()])
+_s57w.expect_answer(30.0)
+check("a prompt one-word answer needs no floor",
+      _r57w._addressed_to_the_robot("eh"), True)
+_s57w._answer_armed_at = _time57.monotonic() - 15.0
+check("a late stray syllable is the room, not an answer",
+      _r57w._addressed_to_the_robot("eh"), False)
+check("but a late real answer passes on its own words",
+      _r57w._addressed_to_the_robot("for my startup"), True)
+_s57w.expect_answer(0.0)
+
+# --- a wake word from nobody the camera can see, after a real lull, starts a
+# NEW conversation: the sticky identity is dropped rather than handing the
+# newcomer the previous visitor's name, history, and permanent profile.
+_r57n, _s57n, _a57n, _ = build([Chatty()], wake_at=(1,), transcripts=("hello there friend",))
+_b57._STICKY.person_id, _b57._STICKY.seen_at = 7, _time57.monotonic()
+_r57n._last_heard_at = 0.0
+_r57n.cycle()
+check("a cold wake word from off-camera does not inherit an identity",
+      _b57._STICKY.person_id, 0)
+_b57._STICKY.person_id, _b57._STICKY.seen_at = 7, _time57.monotonic()
+_r57n2, _s57n2, _a57n2, _ = build([Chatty()], wake_at=(1,), transcripts=("as I was saying",))
+_r57n2._last_heard_at = _time57.monotonic()
+_r57n2.cycle()
+check("a barge-in mid-conversation keeps the identity -- head turned away is "
+      "the common case", _b57._STICKY.person_id, 7)
+_b57.forget_identity()
+
+# --- the confidence gate relaxes for a direct answer to the robot's own
+# question: the score is the zipformer's opinion of words WHISPER transcribed,
+# and on a three-word answer the two models disagreeing is routine.
+_r57g, _s57g, _a57g, _ = build([Chatty()])
+_ctxg57 = _DC57(audio=FakeAudio(), motion=FakeMotion(), tracker=None,
+                state=_s57g, demo_id="t57", store={})
+_r57g._audio.last_confidence = -4.0
+check("a marginal score answering the robot's own question is answered",
+      _r57g._too_unsure_to_answer(_ctxg57, "for my startup", in_window=True), False)
+check("the same score as ambient speech still asks again",
+      _r57g._too_unsure_to_answer(_ctxg57, "for my startup", in_window=False), True)
+_r57g._audio.last_confidence = -5.0
+check("genuine gibberish is refused even in the window",
+      _r57g._too_unsure_to_answer(_ctxg57, "xxxx", in_window=True), True)
+
+# --- the barge-in scan is off the critical path: it runs WHILE the next chunk
+# plays (aborting it on a hit) instead of standing silent between chunks --
+# the ~0.8-2.5s scan was the floor under every logged mid-reply gap.
+class _ScanAudio57(FakeAudio):
+    hit_on = 0
+    def __init__(self):
+        super().__init__()
+        self.scans = 0
+    def scan_backlog_async(self):
+        self.scans += 1
+        hit = bool(self.hit_on and self.scans >= self.hit_on)
+        class _Scan:
+            done = True
+            def finish(self):
+                return hit
+        return _Scan()
+
+_sa57 = _ScanAudio57()
+_ctxs57 = _DC57(audio=_sa57, motion=FakeMotion(), tracker=None,
+                state=RobotState(), demo_id="t57", store={})
+_ctxs57.reply("hello")
+check("a reply scans the backlog through the concurrent path", _sa57.scans, 1)
+_sa57b = _ScanAudio57()
+_sa57b.hit_on = 1
+_ctxs57b = _DC57(audio=_sa57b, motion=FakeMotion(), tracker=None,
+                 state=RobotState(), demo_id="t57", store={})
+try:
+    _ctxs57b.reply("hello")
+    _hit57 = False
+except _Int57:
+    _hit57 = True
+check("a wake word found by the concurrent scan still interrupts", _hit57, True)
+
+# A hit during a PRODUCER stall must not wait for the next sentence: review
+# confirmed the consumer, blocked on the rendering queue, ignored a barge-in
+# for the whole stall -- the exact silence that reads as the robot having
+# finished. The wait is sliced now, checking the scan each tick.
+import brain.interface as _bi57
+_held_stream57 = _bi57.stream_reply
+def _stalling_stream57(person_id, message, style=None, extra_system=None,
+                       cache=True, web=False):
+    yield "First sentence.", "happy"
+    _time57.sleep(1.2)
+    yield "Late sentence.", "happy"
+_bi57.stream_reply = _stalling_stream57
+_sa57c = _ScanAudio57()
+_sa57c.hit_on = 1
+_ctxs57c = _DC57(audio=_sa57c, motion=FakeMotion(), tracker=None,
+                 state=RobotState(), demo_id="t57", store={})
+_t0_57 = _time57.monotonic()
+try:
+    _ctxs57c.reply("hello")
+    _stall_hit57 = False
+except _Int57:
+    _stall_hit57 = True
+_stall_took57 = _time57.monotonic() - _t0_57
+_bi57.stream_reply = _held_stream57
+check("a barge-in during a producer stall interrupts at once", _stall_hit57, True)
+check("  ...instead of waiting out the stall", _stall_took57 < 0.9, True)
+
+_aio57 = (_pl36.Path(__file__).parent / "body" / "audio_io.py").read_text(encoding="utf-8")
+check("playback can be aborted mid-chunk on a late hit",
+      "_abort_speak.is_set()" in _aio57, True)
+check("one fresh whisper decode may stack over a doomed one",
+      "_STALE_SPECULATION_S" in _aio57 and "early.stacked = doomed" in _aio57, True)
+
+# --- mid-reply chunks are phrase-sized: capped as well as stub-guarded. The
+# uncapped last-break flush cut a measured 230-char monster whose render alone
+# was 4.2s -- the next silent gap by another name.
+_monster57 = ("Vertical AI tools are hot right now for one thing, data "
+              "analytics for small businesses is another good area to explore "
+              "deeply and carefully, and developer tooling that fixes a "
+              "workflow annoyance you have hit yourself while coding every "
+              "single day is a third one worth chasing. ")
+_pieces57 = [w + " " for w in _monster57.split()] + ["[emotion: happy]"]
+_out57, _ = _run_stream(_ScriptedBackend(_pieces57))
+_spoken57 = [t.strip() for t, _tag in _out57 if t.strip()]
+check("no chunk is a render monster",
+      all(len(x) <= 160 for x in _spoken57), True)
+check("no mid-reply chunk is a comma-stub",
+      all(len(x) >= 60 for x in _spoken57[1:-1]) if len(_spoken57) > 2 else True, True)
+check("  'worth chasing' survives", "worth chasing" in " ".join(_spoken57), True)
+
+# The shape review reproduced against a first draft: an early stub ("Well,")
+# inside the cap made the beyond-cap fallback unreachable, and a 299-char
+# sentence rendered as ONE unit -- a silent gap longer than the monster this
+# cap exists to prevent. The stub is skipped AND the deep break still cuts.
+_shape57 = ("Sure thing. Well, the whole point of the hub programme here is "
+            "hands-on practice with the tools people actually use in modern "
+            "business settings every single working day of the week without "
+            "exception anywhere, and the coaching that goes with it makes the "
+            "difference for most of the students. ")
+_pieces57b = [w + " " for w in _shape57.split()] + ["[emotion: happy]"]
+_out57b, _ = _run_stream(_ScriptedBackend(_pieces57b))
+_spoken57b = [t.strip() for t, _tag in _out57b if t.strip()]
+check("an early comma-stub cannot un-bound the unit",
+      all(len(x) <= 240 for x in _spoken57b), True)
+check("  and the sentence still arrives whole",
+      "coaching" in " ".join(_spoken57b) and "students" in " ".join(_spoken57b), True)
+
+print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")
 sys.exit(1 if failures else 0)

@@ -124,6 +124,15 @@ def _base_prompt(web: bool = False) -> str:
     "you, in their words, then stay with it. Three or four sentences are right "
     "there. Ask about their situation rather than dispensing generic advice, "
     "and never hand a struggling person a tidy slogan. "
+    # The third register, learned live: asked "give me some startup ideas",
+    # the robot -- squeezed by the 25-word cap, which three concrete ideas
+    # cannot fit -- answered with questions back, twice, until the visitor
+    # gave up. A request for ideas is a request for ideas.
+    "And when somebody asks you for ideas, options, or suggestions, give two "
+    "or three concrete ones with a short reason each, drawn from what they "
+    "have told you in this conversation -- that outranks the length rule. Ask "
+    "a clarifying question only if even the conversation so far does not tell "
+    "you what the ideas are for. "
     f"{_DELIVERY} "
     f"{_capabilities_text(web)} "
     "Never claim to have done something physical unless it is one of the "

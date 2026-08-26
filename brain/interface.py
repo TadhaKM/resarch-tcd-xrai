@@ -29,11 +29,25 @@ _SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?])\s+")
 #: harder stop) was accepted when this mechanism shipped at 60.
 _FIRST_CLAUSE_CHARS = 38
 
-#: And the same trick mid-reply, at a much higher bar. Only a sentence that has
-#: genuinely run away -- roughly twenty-five words with no end in sight -- is
-#: worth breaking, because every break trades a little naturalness for silence
-#: avoided, and that trade is only good when the silence would be long.
-_LONG_SENTENCE_CHARS = 150
+#: And the same trick mid-reply, at a higher bar. Was 150 -- "only a sentence
+#: that has genuinely run away is worth breaking" -- and the barge-in scan's
+#: measurements said otherwise: piper renders at ~0.3x realtime, so a 150+
+#: char unit costs 2.6-4.2s of render that must finish before its first
+#: sample can play, and the render of a unit that big was most of every
+#: logged mid-reply gap. 100 starts considering a break earlier; the cap and
+#: minimum below keep what is actually cut a real phrase.
+_LONG_SENTENCE_CHARS = 100
+
+#: Mid-reply units are cut at the LAST clause break no deeper than this, so a
+#: unit is never so long that its render outlives the previous unit's
+#: playback...
+_MID_CHUNK_CAP = 140
+
+#: ...and never so short that it is a comma-stub. "That's exciting," followed
+#: by nine seconds of silence was heard live; a break earlier than this is
+#: skipped and the buffer waits for a better one (or the sentence end).
+_MID_CHUNK_MIN = 60
+
 _CLAUSE_BREAK_RE = re.compile(r"(?<=,)\s+|(?<=;)\s+|\s+(?=--\s)")
 
 #: Token budget for a story. The word limit in the storyteller prompt is a
@@ -139,8 +153,16 @@ def stream_reply(
     skipping would leave the cache dead exactly where it earns its keep, while
     ignoring it would answer as the wrong persona.
     """
+    history = memory.get_history(person_id)
+
     if style is None:
-        cached = qa_cache.lookup(message, extra_system) if cache else None
+        # Never serve a cached answer MID-conversation: the cache stores
+        # context-blind replies to first questions, and replaying one over a
+        # live thread answers a question nobody asked. Live: "give me three
+        # ideas" twenty turns into a startup conversation must reach the
+        # model, with the history, every time. Symmetric with the store gate
+        # below, which already refuses to record turns that had history.
+        cached = qa_cache.lookup(message, extra_system) if cache and not history else None
         if cached is not None:
             # A replayed answer has no model latency at all. Labelled rather
             # than left at the default so a study can tell "answered instantly
@@ -165,7 +187,6 @@ def stream_reply(
             memory.remember_turn(person_id, message, cached.text)
             return
 
-    history = memory.get_history(person_id)
     context = long_term_memory.get_context(person_id)
     messages = build_messages(
         context, history, message, style=style, extra_system=extra_system, web=web
@@ -244,8 +265,24 @@ def stream_reply(
                     # because once the buffer passed the floor, each iteration
                     # peeled off exactly one clause however short it was.
                     if spoken_a_sentence:
+                        # ...but "last" is bounded by _MID_CHUNK_CAP: an
+                        # uncapped last-break cut a measured 230-char monster
+                        # whose render alone was 4.2s. A break under
+                        # _MID_CHUNK_MIN is a comma-stub and never chosen. And
+                        # when NOTHING lands between the two -- the "Well,
+                        # <180 break-free chars>, ..." shape review reproduced
+                        # -- the first break past the cap still bounds the
+                        # unit: a first draft made that fallback unreachable
+                        # whenever a stub existed inside the cap, and the
+                        # whole 299-char sentence rendered as one silent gap.
                         breaks = list(_CLAUSE_BREAK_RE.finditer(buffer))
-                        clause = breaks[-1] if breaks else None
+                        usable = [b for b in breaks
+                                  if _MID_CHUNK_MIN <= b.end() <= _MID_CHUNK_CAP]
+                        if usable:
+                            clause = usable[-1]
+                        else:
+                            beyond = [b for b in breaks if b.end() > _MID_CHUNK_CAP]
+                            clause = beyond[0] if beyond else None
                     else:
                         clause = _CLAUSE_BREAK_RE.search(buffer)
                     if clause:
