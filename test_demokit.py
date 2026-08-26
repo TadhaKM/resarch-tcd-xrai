@@ -3408,6 +3408,22 @@ check("'any advice' is a scripted question",
       _sp58.match("do you have any advice").name, "advice")
 check("an unscripted question goes to the model",
       _sp58.match("how do neural networks actually work"), None)
+
+# Whisper's actual renderings from the first live run -- each of these went
+# to the model instead of the script until the mishearing map and the wider
+# slack were added. Every string here is verbatim from the transcript.
+check("'What is the AIXR home?' is the hub question misheard",
+      _sp58.match("What is the AIXR home?").name, "what the hub is")
+check("'Exactly is the AI XR hub.' (clipped 'What') still matches",
+      _sp58.match("Exactly is the AI XR hub.").name, "what the hub is")
+check("'...students exactly do in a home?' still matches",
+      _sp58.match("So what will our master's students exactly do in a "
+                  "home?").name, "what you do here")
+check("the Dean's own polite phrasing of the advice question matches",
+      _sp58.match("Indeed it is any final advice for our new students to "
+                  "achieve.").name, "advice")
+check("but a bare 'what is AI' is a different question -- the model's",
+      _sp58.match("What is the AI?"), None)
 # The guard that keeps this from repeating the welcome-hijack failure: a rich
 # question that merely CONTAINS a cue must reach the model, which can answer
 # all of it. This is the live sentence from that failure.

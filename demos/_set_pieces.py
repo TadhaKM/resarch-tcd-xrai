@@ -30,9 +30,44 @@ from dataclasses import dataclass
 PACE = 1.1
 
 #: How many words an utterance may run past the matched cue and still be "the
-#: same question". Mirrors the runner's fuzzy-trigger allowance and exists for
-#: the same reason.
-_MAX_EXTRA_WORDS = 5
+#: same question". Exists for the same reason as the runner's fuzzy-trigger
+#: allowance. Was 5, raised to 8 after a live run: the natural way people
+#: actually ask these ("Indeed it is -- any final advice for our new
+#: students, Reachy?") runs 11-12 words and was being thrown to the model,
+#: while the multi-part questions this guard protects run past 20.
+_MAX_EXTRA_WORDS = 8
+
+#: What the recogniser reliably mishears these questions as, mapped back --
+#: every entry here was observed in a live transcript before being added.
+#: Applied to the word stream (lowercased, no punctuation), whole words only.
+#: "AI XR Hub" came back as "AIXR home"; "do in the Hub" as "do in a home".
+_HEARD_AS = (
+    ("aixr", "ai xr"),
+    ("a i x r", "ai xr"),
+    ("xr home", "xr hub"),
+    ("xr hall", "xr hub"),
+    ("xr hump", "xr hub"),
+    ("xr hob", "xr hub"),
+    ("do in a home", "do in the hub"),
+    ("do in the home", "do in the hub"),
+    ("do in a hall", "do in the hub"),
+    ("do in the hall", "do in the hub"),
+    ("do in a hub", "do in the hub"),
+)
+
+
+def normalise(words: str) -> str:
+    """Map known mishearings back to what was asked. Word-stream in and out.
+
+    The stream stays SPACE-PADDED on both ends -- contains_phrase matches
+    " phrase " against it, so stripping the padding silently breaks every
+    match that touches the first or last word. That was shipped for about an
+    hour once; the whole-suite run caught it.
+    """
+    padded = f" {words.strip()} "
+    for heard, meant in _HEARD_AS:
+        padded = padded.replace(f" {heard} ", f" {meant} ")
+    return padded
 
 
 @dataclass(frozen=True)
@@ -68,9 +103,13 @@ BLOCKS: tuple[SetPiece, ...] = (
         # "what is this place" is deliberately absent: it contains the Look
         # demo's "what is this" trigger verbatim, and the trigger table runs
         # before this module ever sees the words (found by the cue audit).
+        # The "exactly is" and bare "the ai xr" forms are from live Whisper
+        # transcripts that clipped the first word or the last.
         ask_cues=("what is the ai xr hub", "what is the xr hub", "what is the hub",
                   "whats the ai xr hub", "whats the hub", "what is the ai hub",
-                  "tell me about the hub"),
+                  "tell me about the hub", "what is the ai xr", "whats the ai xr",
+                  "exactly is the ai xr hub", "exactly is the hub",
+                  "explain the ai xr hub", "explain the hub"),
         lines=(
             ("Well, you might expect a robot to talk about technology, but "
              "that's not really what we're about.", "curious"),
@@ -105,10 +144,13 @@ BLOCKS: tuple[SetPiece, ...] = (
         stage_cues=("actually do", "do in the hub", "what will our msc"),
         # "what do you do in the hub" is deliberately absent: it fuzzy-matches
         # the Look demo's "what do you see" in the trigger table, which runs
-        # first (found by the cue audit).
+        # first (found by the cue audit). "students exactly do" is Whisper's
+        # rendering of "students actually do", live.
         ask_cues=("what do students do", "what will students do",
                   "what can i do in the hub", "what can we do in the hub",
-                  "what happens in the hub", "what do people do in the hub"),
+                  "what happens in the hub", "what do people do in the hub",
+                  "students do in the hub", "students actually do",
+                  "students exactly do", "masters students do"),
         lines=(
             ("You'll get hands-on experience with immersive technology.", "happy"),
             ("You'll put on a VR headset and practise real-world situations, "
@@ -130,7 +172,8 @@ BLOCKS: tuple[SetPiece, ...] = (
         name="advice",
         stage_cues=("final advice", "any advice", "advice for our new students"),
         ask_cues=("any advice", "final advice", "advice for new students",
-                  "advice for students", "what is your advice"),
+                  "advice for students", "advice for our new students",
+                  "what is your advice"),
         lines=(
             ("Yes.", "neutral"),
             ("Be curious.", "happy"),
@@ -159,7 +202,7 @@ def match(text: str):
     """
     from demokit.runner import _word_stream, contains_phrase
 
-    words = _word_stream(text)
+    words = normalise(_word_stream(text))
     total = len(words.split())
     for piece in BLOCKS:
         for cue in piece.ask_cues:

@@ -97,8 +97,11 @@ class DeansOffice(Demo):
 
     def on_utterance(self, ctx: DemoContext, text: str) -> bool:
         from demokit.runner import _word_stream, contains_phrase
+        from demos._set_pieces import normalise
 
-        words = _word_stream(text)
+        # The same mishearing map the conversation fast-path uses: on stage,
+        # "the AI XR Hub" arriving as "the AIXR home" must still cue.
+        words = normalise(_word_stream(text))
         spoken: set = ctx.store.setdefault("spoken", set())
         try:
             if any(contains_phrase(words, p) for p in _RESTART):
