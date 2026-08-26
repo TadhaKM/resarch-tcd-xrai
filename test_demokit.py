@@ -2434,7 +2434,12 @@ def _attract(dwell, quiet_for=999.0, known_name=None):
         ctx.person_name = lambda: None
     # cycle() calls attract itself, so the latch may already be set from that
     # pass. Cleared here so the measured call below starts from a known state.
+    # The five-minute floor between offers is part of that state: cycle() may
+    # have spent this runner's offer a moment ago, and the measured call is
+    # asking "would it offer to a fresh arrival", not "does the floor work" --
+    # which is section [60]'s job.
     runner._attracted = False
+    runner._attracted_at = float("-inf")
     said_before = len(aud.said)
     offered = runner._attract_if_lingering(ctx)
     return offered, aud.said[said_before:], runner
@@ -2451,11 +2456,23 @@ check("and is told how to start", any("hey reachy" in x.lower() for x in _said),
 _off2 = _r._attract_if_lingering(_r._ctx)
 check("but never twice while they stand there", _off2, False)
 
-# They leave; the latch clears, so the NEXT person gets their own invitation.
+# They leave and somebody else arrives moments later. This USED to be invited
+# again, and that is what made the robot nag: the tracker loses a face
+# constantly -- a turned head, somebody crossing in front -- so "they left and
+# a new person arrived" was usually the same person, and the invitation came
+# round about every twenty-four seconds. A five-minute floor now outranks the
+# latch. The cost is real and accepted: a genuinely new visitor arriving inside
+# those five minutes is not invited out loud, which is much the smaller of the
+# two mistakes available.
 _r._tracker.dwell = 0.0
 _r._attract_if_lingering(_r._ctx)
 _r._tracker.dwell = 6.0
-check("the next arrival is invited again", _r._attract_if_lingering(_r._ctx), True)
+check("an arrival inside the floor is NOT invited again",
+      _r._attract_if_lingering(_r._ctx), False)
+_r._attracted_at = _t.monotonic() - _rm40._ATTRACT_COOLDOWN_S - 1
+_r._attracted = False
+check("once the floor passes, the next arrival is invited",
+      _r._attract_if_lingering(_r._ctx), True)
 
 _off, _said, _ = _attract(dwell=6.0, known_name="Tadhg")
 check("somebody it knows gets the greeting instead, not this", _off, False)
@@ -3658,6 +3675,74 @@ check("the model is briefed with taught answers, like courses",
 _srv59 = (_pl36.Path(__file__).parent / "web" / "server.py").read_text(encoding="utf-8")
 check("AI suggestions are stored switched OFF",
       "'suggested', 0" in _srv59, True)
+
+print()
+print("[60] the robot invites people in, it does not nag them")
+import demokit.runner as _rn60
+
+class _Dwell60:
+    """A tracker whose face comes and goes, the way a real one does."""
+    enabled = True
+    def __init__(self):
+        self.dwell = 0.0
+    def present_for(self):
+        return self.dwell
+    def current(self, max_age_s=1.5):
+        return (None, object()) if self.dwell > 0 else (None, None)
+
+_tr60 = _Dwell60()
+_r60, _s60, _a60, _ = build([Chatty()])
+_r60._tracker = _tr60
+_ctx60 = _DC57(audio=_a60, motion=_r60._motion, tracker=_tr60,
+               state=_s60, demo_id="t60", store={})
+
+def _offer60():
+    """One attract check, with the room quiet long enough to qualify."""
+    _r60._last_heard_at = _time57.monotonic() - 999
+    return _r60._attract_if_lingering(_ctx60)
+
+_tr60.dwell = 5.0
+check("somebody standing there is invited", _offer60(), True)
+check("  ...and the line is the invitation", _a60.said[-1],
+      "Hello -- say Hey Reachy, and ask me something.")
+_said60 = len(_a60.said)
+check("standing there longer does not repeat it", _offer60(), False)
+
+# The failure this exists for: the tracker loses the face for a moment -- a
+# turned head, somebody crossing in front -- which clears the per-arrival
+# latch. Live, that produced the invitation about every 24 seconds.
+_tr60.dwell = 0.0
+_offer60()
+_tr60.dwell = 5.0
+check("a camera flicker does NOT let it invite again", _offer60(), False)
+check("  ...so nothing more was said", len(_a60.said), _said60)
+
+# After the floor passes, a person still standing there is invited again.
+_r60._attracted_at = _time57.monotonic() - _rn60._ATTRACT_COOLDOWN_S - 1
+_tr60.dwell = 0.0
+_offer60()
+_tr60.dwell = 5.0
+check("five minutes later it may invite again", _offer60(), True)
+check("the floor is five minutes", _rn60._ATTRACT_COOLDOWN_S, 300.0)
+
+# A robot that has just started has never offered, and must not be counted as
+# having offered "at time zero" -- the clock counts from boot, so on a freshly
+# started laptop that reads as five minutes ago and the robot opens mute.
+_r60b, _s60b, _a60b, _ = build([Chatty()])
+_r60b._tracker = _tr60
+_ctx60b = _DC57(audio=_a60b, motion=_r60b._motion, tracker=_tr60,
+                state=_s60b, demo_id="t60b", store={})
+_r60b._last_heard_at = _time57.monotonic() - 999
+_tr60.dwell = 5.0
+check("a robot that just started still invites the first person",
+      _r60b._attract_if_lingering(_ctx60b), True)
+
+# And it still never talks over somebody mid-conversation.
+_r60._attracted_at = float("-inf")
+_r60._attracted = False
+_r60._last_heard_at = _time57.monotonic()
+check("it never offers over a conversation",
+      _r60._attract_if_lingering(_ctx60), False)
 
 print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")

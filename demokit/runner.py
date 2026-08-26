@@ -104,6 +104,17 @@ _ATTRACT_AFTER_S = 4.0
 #: who have not realised they can talk to it, never for people mid-conversation.
 _ATTRACT_QUIET_S = 20.0
 
+#: A hard floor between two offers, whatever the camera thinks it is seeing.
+#: The per-arrival latch below is not enough on its own: it clears the moment
+#: the tracker loses the face, and the tracker loses faces constantly -- a
+#: turned head, someone crossing in front, a person at the edge of the frame.
+#: Live, that let the robot say "Hello -- say Hey Reachy" about every
+#: twenty-four seconds to a room that had not asked it anything, which is the
+#: exact nagging the latch exists to prevent. Five minutes, and deliberately
+#: NOT reset by a conversation: somebody who has just talked to it plainly
+#: knows they can, and missing one offer costs far less than repeating one.
+_ATTRACT_COOLDOWN_S = 300.0
+
 #: What an utterance must clear to count as addressed to the robot when the
 #: operator's open-mic switch is on and no demo is waiting for an answer.
 #: Measured against what actually went wrong: "EH" and "OH" were answered as
@@ -283,6 +294,13 @@ class DemoRunner:
         #: Whether the person currently standing there has already been invited
         #: to speak. Cleared when they leave -- see _attract_if_lingering.
         self._attracted = False
+        #: When the robot last offered out loud. The hard floor between offers
+        #: (see _ATTRACT_COOLDOWN_S), independent of what the camera does.
+        #: NEGATIVE INFINITY, not 0.0: the clock this is measured on counts from
+        #: when the machine booted, so zero means "five minutes ago" on a laptop
+        #: that has just started -- which is exactly when the robot starts, and
+        #: it would have opened every day mute. Caught by section [40].
+        self._attracted_at = float("-inf")
         #: When somebody last said something, so the robot never offers over a
         #: conversation that is already happening.
         self._last_heard_at = 0.0
@@ -436,8 +454,16 @@ class DemoRunner:
             # re-check them every slice.
             self._attracted = True
             return False
+        # The floor, checked last so the latch above still behaves exactly as
+        # it did: whoever is standing here is a fresh arrival as far as the
+        # camera is concerned, and the only thing stopping the offer is that
+        # the robot said it recently. Not latched -- once the cooldown passes,
+        # a person still standing there is offered to.
+        if time.monotonic() - self._attracted_at < _ATTRACT_COOLDOWN_S:
+            return False
 
         self._attracted = True
+        self._attracted_at = time.monotonic()
         logger.info("Someone has been standing there %.0fs -- offering.", dwell)
         # Perk up first: the movement is what makes a person look, and a line
         # spoken by a motionless robot reads as a recording.
