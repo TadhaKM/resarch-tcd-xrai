@@ -3,6 +3,10 @@
 For whoever is standing next to the robot with visitors. No technical
 knowledge needed, and nothing here requires touching code.
 
+> **Also available as a web page:** `docs/handbook.html` is the same material laid
+> out for reading on a phone mid-visit, plus first-time setup and a searchable
+> list of every dashboard control. Open it in a browser, or publish it for staff.
+
 If something goes wrong, the fix is almost always: close the black window, and
 double-click **Start Reachy** on the desktop.
 
@@ -554,8 +558,9 @@ robot. Only light-or-dark is per device.
 Worth knowing so you're not caught out:
 
 - **It can't move around** — no wheels, no legs, no arms. Only its head and antennas.
-- **It can't play music or sounds.**
-- **It can't read or look at anything you show it.** It sees faces, not objects or text.
+- **It can't play music.** It has six short sound effects of its own and nothing else.
+- **It can only look at something when asked** — say *"what is this?"* and hold the
+  object up. It does not watch what you are holding, and it is not reading the room.
 - **It doesn't know today's date or the news** unless web search is switched on.
 - **It won't guess about the Hub.** Asked something it doesn't know — which
   headsets are in the room, for instance — it says so and suggests asking a
