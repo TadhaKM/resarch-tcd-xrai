@@ -734,6 +734,43 @@
         start and stop at any time, including while a visit is running.
       </p>
 
+      <h3>Taking it somewhere else: the laptop hotspot</h3>
+      <p>
+        For a venue with no usable WiFi &mdash; or when the venue's network is
+        misbehaving &mdash; the reliable setup is to make the laptop the network.
+        The robot already remembers the laptop's hotspot
+        (<span class="k">TCD-BTBGVL4 3666</span>), so this is one switch:
+      </p>
+      <ol class="steps">
+        <li>
+          <strong>Turn the hotspot on.</strong> Windows Settings &rarr;
+          <span class="k">Network &amp; internet</span> &rarr;
+          <span class="k">Mobile hotspot</span> &rarr; toggle it on. The name and
+          password are shown on that same page. Do not rename it &mdash; the robot
+          knows it by exactly this name.
+        </li>
+        <li>
+          <strong>Wait for the robot to join.</strong> It joins by itself within
+          about a minute. Power the robot off and on to hurry it.
+        </li>
+        <li>
+          <strong>Double-click <span class="k">Start Reachy</span>.</strong> It
+          finds the robot at its new address on its own.
+        </li>
+        <li>
+          <strong>Phone dashboard too?</strong> Join the phone to the same
+          hotspot and use the address the black window prints.
+        </li>
+      </ol>
+      <p>
+        To come back: hotspot off, robot returns to
+        <span class="k">TCD_IoT</span> by itself, run
+        <span class="k">Start Reachy</span> once more. One caution from a hard
+        lesson: do not leave the robot remembering networks it does not need
+        &mdash; a remembered phone hotspot walking around in someone's pocket
+        caused random multi-minute dropouts until it was forgotten.
+      </p>
+
       <h3>Using it from your phone</h3>
       <p>
         Put the phone on the same WiFi as the laptop, then type the address the
