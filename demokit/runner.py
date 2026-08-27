@@ -364,10 +364,12 @@ class DemoRunner:
         # Wake-word-free listening happens for either of two reasons: the
         # operator's open-mic switch, or the robot's own last reply having
         # ended in a question (state.answer_expected) -- asking "want to hear
-        # more?" and then demanding a wake word before the yes is a trap.
+        # more?" and then demanding a wake word before the yes is a trap. A
+        # reply that ended on a STATEMENT opens nothing: the wake word is
+        # needed again, which is what keeps the robot out of the room's talk.
         if not self._state.sleeping and (
                 (self._state.open_mic and time.monotonic() < self._open_until)
-                or self._state.answer_expected or self._state.followup_expected):
+                or self._state.answer_expected):
             if self._open_mic_turn(demo, ctx, listen_for=result.listen_for):
                 if self._state.open_mic:
                     self._open_until = time.monotonic() + _OPEN_MIC_WINDOW_S
@@ -763,7 +765,6 @@ class DemoRunner:
             self._state.answer_expected
             and self._state.answer_window_age <= _ANSWER_GRACE_S)
         self._state.expect_answer(0.0)
-        self._state.invite_followup(0.0)
 
         # Counted here, at the one place every utterance passes through --
         # wake-word turns and open-mic follow-ups alike. Aggregate only: what

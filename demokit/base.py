@@ -61,11 +61,6 @@ _GAP_WARN_S = 1.0
 #: bounded to one stray remark after a question genuinely nobody answers.
 ANSWER_WINDOW_S = 30.0
 
-#: The wake-free window after a reply that did NOT ask anything. The ambient
-#: word-count floor still applies here (nothing was asked, so a stray syllable
-#: is the room), which is what makes the longer window cheap.
-FOLLOW_UP_WINDOW_S = 20.0
-
 MAX_LISTEN_WINDOW_S = 3.0
 
 #: Slice length for ctx.sleep, so a long pause still notices a mode change.
@@ -530,10 +525,11 @@ class DemoContext:
                 except queue.Empty:
                     break
             raise
+        # Only a script that ASKED something opens the wake-free window; a
+        # script that ended on a statement is finished, and the visitor says
+        # "Hey Reachy" to begin again. See the reply() tail for the full rule.
         if last_line.rstrip().endswith("?"):
             self.state.expect_answer(ANSWER_WINDOW_S)
-        else:
-            self.state.invite_followup(FOLLOW_UP_WINDOW_S)
 
     def reply(
         self,
@@ -789,14 +785,17 @@ class DemoContext:
         # demo that called reply() has no idea the model chose to end on a
         # question. Noise discrimination stays where it already lives: the
         # runner's confidence gate still applies to whatever arrives.
+        # Wake-free listening happens for exactly one reason now: the robot
+        # ASKED something. A reply that ends on a statement is a complete
+        # answer, and the visitor says "Hey Reachy" to ask the next thing --
+        # which is what keeps the robot out of a room's ambient talk after
+        # every statement it makes. There used to be a second, softer window
+        # after non-question replies; it was removed on request, because a
+        # robot that keeps listening after a plain answer is exactly what
+        # reads as it butting in. The operator's Open Mic switch is the way
+        # back to a continuous back-and-forth when that is deliberately wanted.
         if spoken and spoken[-1].rstrip().endswith("?"):
             self.state.expect_answer(ANSWER_WINDOW_S)
-        elif spoken:
-            # Every OTHER reply opens a follow-up window: wake-word-free, but
-            # with the ambient floor still applied -- nothing was asked, so a
-            # stray syllable is the room. Before this, follow-ups needed "hey
-            # Reachy" at exactly the moment people think of them.
-            self.state.invite_followup(FOLLOW_UP_WINDOW_S)
 
         self.state.set_flags(thinking=False)
         self.motion.express_move(final_tag)

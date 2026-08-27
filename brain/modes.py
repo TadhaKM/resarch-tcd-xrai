@@ -86,7 +86,6 @@ class RobotState:
         #: a prompt short answer (floor-free grace) from a late one, where the
         #: ambient floor comes back -- see runner._ANSWER_GRACE_S.
         self._answer_armed_at = 0.0
-        self._followup_until = 0.0
         #: Which answering style the personality demo should use next. Held in
         #: the core rather than in the demo's own store so the dashboard can
         #: set it directly -- picking one from a list is what an operator wants
@@ -345,24 +344,6 @@ class RobotState:
             self._answer_until = time.monotonic() + max(0.0, seconds)
             if seconds > 0:
                 self._answer_armed_at = time.monotonic()
-
-    def invite_followup(self, seconds: float) -> None:
-        """A reply just finished; give the room a moment to follow up freely.
-
-        The gap this closes: after any reply NOT ending in a question, a
-        visitor got a zero-second wake-free window -- the wake word was
-        re-required at exactly the moment people formulate follow-ups.
-        Different from expect_answer in one deliberate way: the ambient
-        word-count floor still applies here, because nothing was asked and a
-        stray syllable is the room, not an answer.
-        """
-        with self._lock:
-            self._followup_until = time.monotonic() + max(0.0, seconds)
-
-    @property
-    def followup_expected(self) -> bool:
-        with self._lock:
-            return time.monotonic() < self._followup_until
 
     @property
     def answer_expected(self) -> bool:

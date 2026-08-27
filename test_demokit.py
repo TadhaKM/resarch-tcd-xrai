@@ -3010,22 +3010,27 @@ try:
 finally:
     _ltm53.generate_response = _held53
 
-# A reply that does NOT ask still opens a wake-free follow-up window (with the
-# ambient floor kept -- nothing was asked, so a stray syllable is the room).
+# The wake-free window opens ONLY after the robot asked a question. A reply
+# that ended on a statement opens nothing -- the visitor says "Hey Reachy" to
+# ask the next thing, which is what keeps the robot out of a room's ambient
+# talk after every plain answer. The follow-up window that used to soften
+# that was removed on request; the whole concept is gone from the state.
 from brain.modes import RobotState as _RS53
 
 _st53 = _RS53()
-_st53.invite_followup(5.0)
-check("a follow-up window opens", _st53.followup_expected, True)
-_st53.invite_followup(0.0)
-check("and closes", _st53.followup_expected, False)
+check("there is no follow-up window mechanism at all",
+      hasattr(_st53, "invite_followup") or hasattr(_st53, "followup_expected"), False)
+check("but the answer window still opens on a question", (
+      _st53.expect_answer(5.0) or _st53.answer_expected), True)
 _base53 = (_pl36.Path(__file__).parent / "demokit" / "base.py").read_text(encoding="utf-8")
-check("every non-question reply invites one",
-      "invite_followup(FOLLOW_UP_WINDOW_S)" in _base53, True)
+check("no reply path arms a follow-up window",
+      "invite_followup" in _base53, False)
+check("and the wake-free window is armed only on a question",
+      _base53.count("expect_answer(ANSWER_WINDOW_S)") >= 2
+      and "invite_followup" not in _base53, True)
 _run53 = (_pl36.Path(__file__).parent / "demokit" / "runner.py").read_text(encoding="utf-8")
-check("the runner listens through it", "followup_expected" in _run53, True)
-check("without bypassing the ambient floor",
-      "followup_expected" in _run53.split("def _addressed_to_the_robot")[1].split("def ")[0], False)
+check("the runner no longer listens through a follow-up window",
+      "followup_expected" in _run53, False)
 
 print()
 print("[54] a person talking is not a command being mangled")
@@ -3255,7 +3260,8 @@ check("and nothing in the reply path adopts other buckets' turns",
 # answered "For my startup." 27 seconds after the question -- 18s past the old
 # window -- and was treated as ambient noise.
 check("the answer window outlasts real thinking time", _b57.ANSWER_WINDOW_S, 30.0)
-check("the follow-up window too", _b57.FOLLOW_UP_WINDOW_S, 20.0)
+check("the follow-up window concept is gone",
+      hasattr(_b57, "FOLLOW_UP_WINDOW_S"), False)
 _run57 = (_pl36.Path(__file__).parent / "demokit" / "runner.py").read_text(encoding="utf-8")
 check("the window is read before the listen, not after the decode",
       _run57.index("was_answer_window = (self._state.answer_expected")
@@ -3532,8 +3538,8 @@ check("an unscripted question is declined for the model",
 
 # Delivery is the pipelined script path: lines flow, a script not ending on a
 # question invites a follow-up, and a wake word mid-script still interrupts.
-check("a finished block leaves the follow-up window open",
-      _ctx58.state.followup_expected, True)
+check("a statement-ending block opens NO wake-free window",
+      _ctx58.state.answer_expected, False)
 _ia58 = FakeAudio(interrupt_after={0})
 _ctxi58 = _DC57(audio=_ia58, motion=FakeMotion(), tracker=None,
                 state=RobotState(), demo_id="t58", store={})

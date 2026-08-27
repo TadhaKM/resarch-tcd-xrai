@@ -1,0 +1,2 @@
+15:30:25 INFO web.server: Dashboard on http://0.0.0.0:8080 (and this machine's LAN address)
+15:30:27 WARNING body.voice_loop: Could not read daemon status (HTTPConnectionPool(host='192.168.137.142', port=8888): Max retries exceeded with url: /api/daemon/status (Caused by NewConnectionError("HTTPConnection(host='192.168.137.142', port=8888): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it"))); connecting anyway.
