@@ -284,10 +284,15 @@ class ModelConfig:
     # silently local.
     llm_backend: str = "auto"
 
-    #: Sonnet over Opus deliberately: a spoken turn is judged on latency as much
-    #: as on wording, and the whole laptop-as-brain design exists to get replies
-    #: from ~12s down to ~2s. Same reasoning for the smaller OpenAI model.
-    anthropic_model: str = "claude-sonnet-5"
+    #: Haiku over Sonnet, one more step down the same slope Sonnet-over-Opus
+    #: was: a spoken turn is judged on latency as much as on wording, and the
+    #: whole laptop-as-brain design exists to get replies from ~12s down to
+    #: ~2s. Sonnet's first token was measuring 2-4.5s live; Haiku roughly
+    #: halves that, at some cost in nuance -- a trade being judged by ear at
+    #: the Hub. TO GO BACK: "claude-sonnet-5" here and restart. Note the Hub
+    #: script and taught answers never touch the model either way; this only
+    #: changes the improvised replies.
+    anthropic_model: str = "claude-haiku-4-5"
     anthropic_key_env: str = "ANTHROPIC_API_KEY"
     openai_model: str = "gpt-4o-mini"
     openai_key_env: str = "OPENAI_API_KEY"
