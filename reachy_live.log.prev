@@ -1,3 +1,1397 @@
-11:29:20 INFO web.server: Dashboard on http://0.0.0.0:8080 (and this machine's LAN address)
-11:29:25 WARNING body.voice_loop: Could not read daemon status (HTTPConnectionPool(host='192.168.137.142', port=8000): Max retries exceeded with url: /api/daemon/status (Caused by ConnectTimeoutError(<HTTPConnection(host='192.168.137.142', port=8000) at 0x1fa4a44f620>, 'Connection to 192.168.137.142 timed out. (connect timeout=5)'))); connecting anyway.
-11:29:28 INFO brain.llm_backends: LLM: claude-haiku-4-5 (anthropic), falling back to qwen2.5:1.5b-instruct-q4_K_M
+11:29:45 INFO web.server: Dashboard on http://0.0.0.0:8080 (and this machine's LAN address)
+11:29:49 ERROR reachy_mini.media.audio_control_utils: No Reachy Mini Audio USB device found!
+11:30:02 INFO brain.llm_backends: LLM: claude-haiku-4-5 (anthropic), falling back to qwen2.5:1.5b-instruct-q4_K_M
+11:30:02 INFO body.audio_io: Transcription: Whisper
+11:30:06 INFO body.face_tracker: Face tracking started (8 Hz).
+11:30:06 INFO demokit.registry: Loaded 17 demo(s): about, advisor, brainstorm, conversation, dance, deans_office, greetings, idle, look, personality, preflight, quiz, story, study, timers, vision, welcome
+11:30:06 INFO demos._stored: Loaded 2 feature(s) written from the dashboard.
+11:30:11 INFO body.audio_io: Voice set to en_US-ryan-medium
+11:30:11 INFO body.voice_loop: Restored the chosen voice: en_US-ryan-medium
+11:30:11 INFO body.motion: Waking up.
+11:30:11 INFO body.voice_loop: Ready. Say a wake phrase to talk.
+11:30:11 INFO demokit.runner: Demo: AI Conversation
+11:30:11 INFO httpx: HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+11:30:11 INFO body.face_tracker: Face tracking: 1 frame(s), 1 with a face, 0 camera miss(es).
+11:30:14 INFO body.motion: Awake.
+11:30:14 INFO body.audio_io: No wake word in backlog (608 chunk(s), peak 1.000).
+11:30:14 INFO body.audio_io: Flushed 5 stale mic chunk(s).
+11:30:14 INFO body.audio_io: mic level: peak=0.077 clip=0.00% (gain=120.0x auto)
+11:30:16 INFO body.face_tracker: Face tracking: 23 frame(s), 13 with a face, 0 camera miss(es).
+11:30:17 INFO demokit.runner: Someone has been standing there 6s -- offering.
+11:30:20 INFO body.audio_io: Flushed 130 stale mic chunk(s).
+11:30:20 INFO body.audio_io: mic level: peak=1.000 clip=0.06% (gain=4.0x auto)
+11:30:22 INFO body.face_tracker: Face tracking: 16 frame(s), 16 with a face, 0 camera miss(es).
+11:30:23 INFO body.audio_io: mic level: peak=1.000 clip=0.42% (gain=4.0x auto)
+11:30:23 INFO body.doa: Learned where the microphone's zero points: 114 degrees off the camera's centre, from 12 samples (spread 0.18 rad). The head can now turn toward a voice it cannot see.
+11:30:26 INFO body.audio_io: mic level: peak=1.000 clip=1.45% (gain=4.0x auto)
+11:30:27 INFO body.face_tracker: Face tracking: 23 frame(s), 23 with a face, 0 camera miss(es).
+11:30:29 INFO body.audio_io: mic level: peak=1.000 clip=0.75% (gain=4.0x auto)
+11:30:32 INFO demokit.runner: Recognised Tadhagath.
+11:30:32 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:30:34 INFO body.audio_io: Flushed 99 stale mic chunk(s).
+11:30:34 INFO body.audio_io: mic level: peak=1.000 clip=3.31% (gain=4.0x auto)
+11:30:37 INFO body.audio_io: mic level: peak=1.000 clip=1.03% (gain=4.0x auto)
+11:30:37 INFO body.face_tracker: Face tracking: 22 frame(s), 22 with a face, 0 camera miss(es).
+11:30:40 INFO body.audio_io: mic level: peak=1.000 clip=0.73% (gain=4.0x auto)
+11:30:42 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:30:43 INFO body.audio_io: mic level: peak=1.000 clip=2.30% (gain=4.0x auto)
+11:30:46 INFO body.audio_io: mic level: peak=1.000 clip=0.40% (gain=4.0x auto)
+11:30:47 INFO body.face_tracker: Face tracking: 26 frame(s), 26 with a face, 0 camera miss(es).
+11:30:49 INFO body.audio_io: mic level: peak=1.000 clip=1.45% (gain=4.0x auto)
+11:30:52 INFO body.audio_io: mic level: peak=1.000 clip=0.67% (gain=4.6x auto)
+11:30:52 INFO body.face_tracker: Face tracking: 22 frame(s), 22 with a face, 0 camera miss(es).
+11:30:55 INFO body.audio_io: mic level: peak=1.000 clip=0.64% (gain=4.0x auto)
+11:30:57 INFO body.face_tracker: Face tracking: 24 frame(s), 24 with a face, 0 camera miss(es).
+11:30:58 INFO body.audio_io: mic level: peak=1.000 clip=3.94% (gain=4.0x auto)
+11:31:01 INFO body.audio_io: mic level: peak=1.000 clip=1.25% (gain=4.0x auto)
+11:31:02 INFO body.face_tracker: Face tracking: 23 frame(s), 23 with a face, 0 camera miss(es).
+11:31:04 INFO body.audio_io: Wake word matched: 'HEY REACHIE'
+11:31:04 INFO body.audio_io: mic level: peak=1.000 clip=2.29% (gain=4.0x auto)
+11:31:06 INFO body.audio_io:   [  2.1s] hearing: WHY
+11:31:06 INFO body.audio_io:   [  2.2s] hearing: WHY DO YOU THINK
+11:31:07 INFO body.audio_io:   [  2.6s] hearing: WHY DO YOU THINK THE HOVE
+11:31:07 INFO body.audio_io:   [  2.9s] hearing: WHY DO YOU THINK THE HOVE HIS IMP
+11:31:07 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=1.9x auto)
+11:31:07 INFO body.audio_io:   [  3.1s] hearing: WHY DO YOU THINK THE HOVE HIS IMPORTANT
+11:31:07 INFO body.face_tracker: Face tracking: 24 frame(s), 24 with a face, 2 camera miss(es).
+11:31:09 INFO body.audio_io:   whisper (during silence): Why do you think the hub is important?
+11:31:09 INFO demokit.runner: transcript confidence -0.82 (answering)
+11:31:10 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:31:10 INFO brain.llm_backends: anthropic first token in 0.98s (cache read 0, wrote 0, fresh 1909)
+11:31:10 INFO brain.interface: first words in 1.17s (anthropic, clause)
+11:31:12 INFO body.face_tracker: Face tracking: 23 frame(s), 23 with a face, 0 camera miss(es).
+11:31:16 INFO body.audio_io: No wake word in backlog (380 chunk(s), peak 0.487).
+11:31:17 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:31:22 INFO body.face_tracker: Face tracking: 27 frame(s), 27 with a face, 0 camera miss(es).
+11:31:27 INFO body.face_tracker: Face tracking: 27 frame(s), 27 with a face, 0 camera miss(es).
+11:31:32 WARNING demokit.runner: conversation.on_utterance took 22.9s; hooks should return quickly so the robot stays switchable
+11:31:32 INFO body.audio_io: Flushed 25 stale mic chunk(s).
+11:31:32 INFO body.audio_io: mic level: peak=0.031 clip=0.00% (gain=6.5x auto)
+11:31:33 INFO body.face_tracker: Face tracking: 27 frame(s), 27 with a face, 0 camera miss(es).
+11:31:35 INFO body.audio_io: mic level: peak=0.422 clip=0.00% (gain=58.9x auto)
+11:31:38 INFO body.face_tracker: Face tracking: 24 frame(s), 24 with a face, 0 camera miss(es).
+11:31:38 INFO body.audio_io: mic level: peak=1.000 clip=0.55% (gain=4.0x auto)
+11:31:41 INFO body.audio_io: mic level: peak=1.000 clip=1.14% (gain=4.0x auto)
+11:31:43 INFO body.face_tracker: Face tracking: 23 frame(s), 22 with a face, 0 camera miss(es).
+11:31:44 INFO body.audio_io: mic level: peak=1.000 clip=0.48% (gain=4.0x auto)
+11:31:47 INFO body.audio_io: mic level: peak=1.000 clip=0.29% (gain=4.0x auto)
+11:31:48 INFO body.face_tracker: Face tracking: 23 frame(s), 20 with a face, 0 camera miss(es).
+11:31:50 INFO body.audio_io: mic level: peak=1.000 clip=0.72% (gain=6.9x auto)
+11:31:53 INFO body.face_tracker: Face tracking: 18 frame(s), 18 with a face, 0 camera miss(es).
+11:31:53 INFO body.audio_io: mic level: peak=1.000 clip=1.36% (gain=4.0x auto)
+11:31:56 INFO body.audio_io: mic level: peak=1.000 clip=2.54% (gain=4.0x auto)
+11:31:58 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:31:59 INFO body.audio_io: mic level: peak=1.000 clip=3.21% (gain=5.1x auto)
+11:32:01 INFO body.audio_io: Wake word matched: 'HEY RICHY'
+11:32:02 INFO body.audio_io: mic level: peak=1.000 clip=2.20% (gain=3.8x auto)
+11:32:03 INFO body.audio_io:   [  1.3s] hearing: HELP
+11:32:03 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:32:03 INFO body.audio_io:   [  1.6s] hearing: HELP YOU
+11:32:07 INFO body.audio_io:   whisper (after endpoint, 1.80s): Yeah
+11:32:07 INFO demokit.runner: transcript confidence -1.69 (answering)
+11:32:08 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:32:08 INFO brain.llm_backends: anthropic first token in 0.61s (cache read 0, wrote 0, fresh 2444)
+11:32:08 INFO brain.interface: first words in 0.94s (anthropic)
+11:32:08 INFO body.face_tracker: Face tracking: 18 frame(s), 18 with a face, 0 camera miss(es).
+11:32:13 INFO body.face_tracker: Face tracking: 17 frame(s), 14 with a face, 0 camera miss(es).
+11:32:14 INFO body.audio_io: No wake word in backlog (455 chunk(s), peak 0.413).
+11:32:16 WARNING demokit.runner: conversation.on_utterance took 8.5s; hooks should return quickly so the robot stays switchable
+11:32:16 INFO body.audio_io: Flushed 27 stale mic chunk(s).
+11:32:16 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=3.9x auto)
+11:32:18 INFO body.audio_io:   [  1.6s] hearing: AL
+11:32:18 INFO body.audio_io:   [  1.9s] hearing: AL ARE YOU
+11:32:18 INFO body.audio_io:   [  2.2s] hearing: BY AVAE REGIST
+11:32:18 INFO body.face_tracker: Face tracking: 22 frame(s), 19 with a face, 0 camera miss(es).
+11:32:19 INFO body.audio_io:   [  2.6s] hearing: AL ARE YOU REGISTERED HIM
+11:32:19 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=4.1x auto)
+11:32:21 INFO body.audio_io:   whisper (during silence): When I look, I'll get you registered here.
+11:32:22 INFO demokit.runner: transcript confidence -1.10 (answering)
+11:32:22 INFO demokit.runner: Reply cut short: demo switched.
+11:32:22 INFO demokit.runner: Demo: Vision & Face Tracking
+11:32:24 INFO body.audio_io: No wake word in backlog (171 chunk(s), peak 0.480).
+11:32:24 INFO body.audio_io: Flushed 23 stale mic chunk(s).
+11:32:24 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=7.0x auto)
+11:32:24 INFO body.face_tracker: Remembered another view of person 1 (match 0.74, 12 on file).
+11:32:24 INFO body.face_tracker: Face tracking: 19 frame(s), 14 with a face, 0 camera miss(es).
+11:32:27 INFO demokit.runner: Demo: AI Conversation
+11:32:28 INFO body.audio_io: Flushed 18 stale mic chunk(s).
+11:32:28 INFO body.audio_io: mic level: peak=0.799 clip=0.00% (gain=4.0x auto)
+11:32:29 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:32:30 INFO body.audio_io: Wake word matched: 'HEY REACHIE'
+11:32:31 INFO body.audio_io: mic level: peak=1.000 clip=0.96% (gain=2.9x auto)
+11:32:33 INFO body.audio_io:   [  1.9s] hearing: UNDER
+11:32:33 INFO body.audio_io:   [  2.2s] hearing: AND THEY
+11:32:33 INFO body.audio_io:   [  2.5s] hearing: AND THEY HAVE STAR
+11:32:34 INFO body.audio_io:   [  2.8s] hearing: AND THEY HAVE STARTING
+11:32:34 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=1.8x auto)
+11:32:34 INFO body.face_tracker: Face tracking: 21 frame(s), 21 with a face, 0 camera miss(es).
+11:32:34 INFO body.audio_io:   [  3.5s] hearing: AND THEY HAVE STARTING A START
+11:32:35 INFO body.audio_io:   [  3.8s] hearing: AND THEY HAVE STARTING A START OF
+11:32:35 INFO body.audio_io:   [  4.2s] hearing: AND THEY HAVE STARTING A START OF GIVE ME
+11:32:35 INFO body.audio_io:   [  4.5s] hearing: AND THEY HAVE STARTING A START OF GIVE ME SOME I
+11:32:36 INFO body.audio_io:   [  4.9s] hearing: AND THEY HAVE STARTING A START OF GIVE ME SOME IDEAS
+11:32:39 INFO body.face_tracker: Face tracking: 17 frame(s), 17 with a face, 0 camera miss(es).
+11:32:39 INFO body.audio_io:   whisper (during silence): I'm thinking of starting a startup. Give me some ideas.
+11:32:39 INFO demokit.runner: transcript confidence -0.74 (answering)
+11:32:40 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:32:40 INFO brain.llm_backends: anthropic first token in 0.70s (cache read 0, wrote 0, fresh 2887)
+11:32:40 INFO brain.interface: first words in 0.99s (anthropic)
+11:32:44 INFO body.face_tracker: Face tracking: 19 frame(s), 19 with a face, 0 camera miss(es).
+11:32:46 INFO body.audio_io: No wake word in backlog (446 chunk(s), peak 0.230).
+11:32:49 INFO body.face_tracker: Face tracking: 19 frame(s), 19 with a face, 0 camera miss(es).
+11:32:51 WARNING demokit.runner: conversation.on_utterance took 12.0s; hooks should return quickly so the robot stays switchable
+11:32:51 INFO body.audio_io: Flushed 11 stale mic chunk(s).
+11:32:51 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=10.2x auto)
+11:32:52 INFO body.face_tracker: Remembered another view of person 1 (match 0.73, 12 on file).
+11:32:54 INFO body.face_tracker: Face tracking: 22 frame(s), 22 with a face, 0 camera miss(es).
+11:32:54 INFO body.audio_io: mic level: peak=1.000 clip=0.34% (gain=4.0x auto)
+11:32:57 INFO body.audio_io: mic level: peak=1.000 clip=0.37% (gain=4.0x auto)
+11:32:58 INFO body.audio_io: Wake word matched: 'HEY RETCHY'
+11:32:59 INFO body.face_tracker: Face tracking: 21 frame(s), 21 with a face, 0 camera miss(es).
+11:33:00 INFO body.audio_io: mic level: peak=1.000 clip=0.39% (gain=0.9x auto)
+11:33:01 INFO body.audio_io:   [  2.0s] hearing: I
+11:33:01 INFO body.audio_io:   [  2.3s] hearing: I WANT
+11:33:01 INFO body.audio_io:   [  2.6s] hearing: I WANT TO BUILD
+11:33:02 INFO body.audio_io:   [  2.9s] hearing: I WANT TO BUILD A BEE
+11:33:02 INFO body.audio_io:   [  3.2s] hearing: I WANT TO BUILD A BEE TO
+11:33:02 INFO body.audio_io:   [  3.6s] hearing: I WANT TO BUILD A BEE TO B
+11:33:03 INFO body.audio_io:   [  3.9s] hearing: I WANT TO BUILD A BEE TO B SAS
+11:33:03 INFO body.audio_io:   [  4.3s] hearing: I WANT TO BUILD A BEE TO B SASS
+11:33:03 INFO body.audio_io:   [  4.5s] hearing: I WANT TO BUILD A BEE TO B SASS TO START
+11:33:04 INFO body.audio_io:   [  4.9s] hearing: I WANT TO BUILD A BEE TO B SASS TO START UP
+11:33:04 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=2.4x auto)
+11:33:05 INFO body.face_tracker: Face tracking: 18 frame(s), 18 with a face, 0 camera miss(es).
+11:33:05 INFO body.audio_io:   whisper (during silence): I want to build a B2B sass startup.
+11:33:05 INFO demokit.runner: transcript confidence -0.64 (answering)
+11:33:06 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:33:06 INFO brain.llm_backends: anthropic first token in 0.61s (cache read 0, wrote 0, fresh 2392)
+11:33:06 INFO brain.interface: first words in 0.91s (anthropic)
+11:33:08 INFO body.audio_io: No wake word in backlog (158 chunk(s), peak 0.697).
+11:33:10 INFO body.face_tracker: Face tracking: 25 frame(s), 25 with a face, 0 camera miss(es).
+11:33:12 WARNING demokit.runner: conversation.on_utterance took 6.4s; hooks should return quickly so the robot stays switchable
+11:33:12 INFO body.audio_io: Flushed 17 stale mic chunk(s).
+11:33:12 INFO body.audio_io: mic level: peak=0.166 clip=0.00% (gain=6.3x auto)
+11:33:14 INFO body.audio_io:   [  1.6s] hearing: SH
+11:33:14 INFO body.audio_io:   [  2.0s] hearing: SH I
+11:33:14 INFO body.audio_io:   [  2.2s] hearing: I'M NOT SURE
+11:33:15 INFO body.audio_io:   [  2.5s] hearing: I'M NOT SURE WHAT
+11:33:15 INFO body.face_tracker: Face tracking: 21 frame(s), 18 with a face, 0 camera miss(es).
+11:33:15 INFO body.audio_io:   [  2.8s] hearing: I'M NOT SURE WHAT HOPPING
+11:33:15 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=2.5x auto)
+11:33:15 INFO body.audio_io:   [  3.1s] hearing: I'M NOT SURE WHAT HOPPING PROBLEM
+11:33:16 INFO body.audio_io:   [  3.5s] hearing: I'M NOT SURE WHAT HOPPING PROBLEM TRIES
+11:33:16 INFO body.audio_io:   [  3.8s] hearing: I'M NOT SURE WHAT HOPPING PROBLEM TRIES US
+11:33:16 INFO body.audio_io:   [  4.2s] hearing: I'M NOT SURE WHAT HOPPING PROBLEM TRIES US OF
+11:33:17 INFO body.audio_io:   [  4.5s] hearing: I'M NOT SURE WHAT HOPPING PROBLEM TRIES US OFFER
+11:33:17 INFO body.audio_io:   [  4.9s] hearing: I'M NOT SURE WHAT HOPPING PROBLEM TRIES US OF IT UP
+11:33:17 INFO body.audio_io:   [  5.2s] hearing: I'M NOT SURE WHAT HOPPING PROBLEM TRIES US OF IT UP WAS
+11:33:18 INFO body.audio_io:   [  5.5s] hearing: I'M NOT SURE WHAT HOPPING PROBLEM TRIES US HUNTER
+11:33:18 INFO body.audio_io:   [  5.7s] hearing: I'M NOT SURE WHAT HOPPING PROBLEM TRIES US WAS HUNGER ACTIVE
+11:33:18 INFO body.audio_io:   [  6.0s] hearing: I'M NOT SURE WHAT HOPPING PROBLEM TRIES US WAS HUNGER ACTIVELY
+11:33:18 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=4.3x auto)
+11:33:20 INFO body.face_tracker: Face tracking: 26 frame(s), 13 with a face, 0 camera miss(es).
+11:33:20 INFO body.audio_io:   whisper (during silence): I'm not sure what problem I'm trying to solve. I'm trying to talk world hunger actually.
+11:33:21 INFO demokit.runner: transcript confidence -0.94 (answering)
+11:33:21 INFO body.face_tracker: Remembered another view of person 1 (match 0.77, 12 on file).
+11:33:21 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:33:21 INFO brain.llm_backends: anthropic first token in 0.67s (cache read 0, wrote 0, fresh 2042)
+11:33:22 INFO brain.interface: first words in 0.98s (anthropic)
+11:33:25 INFO body.face_tracker: Face tracking: 20 frame(s), 16 with a face, 0 camera miss(es).
+11:33:26 INFO body.audio_io: No wake word in backlog (323 chunk(s), peak 0.570).
+11:33:30 INFO body.face_tracker: Face tracking: 22 frame(s), 22 with a face, 0 camera miss(es).
+11:33:35 INFO body.face_tracker: Face tracking: 24 frame(s), 24 with a face, 0 camera miss(es).
+11:33:38 WARNING demokit.runner: conversation.on_utterance took 17.3s; hooks should return quickly so the robot stays switchable
+11:33:38 INFO body.audio_io: Flushed 15 stale mic chunk(s).
+11:33:38 INFO body.audio_io: mic level: peak=0.145 clip=0.00% (gain=11.2x auto)
+11:33:40 INFO body.audio_io: Wake word matched: 'HEY REACHIE'
+11:33:41 INFO body.face_tracker: Face tracking: 23 frame(s), 18 with a face, 0 camera miss(es).
+11:33:41 INFO body.audio_io: mic level: peak=1.000 clip=0.31% (gain=1.5x auto)
+11:33:42 INFO body.audio_io:   [  1.2s] hearing: SAID
+11:33:42 INFO body.face_tracker: Remembered another view of person 1 (match 0.76, 12 on file).
+11:33:42 INFO body.audio_io:   [  1.5s] hearing: SAID THE OTHER
+11:33:43 INFO body.audio_io:   whisper (during silence): whatever
+11:33:44 INFO demokit.runner: transcript confidence -2.16 (answering)
+11:33:44 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:33:44 INFO brain.llm_backends: anthropic first token in 0.77s (cache read 0, wrote 0, fresh 2540)
+11:33:45 INFO brain.interface: first words in 1.16s (anthropic)
+11:33:46 INFO body.face_tracker: Face tracking: 22 frame(s), 17 with a face, 0 camera miss(es).
+11:33:49 INFO body.audio_io: No wake word in backlog (274 chunk(s), peak 0.874).
+11:33:51 INFO body.face_tracker: Face tracking: 18 frame(s), 14 with a face, 0 camera miss(es).
+11:33:55 INFO body.audio_io: No wake word in backlog (309 chunk(s), peak 0.339).
+11:33:56 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:33:57 WARNING demokit.runner: conversation.on_utterance took 13.0s; hooks should return quickly so the robot stays switchable
+11:33:57 INFO body.audio_io: Flushed 19 stale mic chunk(s).
+11:33:57 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=4.0x auto)
+11:34:00 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=16.1x auto)
+11:34:01 INFO body.face_tracker: Face tracking: 21 frame(s), 21 with a face, 0 camera miss(es).
+11:34:03 INFO body.face_tracker: Remembered another view of person 1 (match 0.74, 12 on file).
+11:34:03 INFO body.audio_io: mic level: peak=0.861 clip=0.00% (gain=4.0x auto)
+11:34:06 INFO body.audio_io: mic level: peak=1.000 clip=2.39% (gain=4.0x auto)
+11:34:06 INFO body.face_tracker: Face tracking: 21 frame(s), 21 with a face, 0 camera miss(es).
+11:34:09 INFO body.audio_io: mic level: peak=0.172 clip=0.00% (gain=34.1x auto)
+11:34:11 INFO body.face_tracker: Face tracking: 19 frame(s), 19 with a face, 0 camera miss(es).
+11:34:12 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=42.9x auto)
+11:34:15 INFO body.audio_io: mic level: peak=1.000 clip=0.31% (gain=4.0x auto)
+11:34:17 INFO body.face_tracker: Face tracking: 23 frame(s), 23 with a face, 0 camera miss(es).
+11:34:18 INFO body.audio_io: mic level: peak=1.000 clip=0.84% (gain=4.0x auto)
+11:34:21 INFO body.audio_io: mic level: peak=1.000 clip=1.17% (gain=4.0x auto)
+11:34:22 INFO body.face_tracker: Face tracking: 21 frame(s), 21 with a face, 0 camera miss(es).
+11:34:24 INFO body.audio_io: mic level: peak=1.000 clip=0.58% (gain=4.0x auto)
+11:34:27 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:34:27 INFO body.audio_io: mic level: peak=1.000 clip=3.53% (gain=4.0x auto)
+11:34:30 INFO body.audio_io: mic level: peak=0.888 clip=0.00% (gain=4.0x auto)
+11:34:32 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:34:33 INFO body.audio_io: mic level: peak=1.000 clip=0.22% (gain=4.0x auto)
+11:34:36 INFO body.audio_io: mic level: peak=1.000 clip=1.56% (gain=4.0x auto)
+11:34:37 INFO body.face_tracker: Face tracking: 19 frame(s), 19 with a face, 0 camera miss(es).
+11:34:39 INFO body.audio_io: mic level: peak=1.000 clip=0.71% (gain=4.0x auto)
+11:34:39 INFO body.audio_io: Wake word matched: 'HEY REACHIE'
+11:34:41 INFO body.audio_io:   [  1.3s] hearing: GOOD
+11:34:42 INFO body.face_tracker: Face tracking: 22 frame(s), 19 with a face, 0 camera miss(es).
+11:34:42 INFO body.audio_io: mic level: peak=0.743 clip=0.00% (gain=6.9x auto)
+11:34:44 INFO demokit.runner: transcript confidence -2.42 (answering)
+11:34:45 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:34:45 INFO brain.llm_backends: anthropic first token in 0.83s (cache read 0, wrote 0, fresh 2103)
+11:34:45 INFO brain.interface: first words in 1.20s (anthropic)
+11:34:47 INFO body.face_tracker: Face tracking: 22 frame(s), 12 with a face, 0 camera miss(es).
+11:34:52 INFO body.audio_io: No wake word in backlog (487 chunk(s), peak 0.957).
+11:34:52 INFO body.face_tracker: Face tracking: 36 frame(s), 1 with a face, 0 camera miss(es).
+11:34:52 WARNING demokit.runner: conversation.on_utterance took 8.0s; hooks should return quickly so the robot stays switchable
+11:34:52 INFO body.audio_io: Flushed 15 stale mic chunk(s).
+11:34:52 INFO body.audio_io: mic level: peak=0.005 clip=0.00% (gain=7.0x auto)
+11:34:54 INFO body.audio_io:   [  2.2s] hearing: DO
+11:34:55 INFO body.audio_io:   [  2.6s] hearing: DO YOU LIKE
+11:34:55 INFO body.audio_io:   [  2.9s] hearing: DO YOU LIKE AS
+11:34:55 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=2.2x auto)
+11:34:55 INFO body.audio_io:   [  3.3s] hearing: DO YOU LIKE ASIANS
+11:34:56 INFO body.audio_io:   [  3.5s] hearing: DO YOU LIKE ASIANS REACH
+11:34:56 INFO body.audio_io:   [  4.0s] hearing: DO YOU LIKE ASIANS REACHEE
+11:34:57 INFO body.face_tracker: Face tracking: 25 frame(s), 9 with a face, 0 camera miss(es).
+11:34:59 INFO body.audio_io:   whisper (during silence): Do you like Asians, Ritchie?
+11:34:59 INFO demokit.runner: transcript confidence -0.83 (answering)
+11:35:00 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:35:00 INFO brain.llm_backends: anthropic first token in 0.69s (cache read 0, wrote 0, fresh 2143)
+11:35:00 INFO brain.interface: first words in 1.09s (anthropic)
+11:35:02 INFO body.face_tracker: Face tracking: 22 frame(s), 8 with a face, 0 camera miss(es).
+11:35:07 INFO body.face_tracker: Face tracking: 18 frame(s), 14 with a face, 0 camera miss(es).
+11:35:12 INFO body.face_tracker: Face tracking: 22 frame(s), 22 with a face, 0 camera miss(es).
+11:35:16 INFO body.audio_io: No wake word in backlog (621 chunk(s), peak 0.106).
+11:35:17 WARNING demokit.runner: conversation.on_utterance took 17.5s; hooks should return quickly so the robot stays switchable
+11:35:17 INFO body.audio_io: Flushed 30 stale mic chunk(s).
+11:35:17 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=9.0x auto)
+11:35:17 INFO body.face_tracker: Face tracking: 19 frame(s), 19 with a face, 0 camera miss(es).
+11:35:18 INFO body.audio_io:   [  1.3s] hearing: INDEED
+11:35:20 INFO body.audio_io:   whisper (during silence): Hey Regeem
+11:35:21 INFO demokit.runner: transcript confidence -1.48 (answering)
+11:35:21 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:35:21 INFO brain.llm_backends: anthropic first token in 0.69s (cache read 0, wrote 0, fresh 2217)
+11:35:21 INFO brain.interface: first words in 0.80s (anthropic)
+11:35:22 INFO body.face_tracker: Face tracking: 14 frame(s), 14 with a face, 0 camera miss(es).
+11:35:26 INFO body.audio_io: No wake word in backlog (314 chunk(s), peak 0.424).
+11:35:26 INFO body.audio_io: Flushed 15 stale mic chunk(s).
+11:35:26 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=8.8x auto)
+11:35:28 INFO body.face_tracker: Face tracking: 22 frame(s), 22 with a face, 0 camera miss(es).
+11:35:29 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=1.1x auto)
+11:35:32 INFO body.audio_io: mic level: peak=0.454 clip=0.00% (gain=10.4x auto)
+11:35:33 INFO body.face_tracker: Face tracking: 22 frame(s), 22 with a face, 0 camera miss(es).
+11:35:35 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=2.3x auto)
+11:35:37 INFO body.audio_io:   [  1.9s] hearing: TWO
+11:35:37 INFO body.audio_io:   [  2.2s] hearing: TWO SLEE
+11:35:38 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=13.1x auto)
+11:35:38 INFO body.face_tracker: Face tracking: 19 frame(s), 19 with a face, 0 camera miss(es).
+11:35:39 INFO body.audio_io:   whisper (during silence): to sleep
+11:35:39 INFO demokit.runner: transcript confidence -0.95 (answering)
+11:35:40 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:35:40 INFO brain.llm_backends: anthropic first token in 0.62s (cache read 0, wrote 0, fresh 2593)
+11:35:40 INFO brain.interface: first words in 0.92s (anthropic)
+11:35:43 INFO body.face_tracker: Face tracking: 15 frame(s), 15 with a face, 0 camera miss(es).
+11:35:47 INFO body.audio_io: No wake word in backlog (420 chunk(s), peak 0.368).
+11:35:48 INFO body.face_tracker: Face tracking: 18 frame(s), 16 with a face, 0 camera miss(es).
+11:35:52 INFO body.audio_io: No wake word in backlog (233 chunk(s), peak 0.360).
+11:35:52 WARNING demokit.runner: conversation.on_utterance took 12.4s; hooks should return quickly so the robot stays switchable
+11:35:52 INFO body.audio_io: Flushed 16 stale mic chunk(s).
+11:35:52 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=9.8x auto)
+11:35:53 INFO body.face_tracker: Remembered another view of person 1 (match 0.78, 12 on file).
+11:35:53 INFO body.face_tracker: Face tracking: 18 frame(s), 18 with a face, 0 camera miss(es).
+11:35:55 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=23.2x auto)
+11:35:58 INFO body.audio_io: mic level: peak=1.000 clip=2.64% (gain=4.0x auto)
+11:35:59 INFO body.face_tracker: Face tracking: 26 frame(s), 9 with a face, 0 camera miss(es).
+11:36:01 INFO body.audio_io: mic level: peak=1.000 clip=0.88% (gain=4.0x auto)
+11:36:02 INFO body.audio_io: Wake word matched: 'HEY REACHIE'
+11:36:04 INFO body.audio_io: mic level: peak=1.000 clip=1.19% (gain=0.9x auto)
+11:36:04 INFO body.face_tracker: Face tracking: 22 frame(s), 19 with a face, 0 camera miss(es).
+11:36:05 INFO body.audio_io:   [  2.3s] hearing: GO
+11:36:05 INFO body.audio_io:   [  3.0s] hearing: GO TO
+11:36:05 INFO body.audio_io:   [  3.2s] hearing: GO TO SLEE
+11:36:06 INFO body.audio_io:   [  3.6s] hearing: GO TO SLEEP
+11:36:07 INFO body.audio_io: mic level: peak=0.587 clip=0.00% (gain=8.2x auto)
+11:36:09 INFO body.face_tracker: Face tracking: 16 frame(s), 16 with a face, 0 camera miss(es).
+11:36:09 INFO body.audio_io:   whisper (during silence): Go to sleep.
+11:36:09 INFO demokit.runner: Going to sleep.
+11:36:14 INFO body.face_tracker: Face tracking: 15 frame(s), 13 with a face, 0 camera miss(es).
+11:36:14 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:36:14 INFO body.audio_io: Flushed 368 stale mic chunk(s).
+11:36:14 INFO body.audio_io: mic level: peak=0.023 clip=0.00% (gain=10.6x auto)
+11:36:17 INFO body.audio_io: mic level: peak=1.000 clip=0.45% (gain=4.0x auto)
+11:36:18 INFO body.audio_io: Wake word matched: 'HEY RICKY'
+11:36:19 INFO body.audio_io: Flushed 45 stale mic chunk(s).
+11:36:19 INFO body.face_tracker: Face tracking: 23 frame(s), 19 with a face, 0 camera miss(es).
+11:36:20 INFO body.audio_io: mic level: peak=0.323 clip=0.00% (gain=9.0x auto)
+11:36:23 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=8.8x auto)
+11:36:24 INFO body.face_tracker: Face tracking: 19 frame(s), 18 with a face, 0 camera miss(es).
+11:36:26 INFO body.audio_io: mic level: peak=1.000 clip=2.24% (gain=4.0x auto)
+11:36:29 INFO body.audio_io: mic level: peak=1.000 clip=0.17% (gain=4.0x auto)
+11:36:30 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:36:32 INFO body.audio_io: mic level: peak=1.000 clip=0.82% (gain=4.0x auto)
+11:36:35 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:36:35 INFO body.audio_io: mic level: peak=1.000 clip=3.42% (gain=4.0x auto)
+11:36:38 INFO body.audio_io: mic level: peak=1.000 clip=1.21% (gain=4.0x auto)
+11:36:39 INFO body.audio_io: Wake word matched: 'HEY RICKY'
+11:36:40 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:36:42 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=10.0x auto)
+11:36:44 INFO body.audio_io:   [  4.2s] hearing: I
+11:36:44 INFO body.audio_io:   [  4.9s] hearing: I WANT TO
+11:36:45 INFO body.audio_io:   [  5.2s] hearing: I WANT TO CREATE
+11:36:45 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=2.3x auto)
+11:36:45 INFO body.audio_io:   [  5.5s] hearing: I WANT TO CREATE A
+11:36:45 INFO body.face_tracker: Face tracking: 18 frame(s), 17 with a face, 0 camera miss(es).
+11:36:45 INFO body.audio_io:   [  5.8s] hearing: I WANT TO CREATE A STUDD
+11:36:46 INFO body.audio_io:   [  6.2s] hearing: I WANT TO CREATE A STUDDER
+11:36:48 INFO body.audio_io:   whisper (during silence): I want to create a stutter.
+11:36:49 INFO demokit.runner: transcript confidence -0.68 (answering)
+11:36:49 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:36:49 INFO brain.llm_backends: anthropic first token in 0.69s (cache read 0, wrote 0, fresh 2528)
+11:36:50 INFO brain.interface: first words in 0.98s (anthropic, clause)
+11:36:50 INFO body.face_tracker: Face tracking: 15 frame(s), 14 with a face, 0 camera miss(es).
+11:36:53 INFO body.face_tracker: Remembered another view of person 1 (match 0.80, 12 on file).
+11:36:55 INFO body.face_tracker: Face tracking: 16 frame(s), 11 with a face, 0 camera miss(es).
+11:36:58 INFO body.audio_io: No wake word in backlog (561 chunk(s), peak 0.355).
+11:37:00 WARNING demokit.runner: conversation.on_utterance took 11.4s; hooks should return quickly so the robot stays switchable
+11:37:00 INFO body.audio_io: Flushed 29 stale mic chunk(s).
+11:37:00 INFO body.audio_io: mic level: peak=0.333 clip=0.00% (gain=9.8x auto)
+11:37:00 INFO body.face_tracker: Face tracking: 19 frame(s), 19 with a face, 0 camera miss(es).
+11:37:01 INFO body.audio_io:   [  1.2s] hearing: AND
+11:37:05 INFO body.audio_io:   whisper (after endpoint, 1.34s): No I
+11:37:05 INFO demokit.runner: transcript confidence -2.37 (answering)
+11:37:05 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:37:05 INFO brain.llm_backends: anthropic first token in 0.52s (cache read 0, wrote 0, fresh 1902)
+11:37:06 INFO body.face_tracker: Face tracking: 26 frame(s), 6 with a face, 0 camera miss(es).
+11:37:06 INFO brain.interface: first words in 0.73s (anthropic)
+11:37:11 INFO body.face_tracker: Face tracking: 19 frame(s), 16 with a face, 0 camera miss(es).
+11:37:11 INFO body.audio_io: No wake word in backlog (415 chunk(s), peak 0.674).
+11:37:11 WARNING demokit.runner: conversation.on_utterance took 6.3s; hooks should return quickly so the robot stays switchable
+11:37:11 INFO body.audio_io: Flushed 20 stale mic chunk(s).
+11:37:11 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=1.1x auto)
+11:37:14 INFO body.audio_io:   [  3.1s] hearing: ST
+11:37:14 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=1.3x auto)
+11:37:15 INFO body.audio_io:   [  3.5s] hearing: START
+11:37:15 INFO body.audio_io:   [  3.9s] hearing: START UP
+11:37:16 INFO body.face_tracker: Face tracking: 20 frame(s), 12 with a face, 0 camera miss(es).
+11:37:18 INFO body.audio_io:   whisper (during silence): - Ah. - Dartop.
+11:37:18 INFO demokit.runner: transcript confidence -0.55 (answering)
+11:37:19 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:37:19 INFO brain.llm_backends: anthropic first token in 0.69s (cache read 0, wrote 0, fresh 1932)
+11:37:19 INFO brain.interface: first words in 0.95s (anthropic)
+11:37:21 INFO body.face_tracker: Face tracking: 15 frame(s), 15 with a face, 0 camera miss(es).
+11:37:24 INFO body.audio_io: No wake word in backlog (387 chunk(s), peak 0.253).
+11:37:25 INFO demokit.base: silent 1.7s waiting for the next words
+11:37:26 INFO body.face_tracker: Face tracking: 16 frame(s), 15 with a face, 0 camera miss(es).
+11:37:26 WARNING demokit.runner: conversation.on_utterance took 8.1s; hooks should return quickly so the robot stays switchable
+11:37:26 INFO body.audio_io: Flushed 17 stale mic chunk(s).
+11:37:26 INFO body.audio_io: mic level: peak=0.097 clip=0.00% (gain=5.4x auto)
+11:37:29 INFO body.audio_io:   [  2.2s] hearing: SH
+11:37:30 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=1.0x auto)
+11:37:30 INFO body.audio_io:   [  3.3s] hearing: SH HE WANT
+11:37:30 INFO body.audio_io:   [  3.6s] hearing: SH HE WANTS
+11:37:30 INFO body.audio_io:   [  3.9s] hearing: SH HE WANTS TO CRE
+11:37:31 INFO body.audio_io:   [  4.2s] hearing: SH HE WANTS TO CREATE
+11:37:31 INFO body.face_tracker: Face tracking: 18 frame(s), 15 with a face, 0 camera miss(es).
+11:37:31 INFO body.audio_io:   [  4.6s] hearing: SH HE WANTS TO CREATE A ST
+11:37:31 INFO body.audio_io:   [  4.9s] hearing: SH HE WANTS TO CREATE A START
+11:37:32 INFO body.audio_io:   [  5.2s] hearing: SH HE WANTS TO CREATE A START UP
+11:37:32 INFO body.audio_io:   [  5.5s] hearing: SH HE WANTS TO CREATE A START UP REACH
+11:37:32 INFO body.audio_io:   [  5.9s] hearing: SH HE WANTS TO CREATE A START UP RIGI
+11:37:33 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=3.4x auto)
+11:37:36 INFO body.face_tracker: Face tracking: 14 frame(s), 14 with a face, 0 camera miss(es).
+11:37:37 INFO body.audio_io:   whisper (during silence): He wants to create a starter for Echee.
+11:37:37 INFO demokit.runner: transcript confidence -0.69 (answering)
+11:37:38 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:37:38 INFO brain.llm_backends: anthropic first token in 0.77s (cache read 0, wrote 0, fresh 1969)
+11:37:38 INFO brain.interface: first words in 1.11s (anthropic)
+11:37:41 INFO body.face_tracker: Face tracking: 17 frame(s), 16 with a face, 0 camera miss(es).
+11:37:46 INFO body.audio_io: No wake word in backlog (553 chunk(s), peak 0.115).
+11:37:46 WARNING demokit.runner: conversation.on_utterance took 8.4s; hooks should return quickly so the robot stays switchable
+11:37:46 INFO body.audio_io: Flushed 11 stale mic chunk(s).
+11:37:46 INFO body.audio_io: mic level: peak=0.012 clip=0.00% (gain=6.9x auto)
+11:37:46 INFO body.face_tracker: Face tracking: 25 frame(s), 25 with a face, 0 camera miss(es).
+11:37:48 INFO body.audio_io:   [  1.9s] hearing: YEA
+11:37:48 INFO body.audio_io:   [  2.2s] hearing: YEAH I
+11:37:48 INFO body.audio_io:   [  2.6s] hearing: YEAH I KNOW
+11:37:49 INFO body.audio_io:   [  2.9s] hearing: YEAH I KNOW WHEN
+11:37:49 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=6.3x auto)
+11:37:49 INFO body.audio_io:   [  3.2s] hearing: YEAH I KNOW WHEN A
+11:37:49 INFO body.audio_io:   [  3.5s] hearing: YEAH I KNOW WHEN A COMPAN
+11:37:50 INFO body.audio_io:   [  3.9s] hearing: YEAH I KNOW WHEN A COMPANY
+11:37:50 INFO body.audio_io:   [  4.5s] hearing: YEAH I KNOW WHEN A COMPANY SAID
+11:37:51 INFO body.audio_io:   [  5.1s] hearing: YEAH I KNOW WHEN A COMPANY SAID I
+11:37:51 INFO body.face_tracker: Face tracking: 21 frame(s), 18 with a face, 0 camera miss(es).
+11:37:51 INFO body.audio_io:   [  5.8s] hearing: YEAH I KNOW WHEN A COMPANY SAID I CAN
+11:37:52 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=10.8x auto)
+11:37:53 INFO body.audio_io:   whisper (during silence): Yeah, I want to open a company so that I can
+11:37:53 INFO demokit.runner: transcript confidence -0.76 (answering)
+11:37:54 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:37:54 INFO brain.llm_backends: anthropic first token in 0.64s (cache read 0, wrote 0, fresh 2014)
+11:37:54 INFO brain.interface: first words in 0.94s (anthropic)
+11:37:57 INFO body.face_tracker: Face tracking: 20 frame(s), 18 with a face, 0 camera miss(es).
+11:37:59 INFO body.audio_io: No wake word in backlog (335 chunk(s), peak 0.366).
+11:38:01 WARNING demokit.runner: conversation.on_utterance took 8.3s; hooks should return quickly so the robot stays switchable
+11:38:01 INFO body.audio_io: Flushed 26 stale mic chunk(s).
+11:38:01 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=4.2x auto)
+11:38:02 INFO body.face_tracker: Face tracking: 18 frame(s), 18 with a face, 0 camera miss(es).
+11:38:03 INFO body.audio_io:   [  1.7s] hearing: SO
+11:38:03 INFO body.audio_io:   [  1.9s] hearing: SO IT A
+11:38:04 INFO body.audio_io:   [  2.2s] hearing: SO IT ACCOMPANY
+11:38:04 INFO body.audio_io:   [  2.6s] hearing: SO IT A COMPANY AIMS
+11:38:04 INFO body.audio_io:   [  3.0s] hearing: SO IT A COMPANY AIMS TO
+11:38:04 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=2.0x auto)
+11:38:05 INFO body.audio_io:   [  3.2s] hearing: SO IT A COMPANY AIMS TO EDU
+11:38:05 INFO body.audio_io:   [  3.7s] hearing: SO IT A COMPANY AIMS TO EDUCATE
+11:38:05 INFO body.audio_io:   [  4.2s] hearing: SO IT A COMPANY AIMS TO EDUCATE FROM WHAT
+11:38:06 INFO body.audio_io:   [  4.5s] hearing: SO IT A COMPANY AIMS TO EDUCATE FROM WHAT EDU
+11:38:06 INFO body.audio_io:   [  4.8s] hearing: SO IT A COMPANY AIMS TO EDUCATE FROM WHAT EDUCATION
+11:38:06 INFO body.audio_io:   [  5.2s] hearing: SO IT A COMPANY AIMS TO EDUCATE FROM WHAT EDUCATION AMONG
+11:38:07 INFO body.face_tracker: Face tracking: 17 frame(s), 16 with a face, 0 camera miss(es).
+11:38:07 INFO body.audio_io:   [  5.8s] hearing: SO IT A COMPANY AIMS TO EDUCATE FROM WHAT EDUCATION AMONG THOSE
+11:38:07 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=2.3x auto)
+11:38:08 INFO body.audio_io:   [  6.4s] hearing: SO IT A COMPANY AIMS TO EDUCATE FROM WHAT EDUCATION AMONG THOSE IN RU
+11:38:08 INFO body.audio_io:   [  6.8s] hearing: SO IT A COMPANY AIMS TO EDUCATE FROM WHAT EDUCATION AMONG THOSE IN RURAL
+11:38:08 INFO body.audio_io:   [  7.1s] hearing: SO IT A COMPANY AIMS TO EDUCATE FROM WHAT EDUCATION AMONG THOSE IN RURAL ERI
+11:38:09 INFO body.audio_io:   [  7.5s] hearing: SO IT A COMPANY AIMS TO EDUCATE FROM WHAT EDUCATION AMONG THOSE IN RURAL ERIEAS
+11:38:10 INFO body.audio_io:   [  8.8s] hearing: SO IT A COMPANY AIMS TO EDUCATE FROM WHAT EDUCATION AMONG THOSE IN RURAL ERIEAS IN A
+11:38:10 INFO body.audio_io:   [  9.0s] hearing: SO IT A COMPANY AIMS TO EDUCATE FROM WHAT EDUCATION AMONG THOSE IN RURAL ERIEAS IN AFRIC
+11:38:10 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=1.5x auto)
+11:38:11 INFO body.audio_io:   [  9.3s] hearing: SO IT A COMPANY AIMS TO EDUCATE FROM WHAT EDUCATION AMONG THOSE IN RURAL ERIEAS IN AFRICA
+11:38:11 INFO body.audio_io:   [  9.8s] hearing: SO IT A COMPANY AIMS TO EDUCATE FROM WHAT EDUCATION AMONG THOSE IN RURAL ERIEAS IN AFRICA AND
+11:38:11 INFO body.audio_io:   [ 10.2s] hearing: SO IT A COMPANY AIMS TO EDUCATE FROM WHAT EDUCATION AMONG THOSE IN RURAL ERIEAS IN AFRICA AND TO
+11:38:12 INFO body.audio_io:   [ 10.5s] hearing: SO IT A COMPANY AIMS TO EDUCATE FROM WHAT EDUCATION AMONG THOSE IN RURAL ERIEAS IN AFRICA AND TO PROMO
+11:38:12 INFO body.audio_io:   [ 10.8s] hearing: SO IT A COMPANY AIMS TO EDUCATE FROM WHAT EDUCATION AMONG THOSE IN RURAL ERIEAS IN AFRICA AND TO PROMOTE HEAL
+11:38:12 INFO body.face_tracker: Face tracking: 16 frame(s), 16 with a face, 0 camera miss(es).
+11:38:12 INFO body.audio_io:   [ 11.1s] hearing: SO IT A COMPANY AIMS TO EDUCATE FROM WHAT EDUCATION AMONG THOSE IN RURAL ERIEAS IN AFRICA AND TO PROMOTE HEALTH
+11:38:13 INFO body.audio_io:   [ 11.4s] hearing: SO IT A COMPANY AIMS TO EDUCATE FROM WHAT EDUCATION AMONG THOSE IN RURAL ERIEAS IN AFRICA AND TO PROMOTE HEALTH DETER
+11:38:13 INFO body.audio_io:   [ 11.8s] hearing: SO IT A COMPANY AIMS TO EDUCATE FROM WHAT EDUCATION AMONG THOSE IN RURAL ERIEAS IN AFRICA AND TO PROMOTE HEALTH DETERRACE
+11:38:13 INFO body.audio_io:   [ 12.2s] hearing: SO IT A COMPANY AIMS TO EDUCATE FROM WHAT EDUCATION AMONG THOSE IN RURAL ERIEAS IN AFRICA AND TO PROMOTE HEALTH DETERRACEI
+11:38:13 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=5.4x auto)
+11:38:17 INFO body.face_tracker: Face tracking: 13 frame(s), 13 with a face, 0 camera miss(es).
+11:38:21 INFO body.audio_io:   whisper (during silence): So the company aims to educate remote education among girls in rural areas in Africa and to promote health literacy.
+11:38:21 INFO demokit.runner: transcript confidence -0.54 (answering)
+11:38:22 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:38:22 INFO brain.llm_backends: anthropic first token in 0.64s (cache read 0, wrote 0, fresh 2068)
+11:38:22 INFO brain.interface: first words in 0.97s (anthropic)
+11:38:22 INFO body.face_tracker: Face tracking: 17 frame(s), 16 with a face, 0 camera miss(es).
+11:38:27 INFO body.face_tracker: Face tracking: 14 frame(s), 14 with a face, 0 camera miss(es).
+11:38:32 INFO body.audio_io: No wake word in backlog (629 chunk(s), peak 0.517).
+11:38:32 INFO body.face_tracker: Face tracking: 18 frame(s), 18 with a face, 0 camera miss(es).
+11:38:36 WARNING demokit.runner: conversation.on_utterance took 15.2s; hooks should return quickly so the robot stays switchable
+11:38:36 INFO body.audio_io: Flushed 20 stale mic chunk(s).
+11:38:36 INFO body.audio_io: mic level: peak=0.009 clip=0.00% (gain=14.2x auto)
+11:38:37 INFO body.audio_io:   [  1.2s] hearing: I
+11:38:38 INFO body.face_tracker: Face tracking: 21 frame(s), 21 with a face, 0 camera miss(es).
+11:38:38 INFO body.audio_io:   [  1.6s] hearing: I'M STILL LOOK
+11:38:38 INFO body.audio_io:   [  2.0s] hearing: I'M STILL LOOKING
+11:38:38 INFO body.audio_io:   [  2.2s] hearing: I'M STILL LOOKING IT OUT
+11:38:39 INFO body.audio_io:   [  2.6s] hearing: I'M STILL LOOKING IT OUT BY
+11:38:39 INFO body.audio_io:   [  2.8s] hearing: I'M STILL LOOKING IT OUT BY CAN YOU GIVE
+11:38:39 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=1.9x auto)
+11:38:39 INFO body.audio_io:   [  3.2s] hearing: I'M STILL LOOKING IT OUT BY CAN YOU GIVE ME
+11:38:40 INFO body.audio_io:   [  3.5s] hearing: I'M STILL LOOKING IT OUT BY CAN YOU GIVE ME SOMETHING
+11:38:40 INFO body.audio_io:   [  4.1s] hearing: I'M STILL LOOKING IT OUT BY CAN YOU GIVE ME SOMETHING TO FOC
+11:38:41 INFO body.audio_io:   [  4.5s] hearing: I'M STILL LOOKING IT OUT BY CAN YOU GIVE ME SOMETHING TO FOCUS
+11:38:41 INFO body.audio_io:   [  4.8s] hearing: I'M STILL LOOKING AT OUR CAN YOU GIVE ME SOMETHING TO FOCUS ON
+11:38:41 INFO body.audio_io:   [  5.2s] hearing: I'M STILL LOOKING AT OUR CAN YOU GIVE ME SOMETHING TO FOCUS ON SAID I
+11:38:42 INFO body.audio_io:   [  5.5s] hearing: I'M STILL LOOKING AT OUR CAN YOU GIVE ME SOMETHING TO FOCUS ON SAID I CAN
+11:38:42 INFO body.audio_io:   [  5.8s] hearing: I'M STILL LOOKING AT OUR CAN YOU GIVE ME SOMETHING TO FOCUS ON SAID I CAN'S
+11:38:42 INFO body.audio_io:   [  6.1s] hearing: I'M STILL LOOKING AT OUR CAN YOU GIVE ME SOMETHING TO FOCUS ON SAID I CAN'S THOUGHT
+11:38:42 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=2.3x auto)
+11:38:43 INFO body.audio_io:   [  6.5s] hearing: I'M STILL LOOKING AT OUR CAN YOU GIVE ME SOMETHING TO FOCUS ON SAID I CAN'S THOUGHT SOME
+11:38:43 INFO body.face_tracker: Face tracking: 18 frame(s), 18 with a face, 0 camera miss(es).
+11:38:44 INFO body.audio_io:   [  7.4s] hearing: I'M STILL LOOKING AT OUR CAN YOU GIVE ME SOMETHING TO FOCUS ON SAID I CAN'S THOUGHT SOME A SICK
+11:38:44 INFO body.audio_io:   [  7.8s] hearing: I'M STILL LOOKING AT OUR CAN YOU GIVE ME SOMETHING TO FOCUS ON SAID I CAN'S THOUGHT SOME A SICK RE
+11:38:44 INFO body.audio_io:   [  8.1s] hearing: I'M STILL LOOKING AT OUR CAN YOU GIVE ME SOMETHING TO FOCUS ON SAID I CAN'S THOUGHT SOME A SICK RESET CH
+11:38:45 INFO body.audio_io:   [  8.5s] hearing: I'M STILL LOOKING AT OUR CAN YOU GIVE ME SOMETHING TO FOCUS ON SAID I CAN'S THOUGHT SOME A SICK RESET CHIN
+11:38:45 INFO body.audio_io:   [  8.8s] hearing: I'M STILL LOOKING AT OUR CAN YOU GIVE ME SOMETHING TO FOCUS ON SAID I CAN'S THOUGHT SOME A SICK RESEARCH ON IT
+11:38:45 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=12.5x auto)
+11:38:48 INFO body.face_tracker: Face tracking: 15 frame(s), 15 with a face, 0 camera miss(es).
+11:38:51 INFO body.audio_io:   whisper (during silence): I'm still working that out, but can you give me something to focus on so that I can start some basic research on it?
+11:38:51 INFO demokit.runner: transcript confidence -0.75 (answering)
+11:38:52 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:38:52 INFO brain.llm_backends: anthropic first token in 0.75s (cache read 0, wrote 0, fresh 2143)
+11:38:52 INFO brain.interface: first words in 1.05s (anthropic)
+11:38:53 INFO body.face_tracker: Face tracking: 17 frame(s), 17 with a face, 0 camera miss(es).
+11:38:57 INFO demokit.base: silent 2.2s waiting for the next words
+11:38:59 INFO body.face_tracker: Face tracking: 13 frame(s), 13 with a face, 0 camera miss(es).
+11:39:00 INFO body.audio_io: No wake word in backlog (673 chunk(s), peak 0.797).
+11:39:04 INFO body.face_tracker: Face tracking: 14 frame(s), 14 with a face, 0 camera miss(es).
+11:39:09 INFO body.face_tracker: Face tracking: 14 frame(s), 13 with a face, 0 camera miss(es).
+11:39:14 INFO body.face_tracker: Face tracking: 21 frame(s), 21 with a face, 0 camera miss(es).
+11:39:19 INFO body.face_tracker: Face tracking: 19 frame(s), 19 with a face, 0 camera miss(es).
+11:39:24 INFO body.face_tracker: Face tracking: 24 frame(s), 23 with a face, 0 camera miss(es).
+11:39:28 WARNING demokit.runner: conversation.on_utterance took 37.4s; hooks should return quickly so the robot stays switchable
+11:39:29 INFO body.audio_io: Flushed 30 stale mic chunk(s).
+11:39:29 INFO body.audio_io: mic level: peak=0.031 clip=0.00% (gain=16.1x auto)
+11:39:29 INFO body.face_tracker: Face tracking: 22 frame(s), 16 with a face, 0 camera miss(es).
+11:39:30 INFO body.audio_io:   [  1.3s] hearing: WHEW
+11:39:31 INFO body.audio_io:   [  2.3s] hearing: WHEW I
+11:39:31 INFO body.audio_io:   [  2.7s] hearing: WHEW I DU
+11:39:32 INFO body.audio_io:   [  3.0s] hearing: WHEW I DUNNO
+11:39:32 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=1.5x auto)
+11:39:32 INFO body.audio_io:   [  3.6s] hearing: WHEW I DUNNO MAY
+11:39:32 INFO body.audio_io:   [  4.0s] hearing: WHEW I DUNNO MAYBE YOU
+11:39:33 INFO body.audio_io:   [  4.4s] hearing: WHEW I DUNNO MAYBE YOU TELL
+11:39:33 INFO body.audio_io:   [  4.7s] hearing: WHEW I DUNNO MAYBE YOU TELL ME WHICH
+11:39:34 INFO body.audio_io:   [  5.0s] hearing: WHEW I DUNNO MAYBE YOU TELL ME WHICH IS THE
+11:39:34 INFO body.audio_io:   [  5.4s] hearing: WHEW I DUNNO MAYBE YOU TELL ME WHICH IS THE MOST
+11:39:34 INFO body.audio_io:   [  5.7s] hearing: WHEW I DUNNO MAYBE YOU TELL ME WHICH IS THE MOST AGENT
+11:39:34 INFO body.face_tracker: Face tracking: 16 frame(s), 12 with a face, 0 camera miss(es).
+11:39:35 INFO body.audio_io:   [  6.0s] hearing: WHEW I DUNNO MAYBE YOU TELL ME WHICH IS THE MOST AGENT OF STU
+11:39:35 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=7.9x auto)
+11:39:35 INFO body.audio_io:   [  6.3s] hearing: WHEW I DUNNO MAYBE YOU TELL ME WHICH IS THE MOST AGENT OF STUDY
+11:39:38 INFO body.audio_io:   whisper (during silence): I don't know. Maybe you tell me which is the most that you're in the study.
+11:39:38 INFO demokit.runner: transcript confidence -0.70 (answering)
+11:39:38 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:39:38 INFO brain.llm_backends: anthropic first token in 0.70s (cache read 0, wrote 0, fresh 2279)
+11:39:39 INFO brain.interface: first words in 1.00s (anthropic)
+11:39:39 INFO body.face_tracker: Face tracking: 23 frame(s), 12 with a face, 0 camera miss(es).
+11:39:45 INFO body.face_tracker: Face tracking: 17 frame(s), 15 with a face, 0 camera miss(es).
+11:39:49 INFO body.audio_io: No wake word in backlog (646 chunk(s), peak 0.443).
+11:39:50 INFO body.face_tracker: Face tracking: 15 frame(s), 15 with a face, 0 camera miss(es).
+11:39:55 INFO body.face_tracker: Face tracking: 22 frame(s), 22 with a face, 0 camera miss(es).
+11:40:00 INFO body.face_tracker: Face tracking: 22 frame(s), 22 with a face, 0 camera miss(es).
+11:40:02 WARNING demokit.runner: conversation.on_utterance took 24.6s; hooks should return quickly so the robot stays switchable
+11:40:02 INFO body.audio_io: Flushed 33 stale mic chunk(s).
+11:40:02 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=8.9x auto)
+11:40:03 INFO body.face_tracker: Remembered another view of person 1 (match 0.75, 12 on file).
+11:40:04 INFO body.audio_io:   [  1.4s] hearing: HUM
+11:40:04 INFO body.audio_io:   [  1.7s] hearing: HUMPH
+11:40:05 INFO body.face_tracker: Face tracking: 18 frame(s), 16 with a face, 0 camera miss(es).
+11:40:09 INFO body.audio_io:   whisper (after endpoint, 2.22s): So I
+11:40:09 INFO demokit.runner: transcript confidence -1.17 (answering)
+11:40:10 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:40:10 INFO brain.llm_backends: anthropic first token in 0.62s (cache read 0, wrote 0, fresh 2569)
+11:40:10 INFO brain.interface: first words in 0.94s (anthropic)
+11:40:10 INFO body.face_tracker: Face tracking: 18 frame(s), 12 with a face, 0 camera miss(es).
+11:40:15 INFO body.audio_io: No wake word in backlog (468 chunk(s), peak 0.553).
+11:40:16 INFO body.face_tracker: Face tracking: 16 frame(s), 13 with a face, 0 camera miss(es).
+11:40:16 WARNING demokit.runner: conversation.on_utterance took 6.5s; hooks should return quickly so the robot stays switchable
+11:40:16 INFO body.audio_io: Flushed 32 stale mic chunk(s).
+11:40:16 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=0.8x auto)
+11:40:17 INFO body.audio_io:   [  1.6s] hearing: SO WHY
+11:40:18 INFO body.audio_io:   [  1.9s] hearing: SO WHY YOU
+11:40:18 INFO body.audio_io:   [  2.2s] hearing: SO WHY YOU SUGGEST
+11:40:18 INFO body.audio_io:   [  2.5s] hearing: SO WHY YOU SUGGEST THAT
+11:40:19 INFO body.audio_io:   [  2.9s] hearing: SO WHY YOU SUGGEST THAT WAS
+11:40:19 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=2.9x auto)
+11:40:19 INFO body.audio_io:   [  3.1s] hearing: SO WHY YOU SUGGEST THAT WAS MORE
+11:40:19 INFO body.audio_io:   [  3.5s] hearing: SO WHY YOU SUGGEST THAT WAS MORE RE
+11:40:20 INFO body.audio_io:   [  3.9s] hearing: SO WHY YOU SUGGEST THAT WAS MORE REWARD
+11:40:20 INFO body.audio_io:   [  4.1s] hearing: SO WHY YOU SUGGEST THAT WAS MORE REWARD HE
+11:40:20 INFO body.audio_io:   [  4.5s] hearing: SO WHY YOU SUGGEST THAT WAS MORE REWARD HELP BUT
+11:40:21 INFO body.face_tracker: Face tracking: 26 frame(s), 14 with a face, 0 camera miss(es).
+11:40:21 INFO body.audio_io:   [  4.9s] hearing: SO WHY YOU SUGGEST THAT WAS MORE REWARD HELP BUT I WANT
+11:40:21 INFO body.audio_io:   [  5.3s] hearing: SO WHY YOU SUGGEST THAT WAS MORE REWARD HELP BUT I WANT TO BE
+11:40:22 INFO body.audio_io:   [  5.9s] hearing: SO WHY YOU SUGGEST THAT WAS MORE REWARD HELP BUT I WANT TO BE UNDERG
+11:40:22 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=3.7x auto)
+11:40:22 INFO body.audio_io:   [  6.3s] hearing: SO WHY YOU SUGGEST THAT WAS MORE REWARD HELP BUT I WANT TO BE UNDERGROUND
+11:40:22 INFO body.audio_io:   [  6.6s] hearing: SO WHY YOU SUGGEST THAT WAS MORE REWARD HELP BUT I WANT TO BE UNDERGROUND HE
+11:40:23 INFO body.audio_io:   [  6.8s] hearing: SO WHY YOU SUGGEST THAT WAS MORE REWARD HELP BUT I WANT TO BE UNDERGROUND HELPING
+11:40:23 INFO body.audio_io:   [  7.5s] hearing: SO WHY YOU SUGGEST THAT WAS MORE REWARD HELP BUT I WANT TO BE UNDERGROUND HELPING THEM
+11:40:26 INFO body.face_tracker: Face tracking: 15 frame(s), 15 with a face, 0 camera miss(es).
+11:40:28 INFO body.audio_io:   whisper (during silence): So what you suggested was more reform help but I want to be underground helping them.
+11:40:28 INFO demokit.runner: transcript confidence -0.66 (answering)
+11:40:29 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:40:29 INFO brain.llm_backends: anthropic first token in 0.67s (cache read 0, wrote 0, fresh 2385)
+11:40:29 INFO brain.interface: first words in 1.50s (anthropic)
+11:40:31 INFO body.face_tracker: Face tracking: 17 frame(s), 17 with a face, 0 camera miss(es).
+11:40:36 INFO body.face_tracker: Face tracking: 17 frame(s), 17 with a face, 0 camera miss(es).
+11:40:40 INFO body.audio_io: No wake word in backlog (599 chunk(s), peak 0.394).
+11:40:41 INFO body.face_tracker: Face tracking: 21 frame(s), 19 with a face, 0 camera miss(es).
+11:40:46 INFO body.face_tracker: Face tracking: 24 frame(s), 24 with a face, 0 camera miss(es).
+11:40:48 WARNING demokit.runner: conversation.on_utterance took 20.4s; hooks should return quickly so the robot stays switchable
+11:40:48 INFO body.audio_io: Flushed 17 stale mic chunk(s).
+11:40:48 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=15.2x auto)
+11:40:49 INFO body.face_tracker: Remembered another view of person 1 (match 0.80, 12 on file).
+11:40:51 INFO body.face_tracker: Face tracking: 18 frame(s), 17 with a face, 0 camera miss(es).
+11:40:51 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=22.3x auto)
+11:40:54 INFO body.audio_io: mic level: peak=1.000 clip=0.56% (gain=4.2x auto)
+11:40:57 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:40:57 INFO body.audio_io: mic level: peak=0.843 clip=0.00% (gain=19.8x auto)
+11:40:59 INFO body.audio_io: Wake word matched: 'HEY REACHIE'
+11:41:00 INFO body.audio_io: mic level: peak=1.000 clip=0.31% (gain=1.8x auto)
+11:41:02 INFO body.audio_io:   [  2.0s] hearing: REPEATED
+11:41:02 INFO body.face_tracker: Face tracking: 18 frame(s), 18 with a face, 0 camera miss(es).
+11:41:02 INFO body.audio_io:   [  2.3s] hearing: REPEATED WILL
+11:41:02 INFO body.audio_io:   [  2.7s] hearing: REPEATED WILL YOU
+11:41:03 INFO body.audio_io:   [  3.0s] hearing: REPEATED WILL YOU JUST
+11:41:03 INFO body.audio_io:   [  3.3s] hearing: REPEATED WILL YOU JUST SAID
+11:41:03 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=4.0x auto)
+11:41:05 INFO body.audio_io:   whisper (during silence): Repeat what you just said.
+11:41:05 INFO demokit.runner: transcript confidence -0.75 (answering)
+11:41:06 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:41:06 INFO brain.llm_backends: anthropic first token in 0.69s (cache read 0, wrote 0, fresh 2457)
+11:41:06 INFO brain.interface: first words in 0.94s (anthropic)
+11:41:07 INFO body.face_tracker: Face tracking: 16 frame(s), 16 with a face, 0 camera miss(es).
+11:41:12 INFO body.face_tracker: Face tracking: 16 frame(s), 14 with a face, 0 camera miss(es).
+11:41:17 INFO body.audio_io: No wake word in backlog (598 chunk(s), peak 0.417).
+11:41:17 INFO body.face_tracker: Face tracking: 18 frame(s), 18 with a face, 0 camera miss(es).
+11:41:22 INFO body.face_tracker: Face tracking: 23 frame(s), 21 with a face, 0 camera miss(es).
+11:41:25 WARNING demokit.runner: conversation.on_utterance took 19.9s; hooks should return quickly so the robot stays switchable
+11:41:25 INFO body.audio_io: Flushed 18 stale mic chunk(s).
+11:41:25 INFO body.audio_io: mic level: peak=0.037 clip=0.00% (gain=7.0x auto)
+11:41:27 INFO body.face_tracker: Remembered another view of person 1 (match 0.75, 12 on file).
+11:41:27 INFO body.face_tracker: Face tracking: 18 frame(s), 17 with a face, 0 camera miss(es).
+11:41:28 INFO body.audio_io: mic level: peak=0.948 clip=0.00% (gain=4.0x auto)
+11:41:31 INFO body.audio_io: mic level: peak=1.000 clip=0.67% (gain=4.0x auto)
+11:41:33 INFO body.face_tracker: Face tracking: 24 frame(s), 11 with a face, 0 camera miss(es).
+11:41:34 INFO body.audio_io: mic level: peak=1.000 clip=0.06% (gain=10.4x auto)
+11:41:34 INFO body.audio_io: Wake word matched: 'HEY REACHIE'
+11:41:37 INFO body.audio_io:   [  2.0s] hearing: ON A BEARD
+11:41:37 INFO body.audio_io:   [  2.2s] hearing: ON A BEARDED
+11:41:37 INFO body.audio_io: mic level: peak=1.000 clip=0.17% (gain=2.6x auto)
+11:41:37 INFO body.audio_io:   [  2.4s] hearing: ON A BEARDED THING
+11:41:38 INFO body.face_tracker: Face tracking: 24 frame(s), 19 with a face, 0 camera miss(es).
+11:41:39 INFO body.audio_io:   whisper (during silence): I want to build that thing.
+11:41:39 INFO demokit.runner: transcript confidence -0.73 (answering)
+11:41:40 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:41:40 INFO brain.llm_backends: anthropic first token in 0.78s (cache read 0, wrote 0, fresh 2529)
+11:41:40 INFO brain.interface: first words in 1.11s (anthropic)
+11:41:43 INFO body.face_tracker: Face tracking: 19 frame(s), 14 with a face, 0 camera miss(es).
+11:41:48 INFO body.audio_io: No wake word in backlog (460 chunk(s), peak 0.411).
+11:41:48 INFO body.face_tracker: Face tracking: 14 frame(s), 14 with a face, 0 camera miss(es).
+11:41:48 INFO demokit.base: silent 2.1s waiting for the next words
+11:41:53 INFO body.face_tracker: Face tracking: 21 frame(s), 21 with a face, 0 camera miss(es).
+11:41:56 INFO body.audio_io: No wake word in backlog (413 chunk(s), peak 0.094).
+11:41:58 WARNING demokit.runner: conversation.on_utterance took 19.0s; hooks should return quickly so the robot stays switchable
+11:41:58 INFO body.audio_io: Flushed 33 stale mic chunk(s).
+11:41:58 INFO body.audio_io: mic level: peak=0.007 clip=0.00% (gain=7.2x auto)
+11:41:58 INFO body.face_tracker: Face tracking: 23 frame(s), 23 with a face, 0 camera miss(es).
+11:42:01 INFO body.audio_io: mic level: peak=0.745 clip=0.00% (gain=4.0x auto)
+11:42:04 INFO body.face_tracker: Face tracking: 18 frame(s), 18 with a face, 0 camera miss(es).
+11:42:04 INFO body.audio_io: mic level: peak=0.701 clip=0.00% (gain=30.3x auto)
+11:42:07 INFO body.audio_io: mic level: peak=1.000 clip=0.10% (gain=4.0x auto)
+11:42:09 INFO body.face_tracker: Face tracking: 18 frame(s), 18 with a face, 0 camera miss(es).
+11:42:10 INFO body.audio_io: mic level: peak=1.000 clip=0.25% (gain=6.8x auto)
+11:42:13 INFO body.audio_io: Wake word matched: 'OK REACHY'
+11:42:13 INFO body.audio_io: mic level: peak=1.000 clip=13.44% (gain=4.0x auto)
+11:42:14 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:42:15 INFO body.audio_io:   [  1.5s] hearing: ONE
+11:42:16 INFO body.audio_io:   [  1.9s] hearing: ONE I'D
+11:42:16 INFO body.audio_io:   [  2.2s] hearing: ONE I'D DO
+11:42:16 INFO body.audio_io:   [  2.6s] hearing: ONE I'D DO SOMETHING
+11:42:16 INFO body.audio_io: mic level: peak=1.000 clip=0.46% (gain=3.1x auto)
+11:42:17 INFO body.audio_io:   [  3.0s] hearing: ONE I'D DO SOMETHING EL
+11:42:17 INFO body.audio_io:   [  3.3s] hearing: ONE I'D DO SOMETHING ELSE
+11:42:19 INFO body.face_tracker: Face tracking: 23 frame(s), 18 with a face, 0 camera miss(es).
+11:42:20 INFO body.audio_io:   whisper (during silence): I wanna do something else
+11:42:20 INFO demokit.runner: transcript confidence -1.01 (answering)
+11:42:21 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:42:21 INFO brain.llm_backends: anthropic first token in 0.64s (cache read 0, wrote 0, fresh 2596)
+11:42:21 INFO brain.interface: first words in 0.78s (anthropic)
+11:42:24 INFO body.face_tracker: Face tracking: 16 frame(s), 16 with a face, 0 camera miss(es).
+11:42:25 INFO body.audio_io: No wake word in backlog (318 chunk(s), peak 0.492).
+11:42:25 INFO body.audio_io: Flushed 9 stale mic chunk(s).
+11:42:25 INFO body.audio_io: mic level: peak=0.092 clip=0.00% (gain=13.2x auto)
+11:42:26 INFO body.audio_io:   [  1.5s] hearing: FUNN
+11:42:27 INFO body.audio_io:   [  1.8s] hearing: FUNNER IMP
+11:42:27 INFO body.audio_io:   [  2.2s] hearing: FUNNER IMPROOF
+11:42:27 INFO body.audio_io:   [  2.5s] hearing: FUNNER IMPROVE
+11:42:28 INFO body.audio_io:   [  2.8s] hearing: FUNNER IMPROVE YOU
+11:42:28 INFO body.audio_io:   [  3.1s] hearing: FUNNER IMPROVE YOU AS A
+11:42:28 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=2.9x auto)
+11:42:28 INFO body.audio_io:   [  3.5s] hearing: FUNNER IMPROVE YOU AS A ROB
+11:42:28 INFO body.audio_io:   [  3.7s] hearing: FUNNER IMPROVE YOU AS A ROBAR
+11:42:29 INFO body.audio_io:   [  4.3s] hearing: FUNNER IMPROVE YOU AS A ROBAR WHAT DO I
+11:42:29 INFO body.face_tracker: Face tracking: 20 frame(s), 13 with a face, 0 camera miss(es).
+11:42:29 INFO body.audio_io:   [  4.7s] hearing: FUNNER IMPROVE YOU AS A ROBAR WHAT DO I NEED TO
+11:42:30 INFO body.audio_io:   [  5.0s] hearing: FUNNER IMPROVE YOU AS A ROBAR WHAT DO I NEED TO DO
+11:42:31 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=8.2x auto)
+11:42:32 INFO body.audio_io:   whisper (during silence): I want to improve you as a robot. What do I need to do?
+11:42:32 INFO demokit.runner: transcript confidence -0.86 (answering)
+11:42:33 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:42:33 INFO brain.llm_backends: anthropic first token in 0.73s (cache read 0, wrote 0, fresh 2625)
+11:42:33 INFO brain.interface: first words in 1.03s (anthropic)
+11:42:34 INFO body.face_tracker: Face tracking: 22 frame(s), 8 with a face, 0 camera miss(es).
+11:42:39 INFO body.face_tracker: Face tracking: 14 frame(s), 14 with a face, 0 camera miss(es).
+11:42:41 INFO body.audio_io: No wake word in backlog (460 chunk(s), peak 0.321).
+11:42:45 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:42:45 WARNING demokit.runner: conversation.on_utterance took 13.1s; hooks should return quickly so the robot stays switchable
+11:42:46 INFO body.audio_io: Flushed 12 stale mic chunk(s).
+11:42:46 INFO body.audio_io: mic level: peak=0.007 clip=0.00% (gain=8.8x auto)
+11:42:47 INFO body.face_tracker: Remembered another view of person 1 (match 0.79, 12 on file).
+11:42:47 INFO body.audio_io:   [  1.7s] hearing: I'M
+11:42:47 INFO body.audio_io:   [  2.0s] hearing: I'M JUST
+11:42:48 INFO body.audio_io:   [  2.3s] hearing: I'M JUST CURIOUS
+11:42:48 INFO body.audio_io:   [  2.6s] hearing: I'M JUST CURIOUS HOW YOU
+11:42:49 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=2.7x auto)
+11:42:49 INFO body.audio_io:   [  3.3s] hearing: I'M JUST CURIOUS HOW YOU LOOK
+11:42:49 INFO body.audio_io:   [  3.6s] hearing: I'M JUST CURIOUS HOW YOU LOOK SO
+11:42:50 INFO body.audio_io:   [  4.2s] hearing: I'M JUST CURIOUS HOW YOU LOOK SO WHAT
+11:42:50 INFO body.face_tracker: Face tracking: 23 frame(s), 15 with a face, 0 camera miss(es).
+11:42:50 INFO body.audio_io:   [  4.6s] hearing: I'M JUST CURIOUS HOW YOU LOOK SO WHAT DO YOU
+11:42:50 INFO body.audio_io:   [  4.8s] hearing: I'M JUST CURIOUS HOW YOU LOOK SO WHAT DO YOU THINK
+11:42:51 INFO body.audio_io:   [  5.2s] hearing: I'M JUST CURIOUS HOW YOU LOOK SO WHAT DO YOU THINK IS
+11:42:51 INFO body.audio_io:   [  5.5s] hearing: I'M JUST CURIOUS HOW YOU LOOK SO WHAT DO YOU THINK IS WRONG
+11:42:51 INFO body.audio_io:   [  5.9s] hearing: I'M JUST CURIOUS HOW YOU LOOK SO WHAT DO YOU THINK IS WRONG WITH YOU
+11:42:52 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=4.7x auto)
+11:42:55 INFO body.audio_io:   whisper (during silence): I'm just curious how you look so what do you think is wrong with you?
+11:42:55 INFO body.face_tracker: Face tracking: 25 frame(s), 6 with a face, 0 camera miss(es).
+11:42:55 INFO demokit.runner: transcript confidence -0.30 (answering)
+11:42:56 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:42:56 INFO brain.llm_backends: anthropic first token in 0.59s (cache read 0, wrote 0, fresh 2687)
+11:42:56 INFO brain.interface: first words in 0.97s (anthropic, clause)
+11:43:00 INFO body.face_tracker: Face tracking: 16 frame(s), 16 with a face, 0 camera miss(es).
+11:43:04 INFO body.audio_io: No wake word in backlog (535 chunk(s), peak 0.258).
+11:43:05 INFO body.face_tracker: Face tracking: 16 frame(s), 16 with a face, 0 camera miss(es).
+11:43:09 WARNING demokit.runner: conversation.on_utterance took 14.5s; hooks should return quickly so the robot stays switchable
+11:43:09 INFO body.audio_io: Flushed 25 stale mic chunk(s).
+11:43:09 INFO body.audio_io: mic level: peak=0.067 clip=0.00% (gain=9.8x auto)
+11:43:10 INFO body.face_tracker: Face tracking: 17 frame(s), 17 with a face, 0 camera miss(es).
+11:43:11 INFO body.face_tracker: Remembered another view of person 1 (match 0.77, 12 on file).
+11:43:11 INFO body.audio_io:   [  1.8s] hearing: SH
+11:43:16 INFO body.face_tracker: Face tracking: 20 frame(s), 14 with a face, 0 camera miss(es).
+11:43:16 INFO demokit.runner: transcript confidence -2.28 (answering)
+11:43:16 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:43:16 INFO brain.llm_backends: anthropic first token in 0.62s (cache read 0, wrote 0, fresh 2724)
+11:43:17 INFO brain.interface: first words in 0.81s (anthropic)
+11:43:21 INFO body.face_tracker: Face tracking: 19 frame(s), 17 with a face, 0 camera miss(es).
+11:43:21 INFO body.audio_io: No wake word in backlog (432 chunk(s), peak 0.402).
+11:43:22 INFO body.audio_io: Flushed 40 stale mic chunk(s).
+11:43:22 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=1.4x auto)
+11:43:24 INFO body.audio_io:   [  2.0s] hearing: I'M
+11:43:24 INFO body.audio_io:   [  2.3s] hearing: I'M ASK
+11:43:24 INFO body.audio_io:   [  2.7s] hearing: I'M ASKING
+11:43:25 INFO body.audio_io:   [  3.0s] hearing: I'M ASKING YOU
+11:43:25 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=1.5x auto)
+11:43:25 INFO body.audio_io:   [  3.3s] hearing: I'M ASKING YOU WHAT
+11:43:25 INFO body.audio_io:   [  3.6s] hearing: I'M ASKING YOU WHAT WILL YOU
+11:43:26 INFO body.audio_io:   [  4.0s] hearing: I'M ASKING YOU WHAT WILL YOU CHANG
+11:43:26 INFO body.face_tracker: Face tracking: 18 frame(s), 16 with a face, 0 camera miss(es).
+11:43:26 INFO body.audio_io:   [  4.3s] hearing: I'M ASKING YOU WHAT WILL YOU CHANGE ABOUT
+11:43:27 INFO body.audio_io:   [  5.0s] hearing: I'M ASKING YOU WHAT WILL YOU CHANGE ABOUT YOUR
+11:43:27 INFO body.audio_io:   [  5.3s] hearing: I'M ASKING YOU WHAT WILL YOU CHANGE ABOUT YOURSELF
+11:43:28 INFO body.audio_io:   [  5.9s] hearing: I'M ASKING YOU WHAT WILL YOU CHANGE ABOUT YOURSELF IF YOU
+11:43:28 INFO body.audio_io:   [  6.2s] hearing: I'M ASKING YOU WHAT WILL YOU CHANGE ABOUT YOURSELF IF YOU COULD
+11:43:28 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=2.1x auto)
+11:43:28 INFO body.audio_io:   [  6.5s] hearing: I'M ASKING YOU WHAT WILL YOU CHANGE ABOUT YOURSELF IF YOU COULD CHANG
+11:43:29 INFO body.audio_io:   [  7.0s] hearing: I'M ASKING YOU WHAT WILL YOU CHANGE ABOUT YOURSELF IF YOU COULD CHANGE
+11:43:29 INFO body.audio_io:   [  7.2s] hearing: I'M ASKING YOU WHAT WILL YOU CHANGE ABOUT YOURSELF IF YOU COULD CHANGE SOMETHING
+11:43:31 INFO body.face_tracker: Face tracking: 16 frame(s), 16 with a face, 0 camera miss(es).
+11:43:32 INFO body.audio_io:   whisper (during silence): I'm asking you what will you change about yourself if you could change something?
+11:43:32 INFO demokit.runner: transcript confidence -0.38 (answering)
+11:43:33 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:43:33 INFO brain.llm_backends: anthropic first token in 0.62s (cache read 0, wrote 0, fresh 2728)
+11:43:33 INFO brain.interface: first words in 0.95s (anthropic, clause)
+11:43:36 INFO body.face_tracker: Face tracking: 17 frame(s), 16 with a face, 0 camera miss(es).
+11:43:36 INFO body.audio_io: No wake word in backlog (317 chunk(s), peak 0.366).
+11:43:36 INFO demokit.base: silent 1.0s waiting for the next words
+11:43:41 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:43:46 INFO body.face_tracker: Face tracking: 18 frame(s), 18 with a face, 0 camera miss(es).
+11:43:50 WARNING demokit.runner: conversation.on_utterance took 17.8s; hooks should return quickly so the robot stays switchable
+11:43:50 INFO body.audio_io: Flushed 12 stale mic chunk(s).
+11:43:50 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=8.0x auto)
+11:43:51 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:43:51 INFO body.face_tracker: Remembered another view of person 1 (match 0.78, 12 on file).
+11:43:53 INFO body.audio_io: mic level: peak=0.860 clip=0.00% (gain=6.6x auto)
+11:43:56 INFO body.audio_io: mic level: peak=1.000 clip=1.45% (gain=4.0x auto)
+11:43:56 INFO body.face_tracker: Face tracking: 23 frame(s), 12 with a face, 0 camera miss(es).
+11:43:59 INFO body.audio_io: mic level: peak=1.000 clip=7.24% (gain=4.0x auto)
+11:44:01 INFO body.face_tracker: Face tracking: 20 frame(s), 19 with a face, 0 camera miss(es).
+11:44:02 INFO body.audio_io: mic level: peak=1.000 clip=0.31% (gain=7.5x auto)
+11:44:05 INFO body.audio_io: mic level: peak=1.000 clip=1.88% (gain=4.0x auto)
+11:44:07 INFO body.face_tracker: Face tracking: 18 frame(s), 18 with a face, 0 camera miss(es).
+11:44:08 INFO body.audio_io: mic level: peak=1.000 clip=0.97% (gain=4.0x auto)
+11:44:11 INFO body.audio_io: mic level: peak=1.000 clip=1.45% (gain=5.7x auto)
+11:44:12 INFO body.face_tracker: Face tracking: 18 frame(s), 18 with a face, 0 camera miss(es).
+11:44:14 INFO body.audio_io: mic level: peak=1.000 clip=0.28% (gain=4.3x auto)
+11:44:16 INFO body.audio_io: Wake word matched: 'HEY REACHY'
+11:44:17 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:44:17 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=16.7x auto)
+11:44:18 INFO body.audio_io:   [  1.0s] hearing: JA
+11:44:18 INFO body.audio_io:   [  1.3s] hearing: JACK
+11:44:22 INFO demokit.runner: transcript confidence -1.34 (answering)
+11:44:22 INFO body.face_tracker: Face tracking: 18 frame(s), 18 with a face, 0 camera miss(es).
+11:44:23 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:44:23 INFO brain.llm_backends: anthropic first token in 0.72s (cache read 0, wrote 0, fresh 2755)
+11:44:23 INFO brain.interface: first words in 1.02s (anthropic)
+11:44:27 INFO body.audio_io: No wake word in backlog (360 chunk(s), peak 0.802).
+11:44:27 INFO body.face_tracker: Face tracking: 14 frame(s), 14 with a face, 0 camera miss(es).
+11:44:28 INFO body.audio_io: No wake word in backlog (64 chunk(s), peak 0.224).
+11:44:29 WARNING demokit.runner: conversation.on_utterance took 6.7s; hooks should return quickly so the robot stays switchable
+11:44:29 INFO body.audio_io: Flushed 25 stale mic chunk(s).
+11:44:29 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=11.0x auto)
+11:44:30 INFO body.audio_io:   [  1.7s] hearing: AND
+11:44:30 INFO body.face_tracker: Remembered another view of person 1 (match 0.82, 12 on file).
+11:44:31 INFO body.audio_io:   [  2.0s] hearing: AND MY BIL
+11:44:31 INFO body.audio_io:   [  2.3s] hearing: AND MY BILLIARD
+11:44:31 INFO body.audio_io:   [  2.6s] hearing: AND MY BILLIARD WAS
+11:44:32 INFO body.audio_io:   [  3.0s] hearing: AND MY JOY WAS KISSACK
+11:44:32 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=4.1x auto)
+11:44:32 INFO body.audio_io:   [  3.2s] hearing: AND MY JOYCE WAS THAT
+11:44:32 INFO body.face_tracker: Face tracking: 16 frame(s), 16 with a face, 0 camera miss(es).
+11:44:32 INFO body.audio_io:   [  3.6s] hearing: AND MY JOYCE WAS THAT BEFORE
+11:44:32 INFO body.audio_io:   [  3.9s] hearing: AND MY JOYCE WAS THAT BEFORE LIGHT
+11:44:33 INFO body.audio_io:   [  4.2s] hearing: AND MY JOYCE WAS THAT BEFORE LIGHT IF
+11:44:33 INFO body.audio_io:   [  4.5s] hearing: AND MY JOYCE WAS THAT BEFORE LIGHT IF HE IS
+11:44:34 INFO body.audio_io:   [  5.0s] hearing: AND MY JOYCE WAS THAT BEFORE LIGHT IF HE IS LIKE
+11:44:34 INFO body.audio_io:   [  5.2s] hearing: AND MY JOYCE WAS THAT BEFORE LIGHT IF HE IS LIKE GOD
+11:44:34 INFO body.audio_io:   [  5.5s] hearing: AND MY JOYCE WAS THAT BEFORE LIGHT IF HE IS LIKE GOD AND THE HOOK
+11:44:34 INFO body.audio_io:   [  5.9s] hearing: AND MY JOYCE WAS THAT BEFORE LIGHT IF HE IS LIKE GOD AND THE HOOK IS
+11:44:35 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=2.5x auto)
+11:44:35 INFO body.audio_io:   [  6.3s] hearing: AND MY JOYCE WAS THAT BEFORE LIGHT IF HE IS LIKE GOD AND THE HOOK IS BETTER THAN
+11:44:35 INFO body.audio_io:   [  6.6s] hearing: AND MY JOYCE WAS THAT BEFORE LIGHT IF HE IS LIKE GOD AND THE HOOK IS BETTER THAN GOD
+11:44:36 INFO body.audio_io:   [  6.9s] hearing: AND MY JOYCE WAS THAT BEFORE LIGHT IF HE IS LIKE GOD AND THE HOOK IS BETTER THAN GOD OR
+11:44:36 INFO body.audio_io:   [  7.2s] hearing: AND MY JOYCE WAS THAT BEFORE LIGHT IF HE IS LIKE GOD AND THE HOOK IS BETTER THAN GOD OR ELSE
+11:44:36 INFO body.audio_io:   [  7.6s] hearing: AND MY JOYCE WAS THAT BEFORE LIGHT IF HE IS LIKE GOD AND THE HOOK IS BETTER THAN GOD OR ELSE IF IT IS
+11:44:37 INFO body.audio_io:   [  8.0s] hearing: AND MY JOYCE WAS THAT BEFORE LIGHT IF HE IS LIKE GOD AND THE HOOK IS BETTER NOT OR ELSE IF IT IS LISTEN
+11:44:37 INFO body.audio_io:   [  8.2s] hearing: AND MY JOYCE WAS THAT BEFORE LIGHT IF HE IS LIKE GOD AND THE HOOK IS BETTER NOT OR ELSE IF IT IS LISTENING THERE
+11:44:37 INFO body.audio_io:   [  8.6s] hearing: AND MY JOYCE WAS THAT BEFORE LIGHT IF HE IS LIKE GOD AND THE HOOK IS BETTER NOT OR ELSE IF IT IS LISTENING THERE AS A
+11:44:37 INFO body.face_tracker: Face tracking: 17 frame(s), 17 with a face, 0 camera miss(es).
+11:44:38 INFO body.audio_io:   [  8.9s] hearing: AND MY JOYCE WAS THAT BEFORE LIGHT IF HE IS LIKE GOD AND THE HOOK IS BETTER NOT OR ELSE IF IT IS LISTENING THERE AS A THICK HIS
+11:44:38 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=1.7x auto)
+11:44:38 INFO body.audio_io:   [  9.3s] hearing: AND MY JOYCE WAS THAT BEFORE LIGHT IF HE IS LIKE GOD AND THE HOOK IS BETTER NOT OR ELSE IF IT IS LISTENING THERE AS A THICK HIS AT
+11:44:38 INFO body.audio_io:   [  9.9s] hearing: AND MY JOYCE WAS THAT BEFORE LIGHT IF HE IS LIKE GOD AND THE HOOK IS BETTER NOT OR ELSE IF IT IS LISTENING THERE AS A THICK HIS AT AN HOUR
+11:44:39 INFO body.audio_io:   [ 10.5s] hearing: AND MY JOYCE WAS THAT BEFORE LIGHT IF HE IS LIKE GOD AND THE HOOK IS BETTER NOT OR ELSE IF IT IS LISTENING THERE AS A THICK HIS AT AN HOUR LET US
+11:44:39 INFO body.audio_io:   [ 10.9s] hearing: AND MY JOYCE WAS THAT BEFORE LIGHT IF HE IS LIKE GOD AND THE HOOK IS BETTER NOT OR ELSE IF IT IS LISTENING THERE AS A THICK HIS AT AN HOUR LET US HAVE ANY
+11:44:40 INFO body.audio_io:   [ 11.5s] hearing: AND MY JOYCE WAS THAT BEFORE LIGHT IF HE IS LIKE GOD AND THE HOOK IS BETTER NOT OR ELSE IF IT IS LISTENING THERE AS A THICK HIS AT AN HOUR LET US HAVE ANY MEANS
+11:44:41 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=2.5x auto)
+11:44:43 INFO body.face_tracker: Face tracking: 18 frame(s), 18 with a face, 0 camera miss(es).
+11:44:48 INFO body.face_tracker: Face tracking: 19 frame(s), 19 with a face, 0 camera miss(es).
+11:44:50 INFO body.audio_io:   whisper (during silence): It needs to be like, we only have one or two seconds before, like, if you're here, like, a gap, we'll go get these guys on top, or else if you're keeps listening, then I always have to take piss, that's not working. That's not what they need.
+11:44:50 INFO demokit.runner: transcript confidence -1.28 (answering)
+11:44:50 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:44:50 INFO brain.llm_backends: anthropic first token in 0.56s (cache read 0, wrote 0, fresh 2655)
+11:44:51 INFO brain.interface: first words in 0.89s (anthropic, clause)
+11:44:53 INFO body.face_tracker: Face tracking: 18 frame(s), 16 with a face, 0 camera miss(es).
+11:44:58 INFO body.face_tracker: Face tracking: 13 frame(s), 13 with a face, 0 camera miss(es).
+11:45:00 INFO body.audio_io: No wake word in backlog (746 chunk(s), peak 0.533).
+11:45:01 INFO body.audio_io: No wake word in backlog (24 chunk(s), peak 0.103).
+11:45:01 INFO demokit.base: silent 4.1s waiting for the next words
+11:45:03 INFO body.face_tracker: Face tracking: 17 frame(s), 17 with a face, 0 camera miss(es).
+11:45:08 INFO body.audio_io: No wake word in backlog (382 chunk(s), peak 0.187).
+11:45:08 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:45:13 INFO body.face_tracker: Face tracking: 19 frame(s), 19 with a face, 0 camera miss(es).
+11:45:14 WARNING demokit.runner: conversation.on_utterance took 23.8s; hooks should return quickly so the robot stays switchable
+11:45:14 INFO body.audio_io: Flushed 17 stale mic chunk(s).
+11:45:14 INFO body.audio_io: mic level: peak=0.004 clip=0.00% (gain=4.1x auto)
+11:45:15 INFO body.face_tracker: Remembered another view of person 1 (match 0.77, 12 on file).
+11:45:17 INFO body.audio_io: mic level: peak=0.432 clip=0.00% (gain=39.9x auto)
+11:45:19 INFO body.face_tracker: Face tracking: 16 frame(s), 16 with a face, 0 camera miss(es).
+11:45:19 INFO body.audio_io:   [  1.7s] hearing: KEEP
+11:45:19 INFO body.audio_io:   [  2.0s] hearing: KEEP MY NEED
+11:45:19 INFO body.audio_io:   [  2.3s] hearing: KEEP MY NEED THIS
+11:45:20 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=6.4x auto)
+11:45:20 INFO body.audio_io:   [  3.2s] hearing: KEEP MY NEED THIS NO
+11:45:23 INFO body.face_tracker: Face tracking: 15 frame(s), 15 with a face, 0 camera miss(es).
+11:45:24 INFO body.audio_io:   whisper (during silence): No
+11:45:24 INFO demokit.runner: transcript confidence -1.56 (answering)
+11:45:25 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:45:25 INFO brain.llm_backends: anthropic first token in 0.91s (cache read 0, wrote 0, fresh 2738)
+11:45:25 INFO brain.interface: first words in 1.09s (anthropic)
+11:45:27 INFO demokit.base: silent 1.2s waiting for the next words
+11:45:28 INFO body.audio_io: No wake word in backlog (337 chunk(s), peak 1.000).
+11:45:29 INFO body.face_tracker: Face tracking: 14 frame(s), 14 with a face, 0 camera miss(es).
+11:45:30 INFO body.audio_io: Flushed 40 stale mic chunk(s).
+11:45:30 INFO body.audio_io: mic level: peak=0.350 clip=0.00% (gain=18.4x auto)
+11:45:32 INFO body.audio_io:   [  2.6s] hearing: YE
+11:45:33 INFO body.audio_io:   [  2.9s] hearing: YEAH
+11:45:33 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=1.5x auto)
+11:45:33 INFO body.audio_io:   [  3.6s] hearing: YEAH AH
+11:45:34 INFO body.face_tracker: Face tracking: 18 frame(s), 18 with a face, 0 camera miss(es).
+11:45:34 INFO body.audio_io:   [  4.2s] hearing: YEAH AH YOU
+11:45:34 INFO body.audio_io:   [  4.5s] hearing: YEAH AH YOU IMPROVE
+11:45:35 INFO body.audio_io:   [  4.9s] hearing: YEAH AH YOU IMPROVE SOMETHING
+11:45:35 INFO body.audio_io:   [  5.7s] hearing: YEAH AH YOU IMPROVE SOMETHING ABOUT
+11:45:36 INFO body.audio_io:   [  6.1s] hearing: YEAH AH YOU IMPROVE SOMETHING ABOUT YOURSEL
+11:45:36 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=3.6x auto)
+11:45:36 INFO body.audio_io:   [  6.4s] hearing: YEAH AH YOU IMPROVE SOMETHING ABOUT YOURSELF
+11:45:37 INFO body.face_tracker: Remembered another view of person 1 (match 0.75, 12 on file).
+11:45:39 INFO body.face_tracker: Face tracking: 14 frame(s), 13 with a face, 0 camera miss(es).
+11:45:41 INFO body.audio_io:   whisper (during silence): Yeah, uh, can you improve something about yourself?
+11:45:41 INFO demokit.runner: transcript confidence -0.62 (answering)
+11:45:42 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:45:42 INFO brain.llm_backends: anthropic first token in 0.66s (cache read 0, wrote 0, fresh 2741)
+11:45:43 INFO brain.interface: first words in 1.30s (anthropic)
+11:45:44 INFO body.face_tracker: Face tracking: 15 frame(s), 15 with a face, 0 camera miss(es).
+11:45:49 INFO body.face_tracker: Face tracking: 13 frame(s), 13 with a face, 0 camera miss(es).
+11:45:53 INFO body.audio_io: No wake word in backlog (685 chunk(s), peak 0.251).
+11:45:53 INFO demokit.base: silent 1.2s waiting for the next words
+11:45:54 INFO body.face_tracker: Face tracking: 16 frame(s), 16 with a face, 0 camera miss(es).
+11:45:59 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:46:00 WARNING demokit.runner: conversation.on_utterance took 18.0s; hooks should return quickly so the robot stays switchable
+11:46:00 INFO body.audio_io: Flushed 14 stale mic chunk(s).
+11:46:00 INFO body.audio_io: mic level: peak=0.229 clip=0.00% (gain=12.0x auto)
+11:46:02 INFO body.face_tracker: Remembered another view of person 1 (match 0.84, 12 on file).
+11:46:03 INFO body.audio_io: mic level: peak=1.000 clip=0.63% (gain=4.0x auto)
+11:46:04 INFO body.face_tracker: Face tracking: 21 frame(s), 14 with a face, 0 camera miss(es).
+11:46:06 INFO body.audio_io: mic level: peak=1.000 clip=0.31% (gain=4.0x auto)
+11:46:09 INFO body.audio_io: mic level: peak=1.000 clip=1.12% (gain=4.0x auto)
+11:46:10 INFO body.face_tracker: Face tracking: 22 frame(s), 12 with a face, 0 camera miss(es).
+11:46:12 INFO body.audio_io: mic level: peak=0.799 clip=0.00% (gain=6.5x auto)
+11:46:15 INFO body.face_tracker: Face tracking: 17 frame(s), 17 with a face, 0 camera miss(es).
+11:46:15 INFO body.audio_io: mic level: peak=1.000 clip=1.73% (gain=4.0x auto)
+11:46:18 INFO body.audio_io: mic level: peak=1.000 clip=0.13% (gain=4.0x auto)
+11:46:19 INFO body.audio_io: Wake word matched: 'HEY REACHY'
+11:46:20 INFO body.face_tracker: Face tracking: 18 frame(s), 18 with a face, 0 camera miss(es).
+11:46:21 INFO body.audio_io: mic level: peak=1.000 clip=0.80% (gain=0.9x auto)
+11:46:21 INFO body.audio_io:   [  1.3s] hearing: BUT
+11:46:23 INFO body.audio_io:   whisper (during silence): Yeah, yeah.
+11:46:23 INFO demokit.runner: transcript confidence -2.70 (answering)
+11:46:24 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:46:24 INFO brain.llm_backends: anthropic first token in 0.69s (cache read 0, wrote 0, fresh 2692)
+11:46:24 INFO brain.interface: first words in 0.80s (anthropic)
+11:46:25 INFO body.face_tracker: Face tracking: 16 frame(s), 14 with a face, 0 camera miss(es).
+11:46:28 INFO body.audio_io: No wake word in backlog (261 chunk(s), peak 1.000).
+11:46:28 INFO body.audio_io: Flushed 12 stale mic chunk(s).
+11:46:28 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=2.3x auto)
+11:46:30 INFO body.audio_io:   [  2.0s] hearing: GO
+11:46:30 INFO body.face_tracker: Face tracking: 16 frame(s), 16 with a face, 0 camera miss(es).
+11:46:30 INFO body.audio_io:   [  2.4s] hearing: GO TO SLEE
+11:46:30 INFO body.audio_io:   [  2.6s] hearing: GO TO SLEEP RE
+11:46:31 INFO body.audio_io:   [  3.0s] hearing: GO TO SLEEP READ HE
+11:46:31 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=2.5x auto)
+11:46:33 INFO body.audio_io:   whisper (during silence): Go to sleep, Ritchie.
+11:46:33 INFO demokit.runner: Going to sleep.
+11:46:35 INFO body.face_tracker: Face tracking: 16 frame(s), 11 with a face, 0 camera miss(es).
+11:46:39 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+11:46:39 INFO body.audio_io: Flushed 354 stale mic chunk(s).
+11:46:39 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=4.2x auto)
+11:46:40 INFO body.face_tracker: Face tracking: 15 frame(s), 15 with a face, 0 camera miss(es).
+11:46:42 INFO body.audio_io: mic level: peak=0.858 clip=0.00% (gain=6.5x auto)
+11:46:45 INFO body.audio_io: mic level: peak=1.000 clip=0.41% (gain=4.0x auto)
+11:46:45 INFO body.face_tracker: Face tracking: 18 frame(s), 18 with a face, 0 camera miss(es).
+11:46:48 INFO body.audio_io: mic level: peak=1.000 clip=1.06% (gain=4.0x auto)
+11:46:50 INFO body.face_tracker: Face tracking: 18 frame(s), 18 with a face, 0 camera miss(es).
+11:46:51 INFO body.audio_io: mic level: peak=1.000 clip=5.67% (gain=4.0x auto)
+11:46:54 INFO body.audio_io: mic level: peak=1.000 clip=0.06% (gain=4.0x auto)
+11:46:56 INFO body.face_tracker: Face tracking: 18 frame(s), 18 with a face, 0 camera miss(es).
+11:46:57 INFO body.audio_io: mic level: peak=1.000 clip=2.18% (gain=4.0x auto)
+11:47:00 INFO body.audio_io: mic level: peak=1.000 clip=3.10% (gain=4.0x auto)
+11:47:01 INFO body.face_tracker: Face tracking: 24 frame(s), 14 with a face, 0 camera miss(es).
+11:47:03 INFO body.audio_io: mic level: peak=1.000 clip=1.61% (gain=4.0x auto)
+11:47:06 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+11:47:06 INFO body.audio_io: mic level: peak=1.000 clip=0.55% (gain=4.0x auto)
+11:47:09 INFO body.audio_io: mic level: peak=1.000 clip=0.01% (gain=4.0x auto)
+11:47:11 INFO body.face_tracker: Face tracking: 32 frame(s), 3 with a face, 0 camera miss(es).
+11:47:12 INFO body.audio_io: mic level: peak=1.000 clip=0.53% (gain=4.6x auto)
+11:47:15 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=9.3x auto)
+11:47:16 INFO body.face_tracker: Face tracking: 29 frame(s), 7 with a face, 0 camera miss(es).
+11:47:18 INFO body.audio_io: mic level: peak=1.000 clip=0.00% (gain=8.1x auto)
+11:47:21 INFO body.audio_io: mic level: peak=1.000 clip=2.47% (gain=4.0x auto)
+11:47:21 INFO body.face_tracker: Face tracking: 24 frame(s), 14 with a face, 0 camera miss(es).
+11:47:24 INFO body.audio_io: mic level: peak=1.000 clip=2.17% (gain=4.0x auto)
+11:47:26 INFO body.face_tracker: Face tracking: 24 frame(s), 12 with a face, 0 camera miss(es).
+11:47:27 INFO body.audio_io: mic level: peak=1.000 clip=5.08% (gain=4.0x auto)
+11:47:30 INFO body.audio_io: mic level: peak=1.000 clip=3.95% (gain=4.0x auto)
+11:47:31 INFO body.face_tracker: Face tracking: 28 frame(s), 8 with a face, 0 camera miss(es).
+11:47:33 INFO body.audio_io: mic level: peak=1.000 clip=1.14% (gain=4.2x auto)
+11:47:36 INFO body.audio_io: mic level: peak=1.000 clip=0.15% (gain=4.0x auto)
+11:47:36 INFO body.face_tracker: Face tracking: 27 frame(s), 6 with a face, 0 camera miss(es).
+11:47:39 INFO body.audio_io: mic level: peak=1.000 clip=1.57% (gain=4.0x auto)
+11:47:42 INFO body.face_tracker: Face tracking: 25 frame(s), 10 with a face, 0 camera miss(es).
+11:47:42 INFO body.audio_io: mic level: peak=1.000 clip=1.64% (gain=4.0x auto)
+11:47:45 INFO body.audio_io: mic level: peak=1.000 clip=0.07% (gain=4.0x auto)
+11:47:47 INFO body.face_tracker: Face tracking: 25 frame(s), 10 with a face, 0 camera miss(es).
+11:47:48 INFO body.audio_io: mic level: peak=1.000 clip=0.71% (gain=4.0x auto)
+11:47:51 INFO body.audio_io: mic level: peak=1.000 clip=0.01% (gain=4.0x auto)
+11:47:52 INFO body.face_tracker: Face tracking: 24 frame(s), 14 with a face, 0 camera miss(es).
+11:47:54 INFO body.audio_io: mic level: peak=1.000 clip=5.91% (gain=4.0x auto)
+11:47:57 INFO body.face_tracker: Face tracking: 32 frame(s), 32 with a face, 0 camera miss(es).
+11:47:57 INFO body.audio_io: mic level: peak=1.000 clip=0.52% (gain=7.6x auto)
+11:48:00 INFO body.audio_io: mic level: peak=1.000 clip=2.88% (gain=4.0x auto)
+11:48:02 INFO body.face_tracker: Face tracking: 32 frame(s), 32 with a face, 0 camera miss(es).
+11:48:03 INFO body.audio_io: mic level: peak=1.000 clip=1.43% (gain=4.0x auto)
+11:48:06 INFO body.audio_io: mic level: peak=1.000 clip=0.02% (gain=4.0x auto)
+11:48:07 INFO body.face_tracker: Face tracking: 32 frame(s), 32 with a face, 0 camera miss(es).
+11:48:09 INFO body.audio_io: mic level: peak=1.000 clip=0.06% (gain=17.0x auto)
+11:48:12 INFO body.face_tracker: Face tracking: 28 frame(s), 28 with a face, 0 camera miss(es).
+11:48:12 INFO body.audio_io: mic level: peak=1.000 clip=3.38% (gain=4.0x auto)
+11:48:15 INFO body.audio_io: mic level: peak=1.000 clip=5.30% (gain=4.0x auto)
+11:48:17 INFO body.face_tracker: Face tracking: 26 frame(s), 26 with a face, 0 camera miss(es).
+11:48:18 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=5.9x auto)
+11:48:21 INFO body.audio_io: mic level: peak=1.000 clip=0.01% (gain=4.1x auto)
+11:48:23 INFO body.face_tracker: Face tracking: 22 frame(s), 22 with a face, 0 camera miss(es).
+11:48:24 INFO body.audio_io: mic level: peak=1.000 clip=3.03% (gain=6.1x auto)
+11:48:27 INFO body.audio_io: mic level: peak=1.000 clip=0.97% (gain=4.0x auto)
+11:48:28 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:48:30 INFO body.audio_io: mic level: peak=1.000 clip=0.20% (gain=4.0x auto)
+11:48:33 INFO body.face_tracker: Face tracking: 21 frame(s), 21 with a face, 0 camera miss(es).
+11:48:33 INFO body.audio_io: mic level: peak=1.000 clip=6.12% (gain=4.1x auto)
+11:48:36 INFO body.audio_io: mic level: peak=1.000 clip=1.03% (gain=4.0x auto)
+11:48:38 INFO body.face_tracker: Face tracking: 19 frame(s), 19 with a face, 0 camera miss(es).
+11:48:39 INFO body.audio_io: mic level: peak=0.941 clip=0.00% (gain=4.0x auto)
+11:48:42 INFO body.audio_io: mic level: peak=0.700 clip=0.00% (gain=30.5x auto)
+11:48:43 INFO body.face_tracker: Face tracking: 25 frame(s), 25 with a face, 0 camera miss(es).
+11:48:45 INFO body.audio_io: mic level: peak=0.595 clip=0.00% (gain=120.0x auto)
+11:48:48 INFO body.face_tracker: Face tracking: 22 frame(s), 22 with a face, 0 camera miss(es).
+11:48:48 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=50.0x auto)
+11:48:51 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=120.0x auto)
+11:48:53 INFO body.face_tracker: Face tracking: 23 frame(s), 23 with a face, 0 camera miss(es).
+11:48:54 INFO body.audio_io: mic level: peak=1.000 clip=0.41% (gain=4.0x auto)
+11:48:57 INFO body.audio_io: mic level: peak=1.000 clip=0.52% (gain=9.4x auto)
+11:48:58 INFO body.face_tracker: Face tracking: 22 frame(s), 22 with a face, 0 camera miss(es).
+11:49:00 INFO body.audio_io: mic level: peak=0.934 clip=0.00% (gain=18.7x auto)
+11:49:03 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:49:03 INFO body.audio_io: mic level: peak=1.000 clip=1.26% (gain=4.1x auto)
+11:49:06 INFO body.audio_io: mic level: peak=1.000 clip=0.21% (gain=4.0x auto)
+11:49:08 INFO body.face_tracker: Face tracking: 21 frame(s), 21 with a face, 0 camera miss(es).
+11:49:09 INFO body.audio_io: mic level: peak=1.000 clip=0.11% (gain=4.0x auto)
+11:49:12 INFO body.audio_io: mic level: peak=1.000 clip=1.51% (gain=4.0x auto)
+11:49:13 INFO body.face_tracker: Face tracking: 21 frame(s), 21 with a face, 0 camera miss(es).
+11:49:15 INFO body.audio_io: mic level: peak=1.000 clip=1.49% (gain=5.2x auto)
+11:49:18 INFO body.audio_io: mic level: peak=1.000 clip=6.38% (gain=4.0x auto)
+11:49:18 INFO body.face_tracker: Face tracking: 21 frame(s), 21 with a face, 0 camera miss(es).
+11:49:21 INFO body.audio_io: mic level: peak=1.000 clip=10.65% (gain=4.0x auto)
+11:49:23 INFO body.face_tracker: Face tracking: 22 frame(s), 22 with a face, 0 camera miss(es).
+11:49:24 INFO body.audio_io: mic level: peak=1.000 clip=3.61% (gain=4.0x auto)
+11:49:27 INFO body.audio_io: mic level: peak=1.000 clip=0.00% (gain=9.3x auto)
+11:49:29 INFO body.face_tracker: Face tracking: 21 frame(s), 21 with a face, 0 camera miss(es).
+11:49:30 INFO body.audio_io: mic level: peak=1.000 clip=0.10% (gain=4.0x auto)
+11:49:33 INFO body.audio_io: mic level: peak=1.000 clip=0.17% (gain=5.9x auto)
+11:49:34 INFO body.face_tracker: Face tracking: 22 frame(s), 22 with a face, 0 camera miss(es).
+11:49:36 INFO body.audio_io: mic level: peak=1.000 clip=0.65% (gain=4.0x auto)
+11:49:39 INFO body.face_tracker: Face tracking: 22 frame(s), 22 with a face, 0 camera miss(es).
+11:49:39 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=4.9x auto)
+11:49:42 INFO body.audio_io: mic level: peak=1.000 clip=0.00% (gain=5.5x auto)
+11:49:44 INFO body.face_tracker: Face tracking: 21 frame(s), 21 with a face, 0 camera miss(es).
+11:49:45 INFO body.audio_io: mic level: peak=1.000 clip=0.88% (gain=4.6x auto)
+11:49:48 INFO body.audio_io: mic level: peak=1.000 clip=0.00% (gain=4.0x auto)
+11:49:49 INFO body.face_tracker: Face tracking: 22 frame(s), 22 with a face, 0 camera miss(es).
+11:49:52 INFO body.audio_io: mic level: peak=1.000 clip=14.04% (gain=4.0x auto)
+11:49:54 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:49:55 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=5.7x auto)
+11:49:58 INFO body.audio_io: mic level: peak=1.000 clip=0.02% (gain=6.2x auto)
+11:49:59 INFO body.face_tracker: Face tracking: 24 frame(s), 24 with a face, 0 camera miss(es).
+11:50:01 INFO body.audio_io: mic level: peak=0.896 clip=0.00% (gain=4.0x auto)
+11:50:04 INFO body.audio_io: mic level: peak=0.943 clip=0.00% (gain=9.2x auto)
+11:50:04 INFO body.face_tracker: Face tracking: 23 frame(s), 23 with a face, 0 camera miss(es).
+11:50:07 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=63.0x auto)
+11:50:09 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:50:10 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=13.6x auto)
+11:50:13 INFO body.audio_io: mic level: peak=1.000 clip=2.12% (gain=4.0x auto)
+11:50:14 INFO body.face_tracker: Face tracking: 23 frame(s), 23 with a face, 0 camera miss(es).
+11:50:16 INFO body.audio_io: mic level: peak=0.938 clip=0.00% (gain=14.6x auto)
+11:50:19 INFO body.audio_io: mic level: peak=1.000 clip=0.00% (gain=4.0x auto)
+11:50:20 INFO body.face_tracker: Face tracking: 22 frame(s), 22 with a face, 0 camera miss(es).
+11:50:22 INFO body.audio_io: mic level: peak=1.000 clip=0.09% (gain=7.5x auto)
+11:50:25 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=12.6x auto)
+11:50:25 INFO body.face_tracker: Face tracking: 21 frame(s), 21 with a face, 0 camera miss(es).
+11:50:28 INFO body.audio_io: mic level: peak=1.000 clip=5.19% (gain=4.0x auto)
+11:50:30 INFO body.face_tracker: Face tracking: 21 frame(s), 21 with a face, 0 camera miss(es).
+11:50:31 INFO body.audio_io: mic level: peak=1.000 clip=0.10% (gain=4.0x auto)
+11:50:34 INFO body.audio_io: mic level: peak=1.000 clip=0.56% (gain=4.0x auto)
+11:50:35 INFO body.face_tracker: Face tracking: 22 frame(s), 21 with a face, 0 camera miss(es).
+11:50:37 INFO body.audio_io: mic level: peak=1.000 clip=0.27% (gain=4.0x auto)
+11:50:40 INFO body.audio_io: mic level: peak=1.000 clip=0.00% (gain=4.0x auto)
+11:50:40 INFO body.face_tracker: Face tracking: 22 frame(s), 22 with a face, 0 camera miss(es).
+11:50:43 INFO body.audio_io: mic level: peak=1.000 clip=0.67% (gain=10.1x auto)
+11:50:45 INFO body.face_tracker: Face tracking: 21 frame(s), 21 with a face, 0 camera miss(es).
+11:50:46 INFO body.audio_io: mic level: peak=0.711 clip=0.00% (gain=18.6x auto)
+11:50:49 INFO body.audio_io: mic level: peak=1.000 clip=0.99% (gain=4.0x auto)
+11:50:50 INFO body.face_tracker: Face tracking: 21 frame(s), 21 with a face, 0 camera miss(es).
+11:50:52 INFO body.audio_io: mic level: peak=1.000 clip=1.33% (gain=4.0x auto)
+11:50:55 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=15.7x auto)
+11:50:55 INFO body.face_tracker: Face tracking: 23 frame(s), 23 with a face, 0 camera miss(es).
+11:50:58 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=7.4x auto)
+11:51:01 INFO body.face_tracker: Face tracking: 23 frame(s), 23 with a face, 0 camera miss(es).
+11:51:01 INFO body.audio_io: mic level: peak=0.842 clip=0.00% (gain=5.6x auto)
+11:51:04 INFO body.audio_io: mic level: peak=1.000 clip=1.12% (gain=4.0x auto)
+11:51:06 INFO body.face_tracker: Face tracking: 24 frame(s), 24 with a face, 0 camera miss(es).
+11:51:07 INFO body.audio_io: mic level: peak=1.000 clip=5.49% (gain=4.0x auto)
+11:51:10 INFO body.audio_io: mic level: peak=0.840 clip=0.00% (gain=7.9x auto)
+11:51:11 INFO body.face_tracker: Face tracking: 30 frame(s), 30 with a face, 0 camera miss(es).
+11:51:13 INFO body.audio_io: mic level: peak=1.000 clip=0.15% (gain=4.0x auto)
+11:51:16 INFO body.audio_io: mic level: peak=0.842 clip=0.00% (gain=9.6x auto)
+11:51:16 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:51:19 INFO body.audio_io: mic level: peak=1.000 clip=5.06% (gain=4.0x auto)
+11:51:21 INFO body.face_tracker: Face tracking: 23 frame(s), 23 with a face, 0 camera miss(es).
+11:51:22 INFO body.audio_io: mic level: peak=1.000 clip=5.37% (gain=4.0x auto)
+11:51:25 INFO body.audio_io: mic level: peak=1.000 clip=0.13% (gain=12.4x auto)
+11:51:26 INFO body.face_tracker: Face tracking: 22 frame(s), 22 with a face, 0 camera miss(es).
+11:51:28 INFO body.audio_io: mic level: peak=1.000 clip=0.12% (gain=4.0x auto)
+11:51:31 INFO body.audio_io: mic level: peak=1.000 clip=1.05% (gain=4.0x auto)
+11:51:31 INFO body.face_tracker: Face tracking: 22 frame(s), 19 with a face, 0 camera miss(es).
+11:51:34 INFO body.audio_io: mic level: peak=1.000 clip=1.44% (gain=4.0x auto)
+11:51:36 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:51:37 INFO body.audio_io: mic level: peak=1.000 clip=0.39% (gain=4.0x auto)
+11:51:40 INFO body.audio_io: mic level: peak=1.000 clip=0.02% (gain=4.0x auto)
+11:51:42 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:51:43 INFO body.audio_io: mic level: peak=1.000 clip=0.61% (gain=4.0x auto)
+11:51:46 INFO body.audio_io: mic level: peak=1.000 clip=0.58% (gain=7.3x auto)
+11:51:47 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:51:49 INFO body.audio_io: mic level: peak=1.000 clip=2.34% (gain=4.0x auto)
+11:51:52 INFO body.audio_io: mic level: peak=1.000 clip=0.53% (gain=5.6x auto)
+11:51:52 INFO body.face_tracker: Face tracking: 21 frame(s), 21 with a face, 0 camera miss(es).
+11:51:55 INFO body.audio_io: mic level: peak=0.842 clip=0.00% (gain=6.5x auto)
+11:51:57 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:51:58 INFO body.audio_io: mic level: peak=1.000 clip=5.39% (gain=4.0x auto)
+11:52:01 INFO body.audio_io: mic level: peak=1.000 clip=0.10% (gain=4.0x auto)
+11:52:02 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:52:04 INFO body.audio_io: mic level: peak=1.000 clip=0.04% (gain=12.1x auto)
+11:52:07 INFO body.audio_io: mic level: peak=1.000 clip=0.01% (gain=4.7x auto)
+11:52:07 INFO body.face_tracker: Face tracking: 20 frame(s), 20 with a face, 0 camera miss(es).
+11:52:10 INFO body.audio_io: mic level: peak=1.000 clip=0.03% (gain=8.3x auto)
+11:52:12 INFO body.face_tracker: Face tracking: 15 frame(s), 14 with a face, 0 camera miss(es).
+11:52:13 INFO body.audio_io: mic level: peak=1.000 clip=4.76% (gain=4.0x auto)
+11:52:16 INFO body.audio_io: mic level: peak=1.000 clip=5.20% (gain=4.0x auto)
+11:52:17 INFO body.face_tracker: Face tracking: 15 frame(s), 15 with a face, 0 camera miss(es).
+11:52:19 INFO body.audio_io: mic level: peak=1.000 clip=0.04% (gain=4.0x auto)
+11:52:22 INFO body.audio_io: mic level: peak=1.000 clip=0.09% (gain=6.7x auto)
+11:52:22 INFO body.face_tracker: Face tracking: 15 frame(s), 13 with a face, 0 camera miss(es).
+11:52:25 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=13.2x auto)
+11:52:27 INFO body.face_tracker: Face tracking: 17 frame(s), 16 with a face, 0 camera miss(es).
+11:52:28 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=43.4x auto)
+11:52:31 INFO body.audio_io: mic level: peak=1.000 clip=3.29% (gain=4.0x auto)
+11:52:33 INFO body.face_tracker: Face tracking: 17 frame(s), 16 with a face, 0 camera miss(es).
+11:52:34 INFO body.audio_io: mic level: peak=1.000 clip=1.60% (gain=4.0x auto)
+11:52:37 INFO body.audio_io: mic level: peak=1.000 clip=0.60% (gain=4.6x auto)
+11:52:38 INFO body.face_tracker: Face tracking: 16 frame(s), 16 with a face, 0 camera miss(es).
+11:52:40 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=12.0x auto)
+11:52:43 INFO body.face_tracker: Face tracking: 16 frame(s), 16 with a face, 0 camera miss(es).
+11:52:43 INFO body.audio_io: mic level: peak=1.000 clip=2.30% (gain=4.0x auto)
+11:52:46 INFO body.audio_io: mic level: peak=1.000 clip=1.35% (gain=4.0x auto)
+11:52:48 INFO body.face_tracker: Face tracking: 18 frame(s), 18 with a face, 0 camera miss(es).
+11:52:49 INFO body.audio_io: mic level: peak=1.000 clip=1.41% (gain=4.0x auto)
+11:52:52 INFO body.audio_io: mic level: peak=1.000 clip=3.70% (gain=4.0x auto)
+11:52:53 INFO body.face_tracker: Face tracking: 18 frame(s), 18 with a face, 0 camera miss(es).
+11:52:55 INFO body.audio_io: mic level: peak=1.000 clip=0.68% (gain=4.0x auto)
+11:52:58 INFO body.audio_io: mic level: peak=1.000 clip=0.40% (gain=4.3x auto)
+11:52:58 INFO body.face_tracker: Face tracking: 17 frame(s), 17 with a face, 0 camera miss(es).
+11:53:01 INFO body.audio_io: mic level: peak=1.000 clip=1.09% (gain=5.4x auto)
+11:53:04 INFO body.face_tracker: Face tracking: 17 frame(s), 17 with a face, 0 camera miss(es).
+11:53:04 INFO body.audio_io: mic level: peak=1.000 clip=1.64% (gain=4.0x auto)
+11:53:07 INFO body.audio_io: mic level: peak=1.000 clip=0.01% (gain=4.0x auto)
+11:53:09 INFO body.face_tracker: Face tracking: 17 frame(s), 17 with a face, 0 camera miss(es).
+11:53:10 INFO body.audio_io: mic level: peak=0.872 clip=0.00% (gain=12.1x auto)
+11:53:13 INFO body.audio_io: mic level: peak=1.000 clip=2.64% (gain=4.0x auto)
+11:53:14 INFO body.face_tracker: Face tracking: 17 frame(s), 17 with a face, 0 camera miss(es).
+11:53:16 INFO body.audio_io: mic level: peak=1.000 clip=0.79% (gain=5.1x auto)
+11:53:19 INFO body.face_tracker: Face tracking: 17 frame(s), 15 with a face, 0 camera miss(es).
+11:53:19 INFO body.audio_io: mic level: peak=1.000 clip=0.07% (gain=4.0x auto)
+11:53:22 INFO body.audio_io: mic level: peak=1.000 clip=16.98% (gain=4.0x auto)
+11:53:24 INFO body.face_tracker: Face tracking: 17 frame(s), 17 with a face, 0 camera miss(es).
+11:53:25 INFO body.audio_io: mic level: peak=1.000 clip=1.99% (gain=4.0x auto)
+11:53:28 INFO body.audio_io: mic level: peak=1.000 clip=0.98% (gain=4.0x auto)
+11:53:29 INFO body.face_tracker: Face tracking: 18 frame(s), 18 with a face, 0 camera miss(es).
+11:53:31 INFO body.audio_io: mic level: peak=0.809 clip=0.00% (gain=11.9x auto)
+11:53:34 INFO body.audio_io: mic level: peak=1.000 clip=2.57% (gain=4.0x auto)
+11:53:34 INFO body.face_tracker: Face tracking: 18 frame(s), 18 with a face, 0 camera miss(es).
+11:53:37 INFO body.audio_io: mic level: peak=1.000 clip=0.27% (gain=4.2x auto)
+11:53:40 INFO body.face_tracker: Face tracking: 17 frame(s), 17 with a face, 0 camera miss(es).
+11:53:40 INFO body.audio_io: mic level: peak=1.000 clip=5.19% (gain=4.4x auto)
+11:53:43 INFO body.audio_io: mic level: peak=1.000 clip=3.83% (gain=4.0x auto)
+11:53:45 INFO body.face_tracker: Face tracking: 17 frame(s), 17 with a face, 0 camera miss(es).
+11:53:46 INFO body.audio_io: mic level: peak=1.000 clip=0.85% (gain=4.0x auto)
+11:53:49 INFO body.audio_io: mic level: peak=1.000 clip=0.04% (gain=9.5x auto)
+11:53:50 INFO body.face_tracker: Face tracking: 16 frame(s), 16 with a face, 0 camera miss(es).
+11:53:52 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=39.3x auto)
+11:53:55 INFO body.face_tracker: Face tracking: 17 frame(s), 17 with a face, 0 camera miss(es).
+11:53:55 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=50.8x auto)
+11:53:58 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=5.8x auto)
+11:54:00 INFO body.face_tracker: Face tracking: 17 frame(s), 17 with a face, 0 camera miss(es).
+11:54:01 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=15.5x auto)
+11:54:04 INFO body.audio_io: mic level: peak=1.000 clip=0.00% (gain=4.0x auto)
+11:54:05 INFO body.face_tracker: Face tracking: 17 frame(s), 15 with a face, 0 camera miss(es).
+11:54:07 INFO body.audio_io: mic level: peak=1.000 clip=3.06% (gain=4.0x auto)
+11:54:10 INFO body.audio_io: mic level: peak=1.000 clip=2.05% (gain=4.0x auto)
+11:54:10 INFO body.face_tracker: Face tracking: 17 frame(s), 16 with a face, 0 camera miss(es).
+11:54:13 INFO body.audio_io: mic level: peak=1.000 clip=0.60% (gain=4.0x auto)
+11:54:15 INFO body.face_tracker: Face tracking: 18 frame(s), 17 with a face, 0 camera miss(es).
+11:54:16 INFO body.audio_io: mic level: peak=1.000 clip=0.37% (gain=4.4x auto)
+11:54:19 INFO body.audio_io: mic level: peak=0.997 clip=0.00% (gain=12.6x auto)
+11:54:20 INFO body.face_tracker: Face tracking: 17 frame(s), 17 with a face, 0 camera miss(es).
+11:54:22 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=49.2x auto)
+11:54:25 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=71.4x auto)
+11:54:26 INFO body.face_tracker: Face tracking: 17 frame(s), 17 with a face, 0 camera miss(es).
+11:54:28 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=9.9x auto)
+11:54:31 INFO body.face_tracker: Face tracking: 16 frame(s), 16 with a face, 0 camera miss(es).
+11:54:31 INFO body.audio_io: mic level: peak=1.000 clip=2.10% (gain=4.0x auto)
+11:54:34 INFO body.audio_io: mic level: peak=1.000 clip=0.03% (gain=7.0x auto)
+11:54:36 INFO body.face_tracker: Face tracking: 21 frame(s), 11 with a face, 0 camera miss(es).
+11:54:37 INFO body.audio_io: mic level: peak=1.000 clip=2.50% (gain=4.0x auto)
+11:54:40 INFO body.audio_io: mic level: peak=1.000 clip=1.08% (gain=4.0x auto)
+11:54:41 INFO body.face_tracker: Face tracking: 29 frame(s), 3 with a face, 0 camera miss(es).
+11:54:43 INFO body.audio_io: mic level: peak=1.000 clip=1.18% (gain=4.0x auto)
+11:54:46 INFO body.face_tracker: Face tracking: 32 frame(s), 1 with a face, 0 camera miss(es).
+11:54:46 INFO body.audio_io: mic level: peak=1.000 clip=0.48% (gain=11.2x auto)
+11:54:49 INFO body.audio_io: mic level: peak=1.000 clip=2.77% (gain=4.0x auto)
+11:54:51 INFO body.face_tracker: Face tracking: 33 frame(s), 0 with a face, 0 camera miss(es).
+11:54:52 INFO body.audio_io: mic level: peak=1.000 clip=0.48% (gain=8.7x auto)
+11:54:55 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=52.5x auto)
+11:54:56 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+11:54:58 INFO body.audio_io: mic level: peak=1.000 clip=0.04% (gain=4.0x auto)
+11:55:01 INFO body.face_tracker: Face tracking: 31 frame(s), 2 with a face, 0 camera miss(es).
+11:55:01 INFO body.audio_io: mic level: peak=0.408 clip=0.00% (gain=18.0x auto)
+11:55:05 WARNING body.motion: Dropping Reachy Mini pose updates (1 so far): Lost connection with the server.
+11:55:05 INFO body.doa: Direction of arrival unavailable (HTTPConnectionPool(host='10.19.17.229', port=8000): Max retries exceeded with url: /api/state/doa (Caused by ConnectTimeoutError(<HTTPConnection(host='10.19.17.229', port=8000) at 0x25792c7a000>, 'Connection to 10.19.17.229 timed out. (connect timeout=1.0)'))); the head will keep searching visually.
+11:55:06 INFO body.audio_io: mic level: peak=0.391 clip=0.00% (gain=120.0x auto)
+11:55:06 INFO body.face_tracker: Face tracking: 24 frame(s), 0 with a face, 9 camera miss(es).
+11:55:08 INFO body.motion: Reachy Mini motion link recovered after 52 dropped frame(s).
+11:55:09 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=120.0x auto)
+11:55:11 INFO body.face_tracker: Face tracking: 33 frame(s), 0 with a face, 0 camera miss(es).
+11:55:12 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=52.1x auto)
+11:55:15 INFO body.audio_io: mic level: peak=0.537 clip=0.00% (gain=120.0x auto)
+11:55:16 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+11:55:18 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=30.2x auto)
+11:55:21 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=39.9x auto)
+11:55:21 INFO body.face_tracker: Face tracking: 30 frame(s), 3 with a face, 0 camera miss(es).
+11:55:24 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=43.5x auto)
+11:55:27 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+11:55:27 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=60.5x auto)
+11:55:30 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=76.4x auto)
+11:55:32 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+11:55:33 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=55.6x auto)
+11:55:36 INFO body.audio_io: mic level: peak=0.553 clip=0.00% (gain=120.0x auto)
+11:55:37 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+11:55:39 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=28.1x auto)
+11:55:42 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+11:55:42 INFO body.audio_io: mic level: peak=0.564 clip=0.00% (gain=120.0x auto)
+11:55:45 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=9.7x auto)
+11:55:47 INFO body.face_tracker: Face tracking: 30 frame(s), 1 with a face, 2 camera miss(es).
+11:55:48 INFO body.audio_io: mic level: peak=0.577 clip=0.00% (gain=120.0x auto)
+11:55:51 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=120.0x auto)
+11:55:52 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+11:55:54 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=86.2x auto)
+11:55:57 INFO body.face_tracker: Face tracking: 29 frame(s), 5 with a face, 0 camera miss(es).
+11:55:57 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=40.6x auto)
+11:56:00 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=120.0x auto)
+11:56:02 INFO body.face_tracker: Face tracking: 33 frame(s), 0 with a face, 0 camera miss(es).
+11:56:03 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=120.0x auto)
+11:56:06 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=6.4x auto)
+11:56:07 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+11:56:09 INFO body.audio_io: mic level: peak=0.265 clip=0.00% (gain=63.2x auto)
+11:56:12 INFO body.face_tracker: Face tracking: 33 frame(s), 1 with a face, 0 camera miss(es).
+11:56:12 INFO body.audio_io: mic level: peak=0.798 clip=0.00% (gain=4.0x auto)
+11:56:15 INFO body.audio_io: mic level: peak=0.595 clip=0.00% (gain=31.4x auto)
+11:56:17 INFO body.face_tracker: Face tracking: 33 frame(s), 0 with a face, 0 camera miss(es).
+11:56:18 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=9.1x auto)
+11:56:21 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=32.6x auto)
+11:56:22 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+11:56:24 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=120.0x auto)
+11:56:27 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=120.0x auto)
+11:56:27 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+11:56:30 INFO body.audio_io: mic level: peak=0.906 clip=0.00% (gain=13.2x auto)
+11:56:32 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+11:56:33 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=19.4x auto)
+11:56:36 INFO body.audio_io: mic level: peak=0.903 clip=0.00% (gain=14.5x auto)
+11:56:37 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+11:56:39 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=5.4x auto)
+11:56:42 INFO body.audio_io: mic level: peak=0.262 clip=0.00% (gain=52.4x auto)
+11:56:42 INFO body.face_tracker: Face tracking: 32 frame(s), 1 with a face, 0 camera miss(es).
+11:56:45 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=96.6x auto)
+11:56:47 INFO body.face_tracker: Face tracking: 32 frame(s), 2 with a face, 0 camera miss(es).
+11:56:48 INFO body.audio_io: mic level: peak=0.691 clip=0.00% (gain=5.2x auto)
+11:56:51 INFO body.audio_io: mic level: peak=0.529 clip=0.00% (gain=47.7x auto)
+11:56:52 INFO body.face_tracker: Face tracking: 32 frame(s), 1 with a face, 0 camera miss(es).
+11:56:54 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=57.1x auto)
+11:56:57 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=6.2x auto)
+11:56:57 INFO body.face_tracker: Face tracking: 30 frame(s), 3 with a face, 0 camera miss(es).
+11:57:00 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=33.4x auto)
+11:57:03 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+11:57:03 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=27.8x auto)
+11:57:06 INFO body.audio_io: mic level: peak=1.000 clip=0.03% (gain=4.0x auto)
+11:57:08 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+11:57:09 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=22.1x auto)
+11:57:12 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=15.3x auto)
+11:57:13 INFO body.face_tracker: Face tracking: 33 frame(s), 1 with a face, 0 camera miss(es).
+11:57:15 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=19.8x auto)
+11:57:18 INFO body.face_tracker: Face tracking: 33 frame(s), 0 with a face, 0 camera miss(es).
+11:57:18 INFO body.audio_io: mic level: peak=1.000 clip=0.00% (gain=17.7x auto)
+11:57:21 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=85.8x auto)
+11:57:23 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+11:57:24 INFO body.audio_io: mic level: peak=0.677 clip=0.00% (gain=4.4x auto)
+11:57:27 INFO body.audio_io: mic level: peak=1.000 clip=0.02% (gain=15.4x auto)
+11:57:28 INFO body.face_tracker: Face tracking: 30 frame(s), 3 with a face, 0 camera miss(es).
+11:57:30 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=25.0x auto)
+11:57:33 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+11:57:33 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=38.4x auto)
+11:57:36 INFO body.audio_io: mic level: peak=1.000 clip=0.32% (gain=4.0x auto)
+11:57:38 INFO body.face_tracker: Face tracking: 30 frame(s), 3 with a face, 0 camera miss(es).
+11:57:39 INFO body.audio_io: mic level: peak=1.000 clip=0.11% (gain=4.0x auto)
+11:57:42 INFO body.audio_io: mic level: peak=1.000 clip=0.24% (gain=4.0x auto)
+11:57:43 INFO body.face_tracker: Face tracking: 33 frame(s), 0 with a face, 0 camera miss(es).
+11:57:45 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=8.9x auto)
+11:57:48 INFO body.face_tracker: Face tracking: 33 frame(s), 0 with a face, 0 camera miss(es).
+11:57:48 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=20.6x auto)
+11:57:51 INFO body.audio_io: mic level: peak=1.000 clip=1.89% (gain=4.0x auto)
+11:57:53 INFO body.face_tracker: Face tracking: 33 frame(s), 0 with a face, 0 camera miss(es).
+11:57:54 INFO body.audio_io: mic level: peak=1.000 clip=0.21% (gain=6.2x auto)
+11:57:57 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=11.3x auto)
+11:57:58 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+11:58:00 INFO body.audio_io: mic level: peak=1.000 clip=0.41% (gain=4.0x auto)
+11:58:03 INFO body.audio_io: mic level: peak=0.423 clip=0.00% (gain=21.3x auto)
+11:58:03 INFO body.face_tracker: Face tracking: 33 frame(s), 0 with a face, 0 camera miss(es).
+11:58:06 INFO body.audio_io: mic level: peak=0.875 clip=0.00% (gain=17.7x auto)
+11:58:08 INFO body.face_tracker: Face tracking: 32 frame(s), 0 with a face, 0 camera miss(es).
+11:58:09 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=13.1x auto)
+11:58:12 INFO body.audio_io: mic level: peak=1.000 clip=0.00% (gain=4.0x auto)
+11:58:13 INFO body.face_tracker: Face tracking: 31 frame(s), 2 with a face, 0 camera miss(es).
+11:58:15 INFO body.audio_io: mic level: peak=1.000 clip=0.05% (gain=4.0x auto)
+11:58:18 INFO body.audio_io: mic level: peak=1.000 clip=0.13% (gain=4.0x auto)
+11:58:18 INFO body.face_tracker: Face tracking: 33 frame(s), 0 with a face, 0 camera miss(es).
+11:58:21 INFO body.audio_io: mic level: peak=1.000 clip=0.57% (gain=4.0x auto)
+11:58:24 INFO body.face_tracker: Face tracking: 31 frame(s), 2 with a face, 0 camera miss(es).
+11:58:24 INFO body.audio_io: mic level: peak=1.000 clip=0.11% (gain=4.0x auto)
+11:58:27 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=10.6x auto)
+11:58:29 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+11:58:30 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=13.2x auto)
+11:58:33 INFO body.audio_io: mic level: peak=1.000 clip=0.40% (gain=4.0x auto)
+11:58:34 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+11:58:36 INFO body.audio_io: mic level: peak=1.000 clip=0.01% (gain=4.0x auto)
+11:58:39 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+11:58:39 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=4.8x auto)
+11:58:42 INFO body.audio_io: mic level: peak=1.000 clip=0.58% (gain=4.0x auto)
+11:58:44 INFO body.face_tracker: Face tracking: 32 frame(s), 1 with a face, 0 camera miss(es).
+11:58:45 INFO body.audio_io: mic level: peak=0.515 clip=0.00% (gain=19.3x auto)
+11:58:48 INFO body.audio_io: mic level: peak=1.000 clip=0.14% (gain=4.0x auto)
+11:58:49 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+11:58:51 INFO body.audio_io: mic level: peak=1.000 clip=0.20% (gain=4.0x auto)
+11:58:54 INFO body.face_tracker: Face tracking: 30 frame(s), 3 with a face, 0 camera miss(es).
+11:58:54 INFO body.audio_io: mic level: peak=0.855 clip=0.00% (gain=12.2x auto)
+11:58:57 INFO body.audio_io: mic level: peak=1.000 clip=0.16% (gain=4.0x auto)
+11:58:59 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+11:59:00 INFO body.audio_io: mic level: peak=1.000 clip=0.16% (gain=5.2x auto)
+11:59:03 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=7.3x auto)
+11:59:04 INFO body.face_tracker: Face tracking: 33 frame(s), 0 with a face, 0 camera miss(es).
+11:59:07 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=4.6x auto)
+11:59:09 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+11:59:09 INFO body.audio_io: mic level: peak=1.000 clip=0.10% (gain=4.0x auto)
+11:59:12 INFO body.audio_io: mic level: peak=1.000 clip=0.04% (gain=6.6x auto)
+11:59:14 INFO body.face_tracker: Face tracking: 33 frame(s), 0 with a face, 0 camera miss(es).
+11:59:15 INFO body.audio_io: mic level: peak=1.000 clip=0.03% (gain=10.9x auto)
+11:59:19 INFO body.audio_io: mic level: peak=1.000 clip=0.05% (gain=4.0x auto)
+11:59:19 INFO body.face_tracker: Face tracking: 33 frame(s), 1 with a face, 0 camera miss(es).
+11:59:22 INFO body.audio_io: mic level: peak=0.880 clip=0.00% (gain=5.0x auto)
+11:59:24 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+11:59:25 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=17.2x auto)
+11:59:28 INFO body.audio_io: mic level: peak=1.000 clip=0.30% (gain=4.0x auto)
+11:59:29 INFO body.face_tracker: Face tracking: 28 frame(s), 1 with a face, 0 camera miss(es).
+11:59:31 INFO body.audio_io: mic level: peak=1.000 clip=0.02% (gain=5.0x auto)
+11:59:34 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=7.0x auto)
+11:59:34 INFO body.face_tracker: Face tracking: 23 frame(s), 0 with a face, 0 camera miss(es).
+11:59:37 INFO body.audio_io: mic level: peak=1.000 clip=0.05% (gain=4.0x auto)
+11:59:39 INFO body.face_tracker: Face tracking: 18 frame(s), 3 with a face, 0 camera miss(es).
+11:59:40 INFO body.audio_io: mic level: peak=1.000 clip=0.22% (gain=4.0x auto)
+11:59:43 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=15.6x auto)
+11:59:45 INFO body.face_tracker: Face tracking: 24 frame(s), 0 with a face, 0 camera miss(es).
+11:59:46 INFO body.audio_io: mic level: peak=1.000 clip=0.20% (gain=4.0x auto)
+11:59:49 INFO body.audio_io: mic level: peak=0.955 clip=0.00% (gain=6.6x auto)
+11:59:50 INFO body.face_tracker: Face tracking: 29 frame(s), 1 with a face, 0 camera miss(es).
+11:59:52 INFO body.audio_io: mic level: peak=1.000 clip=0.07% (gain=4.0x auto)
+11:59:55 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+11:59:55 INFO body.audio_io: mic level: peak=0.650 clip=0.00% (gain=6.4x auto)
+11:59:58 INFO body.audio_io: mic level: peak=1.000 clip=0.00% (gain=10.6x auto)
+12:00:00 INFO body.face_tracker: Face tracking: 30 frame(s), 3 with a face, 0 camera miss(es).
+12:00:01 INFO body.audio_io: mic level: peak=1.000 clip=0.02% (gain=6.3x auto)
+12:00:04 INFO body.audio_io: mic level: peak=1.000 clip=0.11% (gain=4.0x auto)
+12:00:05 INFO body.face_tracker: Face tracking: 34 frame(s), 0 with a face, 0 camera miss(es).
+12:00:07 INFO body.audio_io: mic level: peak=1.000 clip=0.62% (gain=4.0x auto)
+12:00:10 INFO body.face_tracker: Face tracking: 33 frame(s), 0 with a face, 0 camera miss(es).
+12:00:10 INFO body.audio_io: mic level: peak=1.000 clip=0.45% (gain=4.0x auto)

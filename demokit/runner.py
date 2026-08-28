@@ -125,6 +125,35 @@ _AMBIENT_MIN_CHARS = 7
 
 _OPEN_MIC_WINDOW_S = 30.0
 
+#: How long the robot's own words stay disqualified as input. The echo
+#: arrives within a second or two of the reply ending; twenty seconds covers
+#: a long reply whose opening sentences are still in the room's echo when the
+#: mic opens, without eating a visitor who genuinely quotes the robot later.
+_ECHO_WINDOW_S = 20.0
+
+#: An utterance is echo only at three words or more: long enough that the
+#: match cannot be a visitor answering the robot's question WITH one of the
+#: robot's own words ("red or blue?" -> "blue" must never be eaten).
+_ECHO_MIN_WORDS = 3
+
+#: Whisper's vocabulary for audio that is not speech. With open mic on, the
+#: robot's own speaker tail, motor noise and room rustle come back as these
+#: -- every one below was seen in a live transcript ("Phew", "Humph", "See?",
+#: "Thanks Ritchie") or is the same shape. An utterance made ONLY of these
+#: (wake-name spellings included, they are noise in any position) is nothing
+#: anybody said to the robot. Real answers always carry at least one word
+#: from outside this list -- "yes", "no", "purple", "thank you".
+_NOISE_WORDS = frozenset((
+    "phew", "whew", "humph", "hump", "hmph", "hm", "hmm", "mhm", "mm", "mmm",
+    "sh", "shh", "shhh", "huh", "uh", "uhh", "um", "umm", "eh", "ah", "ahh",
+    "oh", "ooh", "ha", "haha", "hah", "heh", "ugh", "tsk", "psst", "whoa",
+    "wow", "see", "thanks", "bye",
+    # The wake-name spellings: stripped when LEADING, but Whisper also pins
+    # them on trailing noise ("Thanks Ritchie"), where the strip cannot reach.
+    "reachy", "reachie", "reechy", "retchy", "ricky", "richie", "ritchie",
+    "richy", "richi",
+))
+
 #: The floor-free part of an answer window. A direct short answer -- "yes",
 #: "purple", "For my startup" -- comes within seconds of the question; a
 #: visitor still thinking past this speaks in sentences when they do answer,
@@ -595,6 +624,24 @@ class DemoRunner:
         """
         if self._state.open_mic_held:
             return True
+        words = _word_stream(heard)
+        # Its own voice, coming back. The robot knows exactly what it just
+        # said; a transcript that appears verbatim inside those words is the
+        # speaker tail reaching the microphone, not a person. Live, this loop
+        # answered its own "How are you?" and kept the conversation going
+        # with itself, one model call every twelve seconds.
+        if len(words.split()) >= _ECHO_MIN_WORDS:
+            for line in self._state.recent_said(_ECHO_WINDOW_S):
+                if contains_phrase(_word_stream(line), words.strip()):
+                    logger.info("open mic: ignoring %r -- the robot's own words",
+                                heard[:60])
+                    return False
+        # Nothing but noise-words: what Whisper writes down for the speaker
+        # tail and the room, never something said TO a robot.
+        tokens = words.split()
+        if tokens and all(t in _NOISE_WORDS for t in tokens):
+            logger.info("open mic: ignoring %r -- noise, not speech", heard[:60])
+            return False
         # A FRESH answer window is the robot having just ASKED something, so a
         # one-word reply is exactly what is expected -- "yes", "true",
         # "purple". The word-count floor is for ambient listening, where a

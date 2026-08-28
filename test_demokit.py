@@ -3287,8 +3287,10 @@ check("follow-up windows do not relax the gate -- nothing was asked",
 # robot answering stray syllables for half a minute after every question.
 _r57w, _s57w, _a57w, _ = build([Chatty()])
 _s57w.expect_answer(30.0)
+# "yes", not "eh": interjections are now noise-listed outright (section
+# [64]) -- "eh" was the founding live failure this whole floor exists for.
 check("a prompt one-word answer needs no floor",
-      _r57w._addressed_to_the_robot("eh"), True)
+      _r57w._addressed_to_the_robot("yes"), True)
 _s57w._answer_armed_at = _time57.monotonic() - 15.0
 check("a late stray syllable is the room, not an answer",
       _r57w._addressed_to_the_robot("eh"), False)
@@ -3916,6 +3918,51 @@ _s63.set_sleeping(True)
 _r63.cycle()
 check("asleep never wears the lean", _r63._motion.cues[-1], False)
 _s63.set_sleeping(False)
+
+
+print()
+print("[64] the robot never answers its own voice")
+# From the live log: with open mic on, the speaker tail reached the mic,
+# Whisper hallucinated little phrases from it ("Phew", "See?", "Thanks
+# Ritchie" -- and once the robot's own "How are you?" verbatim), the answer
+# window accepted them, and the robot held a conversation with itself, one
+# model call every twelve seconds.
+_r64, _s64, _a64, _ = build([Chatty()])
+
+# ECHO: the robot's own recent words, coming back through the microphone.
+_s64.add("said", "Well, how are you today? I hope the Hub visit is going well.")
+check("its own question echoed back is refused",
+      _r64._addressed_to_the_robot("How are you today?"), False)
+check("a three-word slice of its own sentence is refused",
+      _r64._addressed_to_the_robot("the hub visit"), False)
+check("but a real new sentence still lands",
+      _r64._addressed_to_the_robot("what masters programmes are there"), True)
+# The guard must never eat a visitor answering WITH the robot's own word:
+# short answers are exempt by design.
+_s64.add("said", "Do you prefer the red one or the blue one?")
+_s64.expect_answer(30.0)
+check("answering with one of the robot's own words still works",
+      _r64._addressed_to_the_robot("blue"), True)
+_s64.expect_answer(0.0)
+
+# NOISE: utterances made only of Whisper's non-speech vocabulary.
+_s64.expect_answer(30.0)   # even inside the floor-free grace window
+for _n64 in ("Phew", "Humph", "See", "Thanks Ritchie", "hmm hmm", "sh"):
+    check(f"  {_n64!r} is noise, not speech",
+          _r64._addressed_to_the_robot(_n64), False)
+for _y64 in ("yes", "no", "purple", "thank you"):
+    check(f"  {_y64!r} still counts as an answer",
+          _r64._addressed_to_the_robot(_y64), True)
+_s64.expect_answer(0.0)
+
+# The echo disqualification expires: quoting the robot much later is a person.
+import brain.modes as _bm64
+with _s64._lock:
+    for _e64 in _s64._history:
+        if _e64.kind == "said":
+            _e64.at -= 60.0
+check("old robot words stop being echo",
+      _r64._addressed_to_the_robot("how are you today"), True)
 
 print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")

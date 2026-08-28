@@ -515,6 +515,19 @@ class RobotState:
 
     # --- events ---
 
+    def recent_said(self, within_s: float, limit: int = 8) -> list[str]:
+        """What the robot itself said in the last `within_s` seconds.
+
+        For the echo guard: with open mic on, the robot's own trailing audio
+        reaches its microphone, and a transcript that matches something it
+        just said is its own voice, not a visitor. Newest last.
+        """
+        cutoff = time.time() - max(0.0, within_s)
+        with self._lock:
+            said = [e.text for e in self._history[-200:]
+                    if e.kind == "said" and e.at >= cutoff]
+        return said[-limit:]
+
     def add(self, kind: str, text: str) -> None:
         """Record something the dashboard should show."""
         text = (text or "").strip()
