@@ -821,6 +821,18 @@ class DemoContext:
         """
         self._require_loop_thread("listen")
         self._stop_if_switched()
+        # A demo listening directly (a quiz answer, an enrolment exchange) is
+        # wake-free by construction, so the antennas should say so too. Only
+        # ever set ON here: the runner's next cycle settles it back, and
+        # clearing it in the finally below would snap the antennas between
+        # the two questions of one exchange.
+        if self.state.open_mic:
+            setter = getattr(self.motion, "set_listening_cue", None)
+            if setter is not None:
+                try:
+                    setter(True)
+                except Exception:
+                    logger.debug("Could not set the listening cue", exc_info=True)
         self.state.set_flags(listening=True)
         try:
             heard = self.audio.listen(wait_for_speech_s=wait_for_speech_s) or ""

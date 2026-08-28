@@ -90,6 +90,12 @@ class FakeAudio:
 class FakeMotion:
     def __init__(self):
         self.expressions = []
+        #: Every set_listening_cue call, in order -- the antenna lean that
+        #: tells the room whether a wake word is needed right now.
+        self.cues = []
+
+    def set_listening_cue(self, wake_free):
+        self.cues.append(wake_free)
 
     def express(self, tag):
         self.expressions.append(tag)
@@ -3860,6 +3866,56 @@ check("no opener is ever a four-character stub",
       min(len(t) for t in _spoken62d) >= 15, True)
 check("  ...and the sentence still all arrives",
       "three strands" in " ".join(_spoken62d), True)
+
+
+print()
+print("[63] the antennas say whether a wake word is needed")
+# Requested from the floor: nobody can tell from across the room whether the
+# robot is in open mic or needs "Hey Reachy", short of reading the dashboard.
+# Both antennas swept the SAME direction now means "just talk" -- no emotion
+# pose does that (all mirrored pairs, plus the one asymmetric thinking), so
+# the cue reads as state, not mood.
+import time as _t63
+
+from body.motion import MotionController as _MC63, _LISTENING_LEAN as _LEAN63
+from config import SIMULATION as _SIM63
+
+# The compose math, on a real controller with no robot and no loop started.
+_m63 = _MC63(_SIM63, robot=object())
+_m63._robot = None
+_before63 = _m63._compose_pose(_t63.monotonic()).antennas
+_m63.set_listening_cue(True)
+_after63 = _m63._compose_pose(_t63.monotonic()).antennas
+check("the lean lands on both antennas",
+      (round(_after63[0] - _before63[0]), round(_after63[1] - _before63[1])),
+      (round(_LEAN63[0]), round(_LEAN63[1])))
+check("and both lean the SAME direction -- the unclaimed signal",
+      _after63[0] > 0 and _after63[1] > 0, True)
+_m63.set_listening_cue(False)
+check("clearing it restores the mirrored set",
+      _m63._compose_pose(_t63.monotonic()).antennas, _before63)
+# No emotion pose may ever collide with the cue: every held pose must keep
+# its antennas mirrored or asymmetric-opposed, never both same-signed.
+from body.motion import EmotionMapper as _EM63
+for _tag63, _pose63 in _EM63._POSES.items():
+    _l63, _r63 = _pose63.antennas
+    check(f"  {_tag63} does not fake the cue", _l63 > 0 and _r63 > 0, False)
+
+# The runner drives it from the same condition that chooses wake-free
+# listening, so antennas and microphone cannot disagree for long.
+_r63, _s63, _a63, _ = build([Chatty()])
+_s63.set_mode("chatty")
+_r63.cycle()                      # enter the demo
+_s63.expect_answer(30.0)
+_r63.cycle()
+check("a live answer window sweeps the antennas", _r63._motion.cues[-1], True)
+_s63.expect_answer(0.0)
+_r63.cycle()
+check("window closed: antennas back to normal", _r63._motion.cues[-1], False)
+_s63.set_sleeping(True)
+_r63.cycle()
+check("asleep never wears the lean", _r63._motion.cues[-1], False)
+_s63.set_sleeping(False)
 
 print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")

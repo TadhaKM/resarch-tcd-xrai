@@ -1,6 +1,76 @@
 INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
 WARNING: Logging before InitGoogle() is written to STDERR
-W0000 00:00:1787841028.581140   12260 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1787912961.698378   12556 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
 INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
 WARNING: Logging before InitGoogle() is written to STDERR
-W0000 00:00:1787841030.728660    3256 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1787912962.556263   19964 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+Traceback (most recent call last):
+  File "C:\Users\LEONGC\reachy_companion\reachy_companion\.venv\Lib\site-packages\reachy_mini\io\ws_client.py", line 76, in __init__
+    self._ws = ws_sync.connect(uri)
+               ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\LEONGC\reachy_companion\reachy_companion\.venv\Lib\site-packages\websockets\sync\client.py", line 324, in connect
+    sock = socket.create_connection(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\LEONGC\AppData\Local\Programs\Python\Python312\Lib\socket.py", line 865, in create_connection
+    raise exceptions[0]
+  File "C:\Users\LEONGC\AppData\Local\Programs\Python\Python312\Lib\socket.py", line 850, in create_connection
+    sock.connect(sa)
+ConnectionRefusedError: [WinError 10061] No connection could be made because the target machine actively refused it
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\LEONGC\reachy_companion\reachy_companion\.venv\Lib\site-packages\reachy_mini\reachy_mini.py", line 441, in _initialize_client
+    client = self._connect_single(
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\LEONGC\reachy_companion\reachy_companion\.venv\Lib\site-packages\reachy_mini\reachy_mini.py", line 493, in _connect_single
+    client = WSClient(host, port)
+             ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\LEONGC\reachy_companion\reachy_companion\.venv\Lib\site-packages\reachy_mini\io\ws_client.py", line 78, in __init__
+    raise ConnectionError(f"Failed to connect to {uri}: {e}") from e
+ConnectionError: Failed to connect to ws://localhost:8000/ws/sdk: [WinError 10061] No connection could be made because the target machine actively refused it
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\LEONGC\reachy_companion\reachy_companion\.venv\Lib\site-packages\reachy_mini\io\ws_client.py", line 76, in __init__
+    self._ws = ws_sync.connect(uri)
+               ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\LEONGC\reachy_companion\reachy_companion\.venv\Lib\site-packages\websockets\sync\client.py", line 324, in connect
+    sock = socket.create_connection(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\LEONGC\AppData\Local\Programs\Python\Python312\Lib\socket.py", line 865, in create_connection
+    raise exceptions[0]
+  File "C:\Users\LEONGC\AppData\Local\Programs\Python\Python312\Lib\socket.py", line 850, in create_connection
+    sock.connect(sa)
+TimeoutError: timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\LEONGC\reachy_companion\reachy_companion\.venv\Lib\site-packages\reachy_mini\reachy_mini.py", line 453, in _initialize_client
+    client = self._connect_single(
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\LEONGC\reachy_companion\reachy_companion\.venv\Lib\site-packages\reachy_mini\reachy_mini.py", line 493, in _connect_single
+    client = WSClient(host, port)
+             ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\LEONGC\reachy_companion\reachy_companion\.venv\Lib\site-packages\reachy_mini\io\ws_client.py", line 78, in __init__
+    raise ConnectionError(f"Failed to connect to {uri}: {e}") from e
+ConnectionError: Failed to connect to ws://192.168.137.142:8000/ws/sdk: timed out
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\LEONGC\reachy_companion\reachy_companion\main.py", line 40, in <module>
+    main()
+  File "C:\Users\LEONGC\reachy_companion\reachy_companion\main.py", line 36, in main
+    run_forever(default_target())
+  File "C:\Users\LEONGC\reachy_companion\reachy_companion\body\voice_loop.py", line 222, in run_forever
+    robot = ReachyMini(
+            ^^^^^^^^^^^
+  File "C:\Users\LEONGC\reachy_companion\reachy_companion\.venv\Lib\site-packages\reachy_mini\reachy_mini.py", line 144, in __init__
+    self.client, self.connection_mode = self._initialize_client(
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\LEONGC\reachy_companion\reachy_companion\.venv\Lib\site-packages\reachy_mini\reachy_mini.py", line 457, in _initialize_client
+    raise ConnectionError(
+ConnectionError: Auto connection: both localhost and remote attempts failed. Make sure a Reachy Mini daemon is running and accessible.

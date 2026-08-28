@@ -527,6 +527,12 @@ Even with open mic **off**, whenever Reachy ends its answer by **asking you a
 question**, it listens for your answer without the wake phrase for about half
 a minute — take your time, a thought-out answer still counts.
 
+**The antennas tell you which state it's in.** Whenever no wake phrase is
+needed — open mic on, or it just asked a question — **both antennas sweep
+together to one side**, like ears cupped toward you. When they sit in their
+normal upright pair, it's waiting for "Hey Reachy". You can read this from
+across the room; no dashboard needed.
+
 Everything else still works while it's open. "Go to sleep" still stops it,
 switching demos still works, and if you say "Hey Reachy" out of habit it just
 ignores the phrase rather than treating it as part of your question.

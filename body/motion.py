@@ -43,7 +43,7 @@ class EmotionMapper:
     _POSES: dict[EmotionTag, HeadPose] = {
         "neutral": HeadPose(pitch=0.0, yaw=0.0, roll=0.0, z=0.0, antennas=(-10.0, 10.0)),
         "happy": HeadPose(pitch=6.0, yaw=0.0, roll=5.0, z=8.0, antennas=(22.0, -22.0)),
-        "curious": HeadPose(pitch=3.0, yaw=10.0, roll=-8.0, z=4.0, antennas=(8.0, 22.0)),
+        "curious": HeadPose(pitch=3.0, yaw=10.0, roll=-8.0, z=4.0, antennas=(-8.0, 22.0)),  # opposed signs: same-signed pairs belong to the listening cue alone
         # Asymmetric and LARGE, because the subtle version was measurably
         # invisible: antennas (-4,18) against a neutral of (-10,10) and pitch
         # -4 against idle breathing of +/-3.5 sat entirely inside the noise of
@@ -188,6 +188,12 @@ class _TrackingTarget:
 #: the head properly and this contributes almost nothing.
 _CAMERA_PITCH_BIAS = 3.0
 
+#: Both antennas swept the same direction while the robot listens wake-free.
+#: 45 degrees: far enough that neutral (-10, 10) becomes an unmistakable
+#: (35, 55) same-side lean, small enough that even "surprised" (35, -35)
+#: stays inside the +/-70 clamp with room to move.
+_LISTENING_LEAN = (45.0, 45.0)
+
 #: The head's usable range, named because both _clamp_pose and _room_for have
 #: to agree on it -- the second exists to keep a composed pose inside what the
 #: first would otherwise cut off.
@@ -247,6 +253,15 @@ class MotionController:
         self._robot: object | None = robot
         self._owns_robot = robot is None
         self._base_pose = self.mapper.get("neutral")
+        #: Additive antenna lean while the robot is listening WAKE-FREE, so a
+        #: bystander can read "you can just talk" off the body instead of the
+        #: dashboard. Same mechanism as _CAMERA_PITCH_BIAS: composed on top of
+        #: whatever is being expressed, every tick, which is what lets it
+        #: survive express() replacing the base pose once per spoken sentence.
+        #: Both antennas lean the SAME direction -- no emotion pose does that
+        #: (they are all mirrored pairs, plus the one asymmetric "thinking"),
+        #: so the cue cannot be confused with a mood.
+        self._listen_lean: tuple[float, float] = (0.0, 0.0)
         self._current_pose = self._base_pose
         self._tracking: Optional[_TrackingTarget] = None
         # Every pose update is a websocket message. On-device that's cheap, but
@@ -596,9 +611,24 @@ class MotionController:
             elapsed = time.monotonic() - started
             self._stop.wait(max(0.0, period - elapsed))
 
+    def set_listening_cue(self, wake_free: bool) -> None:
+        """Lean both antennas to one side while no wake word is needed.
+
+        Called from the runner every cycle with the same condition that
+        chooses wake-free listening, and from DemoContext.listen for demos
+        holding the mic -- so the antennas and the microphone can never
+        disagree for more than one cycle. Costs one tuple write; the control
+        loop's lerp turns the flip into a smooth half-second sweep. While a
+        gesture has the loop paused (dance, acknowledge), the lean simply
+        waits its turn and reasserts when composing resumes.
+        """
+        with self._lock:
+            self._listen_lean = _LISTENING_LEAN if wake_free else (0.0, 0.0)
+
     def _compose_pose(self, now: float) -> HeadPose:
         with self._lock:
             base = self._base_pose
+            lean = self._listen_lean
             tracking = self._tracking
             if tracking is not None and tracking.expires_at <= now:
                 self._tracking = None
@@ -613,6 +643,11 @@ class MotionController:
         # is being expressed, keeps expressions relative to each other while
         # the camera stays on faces.
         pose = _add_pose(base, HeadPose(pitch=_CAMERA_PITCH_BIAS))
+        if lean != (0.0, 0.0):
+            # On top of the emotion pose, not instead of it: expressions keep
+            # their antenna language, shifted sideways as a whole. _clamp_pose
+            # bounds the sum.
+            pose = _add_pose(pose, HeadPose(antennas=lean))
 
         if tracking is not None:
             # The aim gets the room it needs and the expression takes what is

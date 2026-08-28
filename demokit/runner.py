@@ -330,6 +330,8 @@ class DemoRunner:
         if self._handle_dashboard_request():
             return
         if self._state.sleeping:
+            # Asleep needs the wake word, so no lean.
+            self._set_listening_cue(False)
             self._wait_while_asleep()
             return
 
@@ -370,11 +372,17 @@ class DemoRunner:
         if not self._state.sleeping and (
                 (self._state.open_mic and time.monotonic() < self._open_until)
                 or self._state.answer_expected):
+            # The antennas say what the dashboard says: swept to one side while
+            # no wake word is needed. Set per cycle from the SAME condition
+            # that chooses wake-free listening, so body and behaviour cannot
+            # drift apart.
+            self._set_listening_cue(True)
             if self._open_mic_turn(demo, ctx, listen_for=result.listen_for):
                 if self._state.open_mic:
                     self._open_until = time.monotonic() + _OPEN_MIC_WINDOW_S
             return
 
+        self._set_listening_cue(False)
         if self._audio.wait_for_wake_word(timeout=result.listen_for):
             # Interrupted can now reach here from any ctx.say inside the turn,
             # and cycle() is outside every guard -- unhandled it would end the
@@ -414,6 +422,21 @@ class DemoRunner:
             self._retake_after_interruption(demo, ctx)
         finally:
             self._interrupt_depth -= 1
+
+    def _set_listening_cue(self, wake_free: bool) -> None:
+        """Mirror the listening state onto the antennas, if the body can.
+
+        getattr rather than a hard call: test doubles and stripped-down motion
+        stand-ins do not grow a method just because the real body did, and a
+        missing cue is cosmetic.
+        """
+        setter = getattr(self._motion, "set_listening_cue", None)
+        if setter is None:
+            return
+        try:
+            setter(wake_free)
+        except Exception:
+            logger.debug("Could not set the listening cue", exc_info=True)
 
     def _attract_if_lingering(self, ctx: DemoContext) -> bool:
         """Invite somebody who has stood there a while to say something.
