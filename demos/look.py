@@ -30,6 +30,25 @@ from demokit.base import MAX_LISTEN_WINDOW_S
 
 _ASKING = "asking"
 _READY = "ready"
+#: An answer has been given and nothing new has been asked. Split from
+#: _READY because the two used to be one state, and in that state ANY
+#: utterance took another photograph -- live, "Thank you." was answered with
+#: "Let me take a look" and a picture of somebody putting a Pepsi can away.
+#: Fresh after entering, anything is a question; after an answer, only
+#: something that sounds like one is.
+_ANSWERED = "answered"
+
+#: The ways people close the exchange. Each gets its manners back, not a
+#: camera shutter.
+_CLOSINGS = ("thank you", "thats great", "thats brilliant", "thats right",
+             "very good", "well done", "cool", "nice one", "perfect", "amazing")
+
+#: And the ways they ask again without a full trigger phrase: anything about
+#: identifying or seeing a thing. Deliberately generous -- in this mode, a
+#: question-shaped sentence is almost always about the object.
+_ASK_AGAIN_WORDS = frozenset(("what", "whats", "look", "see", "this",
+                              "holding", "guess", "identify", "recognise",
+                              "recognize", "one"))
 
 _BETWEEN_S = 1.0
 
@@ -77,7 +96,23 @@ class Look(Demo):
             # Already looking. Swallowed so a visitor repeating themselves does
             # not queue a second picture.
             return True
-        if any(t in lowered for t in self.triggers) or ctx.store.get("stage") == _READY:
+        if ctx.store.get("stage") == _ANSWERED:
+            from demokit.runner import _word_stream, contains_phrase
+
+            words = _word_stream(text)
+            if any(contains_phrase(words, c) for c in _CLOSINGS):
+                ctx.say("You're welcome. Hold something else up any time.",
+                        "happy")
+                return True
+            if not any(w in _ASK_AGAIN_WORDS for w in words.split()) and not any(
+                    t in lowered for t in self.triggers):
+                # Not about an object: hand it to the conversation model
+                # rather than photographing whoever happens to be in frame.
+                return False
+        # _ANSWERED reaches here only after surviving the filters above, so
+        # what is left IS a new question about an object.
+        if (any(t in lowered for t in self.triggers)
+                or ctx.store.get("stage") in (_READY, _ANSWERED)):
             # Split across slices: encoding a frame and waiting on the model is
             # well past the runner's six-second hook warning, and doing it here
             # would hold the robot unswitchable for the whole request.
@@ -103,7 +138,7 @@ class Look(Demo):
         # speaking -- which is a picture of them lowering their hands.
         if time.monotonic() - store.get("asked_at", 0.0) < _SETTLE_S:
             return IdleResult(listen_for=_BETWEEN_S)
-        store["stage"] = _READY
+        store["stage"] = _ANSWERED
 
         frame = None
         if ctx.tracker is not None:

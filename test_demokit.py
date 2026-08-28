@@ -3964,6 +3964,52 @@ with _s64._lock:
 check("old robot words stop being echo",
       _r64._addressed_to_the_robot("how are you today"), True)
 
+
+print()
+print("[65] a thank-you is not a request for another photograph")
+# Live: "Thank you." after "That's a can of Pepsi." was answered with "Let me
+# take a look" and a second picture -- the demo's ready state treated ANY
+# utterance as a new question. After an answer, only something that sounds
+# like one is.
+import demos.look as _lk65
+
+_d65 = _lk65.Look() if hasattr(_lk65, "Look") else [c for n, c in vars(_lk65).items()
+        if isinstance(c, type) and n != "Demo" and hasattr(c, "on_utterance")][0]()
+_r65, _s65, _a65, _ = build([Chatty()])
+_ctx65 = _DC57(audio=_a65, motion=_r65._motion, tracker=None,
+               state=_s65, demo_id="look", store={})
+
+# Fresh after entering: anything is the question. Unchanged.
+_ctx65.store["stage"] = _lk65._READY
+check("fresh in the mode, any ask starts a look",
+      _d65.on_utterance(_ctx65, "er, whats that thing"), True)
+check("  ...and it announces the photo first",
+      _a65.said[-1], "Let me take a look.")
+
+# After an answer: manners, not a camera shutter.
+_ctx65.store["stage"] = _lk65._ANSWERED
+_before65 = len(_a65.said)
+check("'Thank you.' is closed politely", _d65.on_utterance(_ctx65, "Thank you."), True)
+check("  ...with manners, not a photo",
+      "welcome" in _a65.said[-1].lower(), True)
+check("  ...and no look was started", _ctx65.store["stage"], _lk65._ANSWERED)
+
+_ctx65.store["stage"] = _lk65._ANSWERED
+check("'that's brilliant' too",
+      _d65.on_utterance(_ctx65, "that's brilliant"), True)
+check("  ...still no photo", _ctx65.store["stage"], _lk65._ANSWERED)
+
+# A real follow-up question still looks again.
+_ctx65.store["stage"] = _lk65._ANSWERED
+check("'what about this one' looks again",
+      _d65.on_utterance(_ctx65, "what about this one"), True)
+check("  ...by actually starting a look", _ctx65.store["stage"], _lk65._ASKING)
+
+# And something unrelated goes to the conversation model instead of the lens.
+_ctx65.store["stage"] = _lk65._ANSWERED
+check("an unrelated question is left for the conversation model",
+      _d65.on_utterance(_ctx65, "who runs the hub again"), False)
+
 print()
 print(f"{'ALL CHECKS PASSED' if failures == 0 else f'{failures} FAILURE(S)'}")
 sys.exit(1 if failures else 0)
